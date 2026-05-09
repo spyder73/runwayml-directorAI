@@ -10,14 +10,14 @@ export default function Home() {
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
   const router = useRouter();
 
-  const handleStart = async () => {
+  const handleStart = async (mode: 'single_memory' | 'life_story') => {
     setIsSubmitting(true);
     
     try {
       const res = await fetch('/api/pipeline/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aspectRatio }),
+        body: JSON.stringify({ aspectRatio, mode }),
       });
       
       const data = await res.json();
@@ -94,14 +94,37 @@ export default function Home() {
                 </button>
               </div>
 
-              <motion.button
-                onClick={handleStart}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="px-10 py-4 bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 hover:text-white text-sm uppercase tracking-widest font-mono transition-all duration-500 rounded-full backdrop-blur-sm shadow-[0_0_30px_rgba(255,255,255,0.05)] hover:shadow-[0_0_40px_rgba(255,255,255,0.1)] mt-4"
-              >
-                Begin Journey
-              </motion.button>
+              <div className="flex flex-col md:flex-row justify-center gap-6 mt-8 w-full max-w-2xl mx-auto">
+                <motion.button
+                  onClick={() => handleStart('single_memory')}
+                  whileHover={{ scale: 1.02, boxShadow: "0 0 50px rgba(56, 189, 248, 0.2)" }}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex-1 px-8 py-10 bg-gradient-to-br from-blue-900/20 to-transparent border border-blue-500/30 hover:border-blue-400/50 rounded-3xl flex flex-col items-center gap-4 transition-all duration-300 group"
+                >
+                  <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
+                    <Film size={28} className="text-blue-300" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-xl font-serif text-blue-100 mb-2">Generate a Video of a Memory</h3>
+                    <p className="text-xs text-blue-200/50 font-mono uppercase tracking-wider">Fast & Focused</p>
+                  </div>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handleStart('life_story')}
+                  whileHover={{ scale: 1.02, boxShadow: "0 0 50px rgba(251, 191, 36, 0.15)" }}
+                  whileTap={{ scale: 0.98 }}
+                  className="flex-1 px-8 py-10 bg-gradient-to-br from-amber-900/20 to-transparent border border-amber-500/30 hover:border-amber-400/50 rounded-3xl flex flex-col items-center gap-4 transition-all duration-300 group"
+                >
+                  <div className="w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 transition-colors">
+                    <Film size={28} className="text-amber-300" />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-xl font-serif text-amber-100 mb-2">Describe Your Life Story</h3>
+                    <p className="text-xs text-amber-200/50 font-mono uppercase tracking-wider">Takes 5-10 minutes</p>
+                  </div>
+                </motion.button>
+              </div>
             </motion.div>
           ) : (
             <motion.div

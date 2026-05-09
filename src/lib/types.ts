@@ -1,18 +1,24 @@
 export type AspectRatio = '16:9' | '9:16';
 
+export type SessionMode = 'single_memory' | 'life_story';
+
 export type SessionStatus =
   | 'INTERVIEW_ONBOARDING'
   | 'INTERVIEW_PSYCH_PROFILE'
   | 'INTERVIEW_DYNAMIC'
   | 'PRE_PRODUCTION'
   | 'AWAITING_SELFIE'
-  | 'GENERATING_FINAL_ASSETS'
+  | 'GENERATING_IMAGES'
   | 'AWAITING_APPROVAL'
+  | 'GENERATING_FINAL_ASSETS'
+  | 'PREVIEW_READY'
+  | 'RENDERING'
   | 'COMPLETED'
   | 'FAILED';
 
 export interface SessionRow {
   id: string;
+  mode: SessionMode;
   status: SessionStatus;
   story_text: string;
   aspect_ratio: AspectRatio;

@@ -5,14 +5,15 @@ import type { AspectRatio, ChatHistoryRow, SessionRow } from '@/lib/types';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { aspectRatio?: AspectRatio };
+    const body = await req.json() as { aspectRatio?: AspectRatio, mode?: string };
     const aspectRatio = body.aspectRatio === '9:16' ? '9:16' : '16:9';
+    const mode = body.mode === 'single_memory' ? 'single_memory' : 'life_story';
 
     const sessionId = uuidv4();
 
     // Initialize session
-    db.prepare('INSERT INTO sessions (id, status, story_text, aspect_ratio) VALUES (?, ?, ?, ?)')
-      .run(sessionId, 'INTERVIEW_ONBOARDING', '', aspectRatio);
+    db.prepare('INSERT INTO sessions (id, status, story_text, aspect_ratio, mode) VALUES (?, ?, ?, ?, ?)')
+      .run(sessionId, 'INTERVIEW_ONBOARDING', '', aspectRatio, mode);
 
     // Add first message from Director
     const msgId = uuidv4();

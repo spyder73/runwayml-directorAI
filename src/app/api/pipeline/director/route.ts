@@ -3,7 +3,7 @@ import { generateText, tool } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import db from '@/lib/db';
 import { broadcastSessionUpdate } from '@/lib/sse';
-import { runFinalGenerationPhase } from '@/lib/pipeline_final';
+import { generateImagesPhase } from '@/lib/pipeline_final';
 import { z } from 'zod';
 import type { SceneRow } from '@/lib/types';
 
@@ -82,7 +82,7 @@ If it's just a general chat, reply naturally.
       broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
       // Triggers regeneration for that scene in background
-      runFinalGenerationPhase(sessionId).catch(console.error);
+      generateImagesPhase(sessionId).catch(console.error);
 
       responseText = `I am adjusting the scenes as requested. Let's see how this new cut looks.`;
     }

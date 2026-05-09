@@ -12,6 +12,7 @@ const db = new Database(path.join(dataDir, 'lifestory.sqlite'));
 db.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
+    mode TEXT NOT NULL DEFAULT 'life_story',
     status TEXT NOT NULL,
     story_text TEXT NOT NULL,
     aspect_ratio TEXT NOT NULL DEFAULT '16:9',
@@ -27,6 +28,7 @@ db.exec(`
 try { db.exec("ALTER TABLE sessions ADD COLUMN user_name TEXT"); } catch {}
 try { db.exec("ALTER TABLE sessions ADD COLUMN user_age TEXT"); } catch {}
 try { db.exec("ALTER TABLE sessions ADD COLUMN user_selfie_url TEXT"); } catch {}
+try { db.exec("ALTER TABLE sessions ADD COLUMN mode TEXT DEFAULT 'life_story'"); } catch {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS scenes (

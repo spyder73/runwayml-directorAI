@@ -1,3 +1,7 @@
+<!-- BEGIN:repo-rules -->
+**CRITICAL REPOSITORY RULE:** Atomic commits and pushes must ALWAYS and SOLELY be done to the `https://github.com/spyder73/runwayml-directorAI` repository. You must NEVER commit or push to the parent `contentgen-docker-master` repo.
+<!-- END:repo-rules -->
+
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
 
