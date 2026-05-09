@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-runway: #e4ff00;
+  --color-space: #0A0A0F;
+  --font-serif: var(--font-cormorant);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-space);
+    color: #fff;
+  }
+}

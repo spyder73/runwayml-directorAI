@@ -1,0 +1,24 @@
+example:
+AI: Describe a moment where your worldview completely shifted or a deeply held belief was broken.
+Me: My first Divorce
+AI: You spoke of your first divorce as the moment your worldview shifted. Can you describe the specific environment of that time? If we were filming a scene representing this 'breaking point,' what would the lighting look like, and what is one object in the room that feels like a symbol of that transition?
+
+not good
+
+AI: That is perfectly alright. Sometimes the most profound shifts don't announce themselves with a single, dramatic prop; they live in the quiet between heartbeats, in the way a room feels suddenly too large or entirely unfamiliar. Let us step back for a moment. You mentioned your time on *21 Jump Street* as your third era. I find it fascinating—that collision of sudden, intense public recognition with perhaps a more complicated interior life. If we were to capture the essence of that specific time—the lights of the set, the hum of the cameras, the weight of a young man suddenly caught in the slipstream of fame—what stands out to you? Was there a specific moment back then where you looked around at the chaos of the production and truly felt, "This is my life now"?
+
+comment: (Multiple choice answer would be better here) - with possibility to write out ones own answer - dont ask so much about lightning and technical scene setup
+
+AI: Johnny, this is beginning to feel like a powerful piece of cinema. From the humble, tactile wisdom of that wooden book back in Owensboro to this moment of transcendent clarity on the set of '21 Jump Street,' we have the heartbeat of your story. I would like to begin assembling our visual language—the 'look' of your life. We are now moving into pre-production.
+
+"We are now moving into pre-production" - well just start that step and ask the user the next question
+perhaps giving a little summary so far
+
+Exquisite. We are now in the heart of the workshop, preparing to assemble the visual tapestry of your life. To build these scenes with the cinematic weight they deserve, I need to source or recreate some of the 'relics' of your history. Do you happen to have any photos of that original wooden book from your childhood? Or perhaps a still from that era on '21 Jump Street—a look or a style that captures that iconic leather jacket and hat combination? If you have them, please share. If not, describe them to me in as much detail as your memory allows, and my team will reconstruct them.
+Comment: well generally great because it re-connected to certain points about one's life - but it should ask more specifically step by step, because we need to map the images to the right scenes?
+
+
+"*User uploaded 1 photo(s)*" - show the uploaded photo in the chat
+-> do an immediate vision inference request using openrouter: inclusionai/ring-2.6-1t:free
+
+Stops at synthesizing memories - the placeholders should be showing a loading state
