@@ -1,31 +1,26 @@
-When generating memory image - it should be stated + loading "trying to generate an image of your memory.."
 
-also console error: In HTML, <div> cannot be a descendant of <p>.
-This will cause a hydration error.
 
-src/app/session/[id]/page.tsx (152:31) @ SessionPage/<.children<.children<.children</<.children<.children<.children<.children<
+after i uploaded an image - i saw this in the chat: 
+*User uploaded 1 photo(s)* [Image: /uploads/2db60668-33dd-448f-bdd4-771e74e38aea.jpg] *Vision Analysis: ...
+- this should not show up i only wanna see the uploaded image in the chat history.
 
-  150 |                           if (imageMatch) {
-  151 |                             return (
-> 152 |                               <div key={i} className="mt-4 relative w-full max-w-sm aspect-video rounded-xl overflow-hidden border b...
-      |                               ^
-  153 |                                 <Image src={imageMatch[2]} alt={imageMatch[1]} fill className="object-cover" unoptimized />
-  154 |                               </div>
-  155 |                             );
+Upload Your Protagonist ReferenceUpload a clear face photo if you want to appear in the film. This becomes the protagonist reference for visible scenes.
+-> blurring text - only if specifically asking for reference for a specific scene - i got confused because i already uploaded a selfie - but then it again asked me for an image i didnt understand what it would be for (consumer pov)
+-> additionally the selfie upload should also trigger an "upload" field - i had to upload via the little camera icon
+doesnt disappear when something was uploaded 
 
-  one should be able to click the image to see it in full screen
+error:
 
-  The multiple choice should be used sparingly e.g. when one is asked a very specific question where the user might need some help on how to know how to answer it
-
-  I think a philosophical change of this product would be memory -> movie generator
-  where generating ones lifestory would be an in-depth choice in the beginning - where a user is asked a longer interview
-  (it would say this process will take around 5-10 minutes) 
-  When a user clicks on start these choices should appear as big magical (differently colored) shining buttons where a user can choose
-  if he wants to just generate a video of a memory or ... or describe his whole lifestory 
-
-  I will upload a photo now - "Render an Upload field" in the chat where a user can click on to upload a photo or drag and drop
-
-  the generated images (synthesizing memories) could first be shown for approval before generating the video 
-
-  When the memories are "synthesized" meaning videos are generated - we dont transition to a new page where the clips are stitched together (preview using remotion player)
-  - and when the user is satisifed it clicks on render and can download the video file (render invokes remotion render process) - also the TTS has to be added + subtitles (subtitles via remotion)
+  174 |   requireRunwayApiKey();
+  175 |   const task = await waitForOutput(
+> 176 |     retryTaskCreation('Runway image', () => createGptImage2({
+      |                                             ^
+  177 |       model: 'gpt_image_2',
+  178 |       promptText: params.promptText,
+  179 |       quality: params.quality,
+RunwayML Sketch Error: TypeError: Cannot read properties of undefined (reading '_client')
+    at eval (src/lib/runway.ts:176:45)
+    at retryTaskCreation (src/lib/runway.ts:87:20)
+    at async waitForOutput (src/lib/runway.ts:103:16)
+    at async generateImageAsset (src/lib/runway.ts:175:16)
+    at async processInterviewTurn (src/lib/pipeline.ts:126:33)

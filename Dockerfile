@@ -32,8 +32,8 @@ RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 
-# Create writable runtime upload directory under Next's public asset path.
-RUN mkdir -p /app/public/uploads && chown -R nextjs:nodejs /app/public/uploads
+# Create writable runtime media directories under Next's public asset path.
+RUN mkdir -p /app/public/uploads /app/public/generated && chown -R nextjs:nodejs /app/public/uploads /app/public/generated
 
 # Set the correct permission for prerender cache
 RUN mkdir .next

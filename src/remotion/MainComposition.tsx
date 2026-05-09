@@ -1,41 +1,65 @@
+import React from 'react';
 import { AbsoluteFill, Sequence, Video, Audio } from 'remotion';
+import { TransitionSeries, linearTiming } from '@remotion/transitions';
+import { fade } from '@remotion/transitions/fade';
+import { AnimatedSubtitles } from './components/AnimatedSubtitles';
 
 type Scene = {
   id: string;
-  video_url: string;
+  video_urls: string[]; // parsed from JSON
   audio_url: string;
   narrator_text: string;
+  duration_in_frames: number;
 };
 
 export const MainComposition = ({ scenes }: { scenes: Scene[] }) => {
-  // For this hackathon MVP, we assume each scene is roughly 5 seconds long (150 frames at 30fps)
-  const sceneDurationInFrames = 150; 
+  const children: React.ReactNode[] = [];
+
+  scenes.forEach((scene, i) => {
+    children.push(
+      <TransitionSeries.Sequence
+        key={scene.id}
+        durationInFrames={scene.duration_in_frames}
+      >
+        <AbsoluteFill>
+          {scene.video_urls.map((url, j) => {
+            const shotDurationFrames = Math.floor(scene.duration_in_frames / scene.video_urls.length);
+            const fromFrame = j * shotDurationFrames;
+            const isLast = j === scene.video_urls.length - 1;
+            const finalShotDuration = isLast ? scene.duration_in_frames - fromFrame : shotDurationFrames;
+
+            return (
+              <Sequence key={`${scene.id}-${j}`} from={fromFrame} durationInFrames={finalShotDuration}>
+                <Video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </Sequence>
+            );
+          })}
+
+          {scene.audio_url && (
+            <Audio src={scene.audio_url} />
+          )}
+          
+          <AnimatedSubtitles text={scene.narrator_text} />
+        </AbsoluteFill>
+      </TransitionSeries.Sequence>
+    );
+
+    if (i < scenes.length - 1) {
+      children.push(
+        <TransitionSeries.Transition
+          key={`transition-${i}`}
+          presentation={fade()}
+          timing={linearTiming({ durationInFrames: 15 })}
+        />
+      );
+    }
+  });
 
   return (
     <AbsoluteFill className="bg-black">
-      {scenes.map((scene, i) => (
-        <Sequence
-          key={scene.id}
-          from={i * sceneDurationInFrames}
-          durationInFrames={sceneDurationInFrames}
-        >
-          <AbsoluteFill>
-            {scene.video_url && (
-              <Video src={scene.video_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            )}
-            {scene.audio_url && (
-              <Audio src={scene.audio_url} />
-            )}
-            
-            {/* Cinematic Subtitles */}
-            <div className="absolute bottom-12 w-full flex justify-center">
-              <p className="bg-black/60 px-4 py-2 text-white font-mono text-xl text-center max-w-3xl leading-relaxed">
-                {scene.narrator_text}
-              </p>
-            </div>
-          </AbsoluteFill>
-        </Sequence>
-      ))}
+      <TransitionSeries>
+        {children}
+      </TransitionSeries>
     </AbsoluteFill>
   );
 };

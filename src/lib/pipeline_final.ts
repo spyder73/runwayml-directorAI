@@ -1,16 +1,94 @@
 import db from './db';
 import { broadcastSessionUpdate } from './sse';
-import RunwayML from '@runwayml/sdk';
 import type { SceneRow, SessionRow, UserUploadRow } from './types';
-import fs from 'fs/promises';
+import { ensureSafePrompt } from './moderation';
+import { getAudioDurationInSeconds } from 'get-audio-duration';
 import path from 'path';
-
-const client = new RunwayML({
-  apiKey: process.env.RUNWAYML_API_SECRET || '', 
-});
+import { planShots } from './shot_planner';
+import {
+  generateImageAsset,
+  generateSpeechAsset,
+  generateVideoAsset,
+  imageRatio,
+  loadReferenceImage,
+  videoRatio,
+  type RunwayReferenceImage,
+} from './runway';
 
 function getSessionScenes(sessionId: string): SceneRow[] {
   return db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[];
+}
+
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function sceneShowsProtagonist(scene: SceneRow) {
+  return scene.is_protagonist_visible === 1 || scene.is_protagonist_visible === true;
+}
+
+function failScene(sessionId: string, sceneId: string, error: unknown) {
+  db.prepare('UPDATE scenes SET status = ? WHERE id = ?').run('failed', sceneId);
+  broadcastSessionUpdate(sessionId, {
+    status: 'FAILED',
+    error: formatError(error),
+    scenes: getSessionScenes(sessionId),
+  });
+}
+
+function failSession(sessionId: string, error: unknown) {
+  db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('FAILED', sessionId);
+  broadcastSessionUpdate(sessionId, {
+    status: 'FAILED',
+    error: formatError(error),
+    scenes: getSessionScenes(sessionId),
+  });
+}
+
+async function loadReferenceImages(uploads: UserUploadRow[]) {
+  const referenceImages: RunwayReferenceImage[] = [];
+
+  for (const upload of uploads.slice(0, 16)) {
+    try {
+      referenceImages.push(await loadReferenceImage(upload.file_path));
+    } catch (error) {
+      console.error(`Failed to load reference image ${upload.file_path}:`, error);
+    }
+  }
+
+  return referenceImages;
+}
+
+async function mapWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+) {
+  let nextIndex = 0;
+  let firstError: unknown;
+
+  async function runWorker() {
+    while (!firstError) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      const item = items[currentIndex];
+      if (!item) return;
+
+      try {
+        await worker(item);
+      } catch (error) {
+        firstError = error;
+      }
+    }
+  }
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, runWorker));
+
+  if (firstError) {
+    throw firstError;
+  }
 }
 
 export async function generateImagesPhase(sessionId: string) {
@@ -19,65 +97,44 @@ export async function generateImagesPhase(sessionId: string) {
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
     const scenes = getSessionScenes(sessionId);
+    const scenesToGenerate = scenes.filter((scene) => !scene.reference_image_url || scene.status === 'pending' || scene.status === 'generating_image' || scene.status === 'failed');
     const uploads = db.prepare('SELECT * FROM user_uploads WHERE session_id = ?').all(sessionId) as UserUploadRow[];
+    const referenceImages = await loadReferenceImages(uploads);
 
-    const referenceImages: { uri: string }[] = [];
-    for (const upload of uploads.slice(0, 16)) {
-      try {
-        const filePath = path.join(process.cwd(), 'public', upload.file_path);
-        const buffer = await fs.readFile(filePath);
-        const ext = path.extname(upload.file_path).replace('.', '') || 'jpeg';
-        const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
-        const dataUri = `data:${mimeType};base64,${buffer.toString('base64')}`;
-        referenceImages.push({ uri: dataUri });
-      } catch (e) {
-        console.error(`Failed to load reference image ${upload.file_path}:`, e);
-      }
-    }
-
-    const isMock = !process.env.RUNWAYML_API_SECRET;
-
-    await Promise.all(scenes.map(async (scene) => {
+    for (const scene of scenesToGenerate) {
       db.prepare('UPDATE scenes SET status = ? WHERE id = ?').run('generating_image', scene.id);
-      broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
+    }
+    broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
-      let imageUrl = '';
-      if (isMock) {
-        await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
-        imageUrl = `https://picsum.photos/seed/${scene.id}/1280/720`;
-      } else {
-        try {
-          const ratio = session.aspect_ratio === '9:16' ? '1088:1920' : '1920:1088';
-          const task = await client.textToImage.create({
-             // @ts-ignore
-             model: 'gpt_image_2',
-             promptText: scene.image_prompt || scene.visual_prompt || "Cinematic scene",
-             quality: 'high',
-             ratio: ratio as any,
-             referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-          }).waitForTaskOutput();
-          
-          if (task.output && task.output[0]) {
-             imageUrl = task.output[0];
-          } else {
-             imageUrl = `https://picsum.photos/seed/${scene.id}/1280/720`;
-          }
-        } catch (e) {
-          console.error("Runway SDK Image Error:", e);
-          imageUrl = `https://picsum.photos/seed/${scene.id}/1280/720`;
-        }
+    await mapWithConcurrency(scenesToGenerate, 3, async (scene) => {
+      try {
+        const promptText = await ensureSafePrompt(scene.image_prompt || scene.visual_prompt);
+        const imageAsset = await generateImageAsset({
+          promptText,
+          quality: 'high',
+          ratio: imageRatio(session.aspect_ratio),
+          referenceImages: sceneShowsProtagonist(scene) ? referenceImages : undefined,
+          sessionId,
+        });
+
+        db.prepare('UPDATE scenes SET reference_image_url = ?, status = ? WHERE id = ?')
+          .run(imageAsset.localUrl, 'awaiting_approval', scene.id);
+        broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
+      } catch (error) {
+        console.error('Runway SDK Image Error:', error);
+        failScene(sessionId, scene.id, error);
+        throw error;
       }
-      
-      db.prepare('UPDATE scenes SET reference_image_url = ?, status = ? WHERE id = ?').run(imageUrl, 'awaiting_approval', scene.id);
-    }));
+    });
 
-    db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('AWAITING_APPROVAL', sessionId);
-    broadcastSessionUpdate(sessionId, { status: 'AWAITING_APPROVAL', scenes: getSessionScenes(sessionId) });
+    db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run('GENERATING_FINAL_ASSETS', sessionId);
+    broadcastSessionUpdate(sessionId, { status: 'GENERATING_FINAL_ASSETS', scenes: getSessionScenes(sessionId) });
 
+    generateVideoAudioPhase(sessionId).catch((error) => console.error('Final synthesis phase error:', error));
   } catch (error: unknown) {
     console.error('Image generation failed:', error);
-    db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run('FAILED', sessionId);
-    broadcastSessionUpdate(sessionId, { status: 'FAILED', error: String(error) });
+    failSession(sessionId, error);
   }
 }
 
@@ -87,69 +144,64 @@ export async function generateVideoAudioPhase(sessionId: string) {
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
     const scenes = getSessionScenes(sessionId);
-    const isMock = !process.env.RUNWAYML_API_SECRET;
+    const scenesToGenerate = scenes.filter((scene) => !scene.video_url || !scene.audio_url || scene.status === 'generating_video' || scene.status === 'failed');
+    db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run('GENERATING_FINAL_ASSETS', sessionId);
+    broadcastSessionUpdate(sessionId, { status: 'GENERATING_FINAL_ASSETS', scenes });
 
-    db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run('GENERATING_FINAL_ASSETS', sessionId);
-    broadcastSessionUpdate(sessionId, { status: 'GENERATING_FINAL_ASSETS' });
-
-    await Promise.all(scenes.map(async (scene) => {
+    for (const scene of scenesToGenerate) {
       db.prepare('UPDATE scenes SET status = ? WHERE id = ?').run('generating_video', scene.id);
-      broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
+    }
+    broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
-      let videoUrl = '';
-      let audioUrl = '';
-
-      if (isMock) {
-        await new Promise(resolve => setTimeout(resolve, 3000 + Math.random() * 2000));
-        videoUrl = `https://www.w3schools.com/html/mov_bbb.mp4`;
-        audioUrl = `https://www.w3schools.com/html/horse.ogg`;
-      } else {
-        try {
-          const videoTask = await client.imageToVideo.create({
-            model: 'gen4_turbo',
-            promptImage: [{ uri: scene.reference_image_url || '', position: 'first' }],
-            ratio: session.aspect_ratio === '9:16' ? '720:1280' : '1280:720',
-            promptText: scene.video_prompt || scene.visual_prompt || '',
-            duration: scene.duration || 5,
-          }).waitForTaskOutput();
-          
-          if (videoTask.output && videoTask.output[0]) {
-             videoUrl = videoTask.output[0];
-          } else {
-             videoUrl = `https://www.w3schools.com/html/mov_bbb.mp4`;
-          }
-        } catch (e) {
-          console.error("Runway SDK Video Error:", e);
-          videoUrl = `https://www.w3schools.com/html/mov_bbb.mp4`;
+    await mapWithConcurrency(scenesToGenerate, 2, async (scene) => {
+      try {
+        if (!scene.reference_image_url) {
+          throw new Error(`Scene ${scene.scene_index + 1} is missing its generated reference image.`);
         }
 
+        const audioAsset = await generateSpeechAsset({
+          promptText: scene.narrator_text,
+          sessionId,
+        });
+
+        let exactDuration = scene.duration || 5;
         try {
-          const audioTask = await client.textToSpeech.create({
-             model: 'eleven_multilingual_v2',
-             promptText: scene.narrator_text || "Scene audio",
-             voice: { type: 'runway-preset', presetId: 'Bernard' },
-          }).waitForTaskOutput();
-          
-          if (audioTask.output) {
-             // @ts-ignore
-             audioUrl = typeof audioTask.output === 'string' ? audioTask.output : (audioTask.output.audioUrl || audioTask.output[0]);
-          }
-        } catch (e) {
-          console.error("Runway SDK TTS Error:", e);
-          audioUrl = `https://www.w3schools.com/html/horse.ogg`;
+          exactDuration = await getAudioDurationInSeconds(path.join(process.cwd(), 'public', audioAsset.filePath));
+        } catch (error) {
+          console.error('Could not get audio duration:', error);
         }
+
+        const shots = await planShots(scene.video_prompt || scene.visual_prompt, exactDuration);
+        const videoUrls: string[] = [];
+
+        for (const shot of shots) {
+          const safePrompt = await ensureSafePrompt(shot.prompt);
+          const videoAsset = await generateVideoAsset({
+            promptImageUrl: scene.reference_image_url,
+            promptText: safePrompt,
+            ratio: videoRatio(session.aspect_ratio),
+            duration: shot.duration,
+            sessionId,
+          });
+          videoUrls.push(videoAsset.localUrl);
+        }
+
+        db.prepare('UPDATE scenes SET video_url = ?, audio_url = ?, duration = ?, status = ? WHERE id = ?')
+          .run(JSON.stringify(videoUrls), audioAsset.localUrl, Math.ceil(exactDuration), 'completed', scene.id);
+        broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
+      } catch (error) {
+        console.error('Runway SDK Video/Audio Error:', error);
+        failScene(sessionId, scene.id, error);
+        throw error;
       }
+    });
 
-      db.prepare('UPDATE scenes SET video_url = ?, audio_url = ?, status = ? WHERE id = ?').run(videoUrl, audioUrl, 'completed', scene.id);
-      broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
-    }));
-
-    db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('PREVIEW_READY', sessionId);
-    broadcastSessionUpdate(sessionId, { status: 'PREVIEW_READY' });
-
+    db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .run('PREVIEW_READY', sessionId);
+    broadcastSessionUpdate(sessionId, { status: 'PREVIEW_READY', scenes: getSessionScenes(sessionId) });
   } catch (error: unknown) {
     console.error('Video/Audio generation failed:', error);
-    db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run('FAILED', sessionId);
-    broadcastSessionUpdate(sessionId, { status: 'FAILED', error: String(error) });
+    failSession(sessionId, error);
   }
 }

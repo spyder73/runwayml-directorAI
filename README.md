@@ -26,6 +26,7 @@ To run this project locally for testing:
    OPENROUTER_API_KEY=your_openrouter_api_key
    RUNWAYML_API_SECRET=your_runwayml_api_secret
    ```
+   Generated reference frames are persisted locally and uploaded to Runway through temporary SDK uploads before video generation.
 
 3. **Run the Development Server:**
    ```bash
@@ -54,3 +55,7 @@ To deploy on a VPS using Docker:
 - `@runwayml/sdk`
 - Vercel AI SDK (`ai`, `@ai-sdk/openai`)
 - `@remotion/player`
+
+## Phase 2: Runway Characters
+
+After the single-memory demo path is stable, the next product step is a Runway Character interviewer: a speaking AI director that conducts the interview verbally and keeps the user out of text input for most of the flow. This is intentionally deferred until the core real-media generation pipeline is reliable.

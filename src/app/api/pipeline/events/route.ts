@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { sseEmitter } from '@/lib/sse';
 import db from '@/lib/db';
 import type { ChatHistoryRow, SceneRow, SessionRow, SessionUpdatePayload } from '@/lib/types';
+import { getActiveReferenceRequest, loadStoryBucket } from '@/lib/story-bucket';
 
 export const runtime = 'nodejs';
 
@@ -21,7 +22,13 @@ export async function GET(req: NextRequest) {
           if (session) {
           const scenes = db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[];
           const chat_history = db.prepare('SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ChatHistoryRow[];
-          const data = { session, scenes, chat_history };
+          const data = {
+            session,
+            scenes,
+            chat_history,
+            story_bucket: loadStoryBucket(db, sessionId),
+            active_reference_request: getActiveReferenceRequest(db, sessionId) || null,
+          };
           controller.enqueue(`data: ${JSON.stringify(data)}\n\n`);
         }
       } catch (err) {

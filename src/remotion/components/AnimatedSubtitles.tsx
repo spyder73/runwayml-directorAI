@@ -1,0 +1,58 @@
+import React, { useMemo } from 'react';
+import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
+
+export const AnimatedSubtitles: React.FC<{ text: string }> = ({ text }) => {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames } = useVideoConfig();
+
+  // Split text into words
+  const words = useMemo(() => text.split(' ').filter(Boolean), [text]);
+  
+  // Calculate roughly when each word should appear.
+  // We want the text to finish appearing slightly before the end of the clip.
+  const timePerWord = words.length > 0 ? (durationInFrames * 0.8) / words.length : 0;
+
+  return (
+    <div className="absolute bottom-12 w-full flex justify-center z-50 pointer-events-none">
+      <div className="flex flex-wrap justify-center items-center gap-x-2 px-8 py-4 max-w-4xl text-center">
+        {words.map((word, i) => {
+          const wordStartTime = Math.max(10, i * timePerWord); // Start slightly after scene begins
+          
+          // Animate opacity and scale/y-position using spring
+          const wordProgress = spring({
+            fps,
+            frame: frame - wordStartTime,
+            config: {
+              damping: 100,
+              stiffness: 200,
+              mass: 0.5,
+            },
+          });
+
+          // Optional: slight blur effect as it comes in
+          const blur = interpolate(wordProgress, [0, 1], [10, 0], {
+            extrapolateRight: 'clamp',
+          });
+          
+          const opacity = interpolate(wordProgress, [0, 1], [0, 1]);
+          const translateY = interpolate(wordProgress, [0, 1], [10, 0]);
+
+          return (
+            <span
+              key={i}
+              className="text-white font-serif text-3xl font-bold tracking-wide drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]"
+              style={{
+                opacity,
+                transform: `translateY(${translateY}px) scale(${wordProgress})`,
+                filter: `blur(${blur}px)`,
+                textShadow: '2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 0px 4px 15px rgba(0,0,0,0.9)'
+              }}
+            >
+              {word}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+};

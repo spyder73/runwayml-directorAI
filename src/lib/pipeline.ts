@@ -1,22 +1,151 @@
 import db from './db';
 import { broadcastSessionUpdate } from './sse';
-import { generateText } from 'ai';
+import { generateText, streamText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { v4 as uuidv4 } from 'uuid';
-import RunwayML from '@runwayml/sdk';
 import { generateImagesPhase } from './pipeline_final';
-import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow } from './types';
-import { aiTools, getToolCall, transitionQuestionSchema, transitionAnnouncementSchema, protagonistRequestSchema, memorySketchSchema, lockScriptSchema } from './ai/tools';
-import { modeASingleMemoryPrompt } from './ai/prompts/mode-a-single-memory';
-import { modeBLifeStoryPrompt } from './ai/prompts/mode-b-life-story';
+import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
+import { buildDirectorContinuationPrompt } from './director-continuation';
+import {
+  aiTools,
+  getToolCall,
+  lockSceneOutlineSchema,
+  memorySketchSchema,
+  proposeSceneOutlineSchema,
+  requestReferenceUploadSchema,
+  reviseSceneOutlineSchema,
+  saveReferenceDescriptionSchema,
+  saveSketchFeedbackSchema,
+  updateProfileBucketSchema,
+} from './ai/tools';
+import { buildInterviewSystemPrompt } from './ai/prompts';
+import { generateImageAsset, imageRatio } from './runway';
+import {
+  applyProfileBucketUpdate,
+  createReferenceAsset,
+  createReferenceUploadRequest,
+  getActiveReferenceRequest,
+  hasProtagonistReferenceDecision,
+  loadStoryBucket,
+  lockSceneOutlineForProduction,
+  proposeSceneOutline,
+  recordMemorySketch,
+  reviseSceneOutline,
+  saveReferenceDescription,
+  saveSketchFeedback,
+} from './story-bucket';
 
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
-const runwayClient = new RunwayML({
-  apiKey: process.env.RUNWAYML_API_SECRET || '', 
-});
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function getSessionScenes(sessionId: string): SceneRow[] {
+  return db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[];
+}
+
+function formatJsonList(value: string | null | undefined) {
+  if (!value) return '';
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return '';
+    return parsed.join(', ');
+  } catch {
+    return '';
+  }
+}
+
+export function formatStoryBucketForPrompt(bucket: StoryBucket) {
+  const parts: string[] = [];
+
+  if (bucket.profile) {
+    const profileBits = [
+      bucket.profile.protagonist_name ? `name: ${bucket.profile.protagonist_name}` : '',
+      bucket.profile.age ? `age: ${bucket.profile.age}` : '',
+      bucket.profile.life_phase ? `phase: ${bucket.profile.life_phase}` : '',
+      bucket.profile.emotional_tone ? `tone: ${bucket.profile.emotional_tone}` : '',
+      bucket.profile.summary ? `summary: ${bucket.profile.summary}` : '',
+      formatJsonList(bucket.profile.themes_json) ? `themes: ${formatJsonList(bucket.profile.themes_json)}` : '',
+    ].filter(Boolean).join('; ');
+    if (profileBits) parts.push(`Profile: ${profileBits}`);
+  }
+
+  if (bucket.entities.length) {
+    parts.push(`Entities: ${bucket.entities.map((entity) => `${entity.display_name} (${entity.type}${entity.relationship ? `, ${entity.relationship}` : ''})`).join('; ')}`);
+  }
+
+  if (bucket.timelineEvents.length) {
+    parts.push(`Timeline: ${bucket.timelineEvents.map((event) => `${event.label}: ${event.description}`).join('; ')}`);
+  }
+
+  if (bucket.memoryCandidates.length) {
+    parts.push(`Candidate scenes: ${bucket.memoryCandidates.map((candidate) => `${candidate.title}: ${candidate.description}`).join('; ')}`);
+  }
+
+  if (bucket.referenceAssets.length) {
+    parts.push(`References: ${bucket.referenceAssets.map((asset) => `@${asset.stable_tag}${asset.vision_description ? ` (${asset.vision_description})` : ''}`).join('; ')}`);
+  }
+
+  if (bucket.sceneOutline.length) {
+    parts.push(`Current outline: ${bucket.sceneOutline.map((scene) => `${scene.scene_index + 1}. ${scene.title}: ${scene.summary}`).join('; ')}`);
+  }
+
+  return parts.join('\n');
+}
+
+function advanceInterviewStatus(session: SessionRow, bucket: StoryBucket) {
+  if (session.status === 'INTERVIEW_ONBOARDING') {
+    if (session.mode === 'single_memory' && bucket.memoryCandidates.length > 0) {
+      db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('INTERVIEW_DYNAMIC', session.id);
+      return;
+    }
+
+    if (session.mode === 'life_story' && bucket.profile?.protagonist_name && bucket.profile?.age) {
+      db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('INTERVIEW_PSYCH_PROFILE', session.id);
+      return;
+    }
+  }
+
+  if (session.status === 'INTERVIEW_PSYCH_PROFILE' && (bucket.timelineEvents.length >= 3 || bucket.memoryCandidates.length >= 2)) {
+    db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('INTERVIEW_DYNAMIC', session.id);
+  }
+}
+
+function getFullSessionUpdate(sessionId: string) {
+  return {
+    session: db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow,
+    chat_history: db.prepare('SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ChatHistoryRow[],
+    scenes: getSessionScenes(sessionId),
+    story_bucket: loadStoryBucket(db, sessionId),
+    active_reference_request: getActiveReferenceRequest(db, sessionId) || null,
+  };
+}
+
+function protagonistReferencePrompt(session: SessionRow) {
+  const name = session.user_name || 'you';
+  return `Before I sketch scenes with ${name} on screen, would you like to add a protagonist reference photo? It is completely optional. You can upload one, describe how ${name} should appear, or skip it and I will keep the scene less dependent on likeness.`;
+}
+
+async function generateDirectorContinuation(sessionId: string, messages: InterviewMessage[]) {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow;
+  const bucket = loadStoryBucket(db, sessionId);
+  const prompt = buildDirectorContinuationPrompt({
+    status: session.status,
+    storyContext: formatStoryBucketForPrompt(bucket),
+  });
+
+  const { text } = await generateText({
+    model: openrouter('google/gemini-3.1-flash-lite'),
+    system: prompt,
+    messages,
+    toolChoice: 'none',
+  });
+
+  return text.trim();
+}
 
 export async function processInterviewTurn(sessionId: string) {
   try {
@@ -25,21 +154,66 @@ export async function processInterviewTurn(sessionId: string) {
       throw new Error(`Session not found: ${sessionId}`);
     }
 
-    const historyRows = db.prepare('SELECT role, content FROM chat_history WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as Pick<ChatHistoryRow, 'role' | 'content'>[];
+    const historyRows = db.prepare('SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ChatHistoryRow[];
     const messages: InterviewMessage[] = historyRows.map((row) => ({
       role: row.role === 'assistant' ? 'assistant' : 'user',
       content: row.content,
     }));
+    const uploads = db.prepare('SELECT file_path, vision_description FROM user_uploads WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as Pick<UserUploadRow, 'file_path' | 'vision_description'>[];
+    const uploadContext = uploads
+      .filter((upload) => upload.vision_description)
+      .map((upload, index) => `Reference ${index + 1} (${upload.file_path}): ${upload.vision_description}`)
+      .join('\n');
 
-    let rawSystemPrompt = session.mode === 'single_memory' ? modeASingleMemoryPrompt : modeBLifeStoryPrompt;
-    const systemPrompt = rawSystemPrompt.replace('{status}', session.status);
+    const storyBucket = loadStoryBucket(db, sessionId);
+    const systemPrompt = buildInterviewSystemPrompt({
+      mode: session.mode,
+      status: session.status,
+      storyContext: formatStoryBucketForPrompt(storyBucket),
+      uploadContext,
+      activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+    });
 
-    const { text, toolCalls } = await generateText({
+    const assistantMessageId = uuidv4();
+    let text = '';
+    
+    // Broadcast a placeholder message that will be streamed into
+    broadcastSessionUpdate(sessionId, {
+      chat_history: [
+        ...historyRows,
+        {
+          id: assistantMessageId,
+          session_id: sessionId,
+          role: 'assistant',
+          content: '',
+          options: null,
+          created_at: new Date().toISOString()
+        }
+      ]
+    });
+
+    const result = await streamText({
       model: openrouter('google/gemini-3.1-flash-lite'),
       system: systemPrompt,
       messages,
       tools: aiTools,
+      onChunk: ({ chunk }) => {
+        if (chunk.type === 'text-delta') {
+          text += chunk.text;
+          // Emit just the chunk to append
+          broadcastSessionUpdate(sessionId, {
+            chat_chunk: {
+               id: assistantMessageId,
+               text: chunk.text
+            }
+          });
+        }
+      }
     });
+
+    // Wait for the full result to get tool calls
+    const toolCalls = await result.toolCalls || [];
+    text = await result.text || text;
 
     let finalReply = text;
 
@@ -47,35 +221,53 @@ export async function processInterviewTurn(sessionId: string) {
       for (const rawCall of toolCalls) {
         const call = getToolCall(rawCall);
 
-        if (call.toolName === 'transition_to_psych_profile') {
-           const args = transitionQuestionSchema.parse(call.input);
-           db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run('INTERVIEW_PSYCH_PROFILE', sessionId);
-           finalReply = args.next_question || text || "Could you tell me a bit more about your background?";
-        } else if (call.toolName === 'transition_to_dynamic_interview') {
-           const args = transitionQuestionSchema.parse(call.input);
-           db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run('INTERVIEW_DYNAMIC', sessionId);
-           finalReply = args.next_question || text || "Let's dive deeper into that memory. What do you see?";
-        } else if (call.toolName === 'transition_to_pre_production') {
-           const args = transitionAnnouncementSchema.parse(call.input);
-           db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run('PRE_PRODUCTION', sessionId);
-           finalReply = args.announcement || text || "This is great. Let's start building the scenes.";
-        } else if (call.toolName === 'request_protagonist_photo') {
-           const args = protagonistRequestSchema.parse(call.input);
-           db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run('AWAITING_SELFIE', sessionId);
-           finalReply = args.request_text || text || "Before we finalize, could you share a photo of yourself to serve as our main character?";
+        if (call.toolName === 'update_profile_bucket') {
+           const args = updateProfileBucketSchema.parse(call.input);
+           const updatedBucket = applyProfileBucketUpdate(db, sessionId, args);
+           advanceInterviewStatus(session, updatedBucket);
+           finalReply = text || args.directorReply || finalReply;
+        } else if (call.toolName === 'request_reference_upload') {
+           const args = requestReferenceUploadSchema.parse(call.input);
+           createReferenceUploadRequest(db, sessionId, args);
+           finalReply = text || args.promptText;
+        } else if (call.toolName === 'save_reference_description') {
+           const args = saveReferenceDescriptionSchema.parse(call.input);
+           saveReferenceDescription(db, sessionId, args);
+           db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+             .run('INTERVIEW_DYNAMIC', sessionId);
+           finalReply = text || args.directorReply || finalReply;
         } else if (call.toolName === 'generate_memory_sketch') {
            const args = memorySketchSchema.parse(call.input);
-           let imageUrl = `https://picsum.photos/seed/${Math.random()}/800/450`; // fallback
+           if (args.protagonistVisible !== false && !hasProtagonistReferenceDecision(db, sessionId)) {
+             createReferenceUploadRequest(db, sessionId, {
+               targetType: 'protagonist',
+               targetLabel: session.user_name || 'protagonist',
+               promptText: protagonistReferencePrompt(session),
+               reason: 'A protagonist reference can help keep the person on screen emotionally and visually consistent.',
+               fallbackPrompt: 'No problem if you would rather not upload one. Could you describe how the protagonist should appear instead?',
+             });
+             finalReply = protagonistReferencePrompt(session);
+             continue;
+           }
+
+           let imageUrl = ''; 
+           let sketchError = '';
+           recordMemorySketch(db, sessionId, {
+             candidateId: args.candidateId,
+             title: args.title,
+             description: args.description,
+             visualPrompt: args.visualPrompt,
+           });
            
            // Immediately broadcast that we are generating an image to show loading skeleton
            broadcastSessionUpdate(sessionId, { 
              chat_history: [
-                ...historyRows as ChatHistoryRow[], 
+                ...historyRows, 
                 {
-                   id: 'temp-loading',
+                   id: assistantMessageId,
                    session_id: sessionId,
                    role: 'assistant',
-                   content: 'trying to generate an image of your memory..',
+                   content: text ? text + '\n\ntrying to generate an image of your memory..' : 'trying to generate an image of your memory..',
                    options: null,
                    created_at: new Date().toISOString()
                 }
@@ -83,49 +275,89 @@ export async function processInterviewTurn(sessionId: string) {
            });
 
            try {
-             if (process.env.RUNWAYML_API_SECRET) {
-               const ratio = session.aspect_ratio === '9:16' ? '1088:1920' : '1920:1088';
-               const task = await runwayClient.textToImage.create({
-                 // @ts-ignore
-                 model: 'gpt_image_2',
-                 promptText: args.visual_prompt || "Cinematic memory sketch",
-                 quality: 'low',
-                 ratio: ratio as any,
-               }).waitForTaskOutput();
-               if (task.output && task.output[0]) {
-                 imageUrl = task.output[0];
-               }
+             const imageAsset = await generateImageAsset({
+               promptText: args.visualPrompt,
+               quality: 'low',
+               ratio: imageRatio(session.aspect_ratio),
+               sessionId,
+             });
+             imageUrl = imageAsset.localUrl;
+
+             if (imageUrl) {
+               recordMemorySketch(db, sessionId, {
+                 candidateId: args.candidateId,
+                 title: args.title,
+                 description: args.description,
+                 visualPrompt: args.visualPrompt,
+                 sketchUrl: imageUrl,
+               });
+               createReferenceAsset(db, sessionId, {
+                 localUrl: imageAsset.localUrl,
+                 targetType: 'sketch',
+                 targetLabel: args.title,
+                 visionDescription: args.description,
+                 usagePermissions: 'allowed',
+                 source: 'generated',
+               });
              }
            } catch (e) {
              console.error("RunwayML Sketch Error:", e);
+             sketchError = formatError(e);
            }
-           finalReply = (args.chat_message || text || "Here is a quick mockup of that scene.") + `\n\n[Mockup: ${imageUrl}]`;
-        } else if (call.toolName === 'lock_script_and_proceed') {
-           const args = lockScriptSchema.parse(call.input);
-           const insertScene = db.prepare(`
-              INSERT INTO scenes (id, session_id, scene_index, narrator_text, visual_prompt, video_prompt, image_prompt, duration, status)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `);
+           
+           const sketchText = imageUrl ? `\n\n[Sketch: ${imageUrl}]` : '';
+           const transitionText = "I made a first sketch of that memory. Does this feel emotionally close?";
+           const failureText = sketchError ? `I could not generate that memory sketch yet: ${sketchError}` : transitionText;
+           const visibleSketchMessage = sketchError ? failureText : (args.chatMessage || transitionText);
+           
+           if (text) {
+              finalReply = text + "\n\n" + visibleSketchMessage + sketchText;
+           } else {
+              finalReply = visibleSketchMessage + sketchText;
+           }
+        } else if (call.toolName === 'save_sketch_feedback') {
+           const args = saveSketchFeedbackSchema.parse(call.input);
+           saveSketchFeedback(db, sessionId, args);
+           finalReply = text || args.directorReply || finalReply;
+        } else if (call.toolName === 'propose_scene_outline') {
+           const args = proposeSceneOutlineSchema.parse(call.input);
+           const needsProtagonistReference = args.scenes.some((scene) => scene.protagonistVisible !== false);
+           if (needsProtagonistReference && !hasProtagonistReferenceDecision(db, sessionId)) {
+             createReferenceUploadRequest(db, sessionId, {
+               targetType: 'protagonist',
+               targetLabel: session.user_name || 'protagonist',
+               promptText: protagonistReferencePrompt(session),
+               reason: 'The outline includes scenes where the protagonist appears.',
+               fallbackPrompt: 'No problem if you would rather not upload one. Could you describe how the protagonist should appear instead?',
+             });
+             finalReply = protagonistReferencePrompt(session);
+             continue;
+           }
 
-            const trx = db.transaction(() => {
-              if (args.scenes && Array.isArray(args.scenes)) {
-                args.scenes.forEach((scene, index) => {
-                  insertScene.run(uuidv4(), sessionId, index, scene.narrator_text || '', scene.video_prompt || '', scene.video_prompt || '', scene.image_prompt || '', scene.duration || 5, 'pending');
-                });
-              }
-              db.prepare('UPDATE sessions SET status = ? WHERE id = ?').run('GENERATING_IMAGES', sessionId);
-            });
-            trx();
+           proposeSceneOutline(db, sessionId, args);
+           finalReply = text || args.directorReply || args.chatMessage || finalReply;
+        } else if (call.toolName === 'revise_scene_outline') {
+           const args = reviseSceneOutlineSchema.parse(call.input);
+           reviseSceneOutline(db, sessionId, args);
+           finalReply = text || args.directorReply || finalReply;
+        } else if (call.toolName === 'lock_scene_outline') {
+           lockSceneOutlineSchema.parse(call.input);
+           lockSceneOutlineForProduction(db, sessionId);
 
             // Fire off phase 1 of generation (Images only)
             generateImagesPhase(sessionId).catch(console.error);
 
-            finalReply = "Perfect. The cameras are rolling. Let me synthesize the first visual memories for your approval.";
+            const productionMessage = "Perfect. I am moving from outline into production now. You will see each scene come to life as the cut takes shape.";
+            finalReply = text ? `${text}\n\n${productionMessage}` : productionMessage;
         }
       }
     }
 
-    if (finalReply && finalReply !== 'trying to generate an image of your memory..') {
+    if (!finalReply?.trim()) {
+      finalReply = await generateDirectorContinuation(sessionId, messages);
+    }
+
+    if (finalReply && !finalReply.includes('trying to generate an image of your memory..')) {
       let optionsStr = null;
       const optionsMatch = finalReply.match(/\[OPTIONS\]([\s\S]*)/i);
       if (optionsMatch) {
@@ -134,20 +366,28 @@ export async function processInterviewTurn(sessionId: string) {
         finalReply = finalReply.replace(/\[OPTIONS\]([\s\S]*)/i, '').trim();
       }
 
-      // Save assistant message
+      // Save assistant message using the same assistantMessageId we streamed with
       db.prepare('INSERT INTO chat_history (id, session_id, role, content, options) VALUES (?, ?, ?, ?, ?)')
-        .run(uuidv4(), sessionId, 'assistant', finalReply, optionsStr);
+        .run(assistantMessageId, sessionId, 'assistant', finalReply, optionsStr);
 
-      const sessionUpdate = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
-      
-      broadcastSessionUpdate(sessionId, { 
-          session: sessionUpdate as SessionRow,
-          chat_history: db.prepare('SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ChatHistoryRow[],
-          scenes: db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[],
-      });
+      broadcastSessionUpdate(sessionId, getFullSessionUpdate(sessionId));
     }
 
   } catch (error) {
     console.error('Interview turn failed:', error);
+    const assistantMessageId = uuidv4();
+    const finalReply = 'I lost the thread for a moment. Please send that last answer again, and I will pick it up carefully.';
+
+    try {
+      db.prepare('INSERT INTO chat_history (id, session_id, role, content, options) VALUES (?, ?, ?, ?, ?)')
+        .run(assistantMessageId, sessionId, 'assistant', finalReply, null);
+
+      broadcastSessionUpdate(sessionId, {
+        ...getFullSessionUpdate(sessionId),
+        error: formatError(error),
+      });
+    } catch (broadcastError) {
+      console.error('Failed to persist interview failure message:', broadcastError);
+    }
   }
 }

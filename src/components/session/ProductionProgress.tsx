@@ -1,0 +1,139 @@
+'use client';
+
+import Image from 'next/image';
+import { AlertTriangle, Download, RefreshCw } from 'lucide-react';
+import RemotionPreview from '@/components/RemotionPreview';
+import type { SceneRow, SessionRow } from '@/lib/types';
+
+type ProductionProgressProps = {
+  session: SessionRow;
+  scenes: SceneRow[];
+  pipelineError: string | null;
+  onRetry: () => void;
+  onRenderFinal: () => void;
+  onOpenImage: (url: string) => void;
+};
+
+function sceneStatusLabel(scene: SceneRow) {
+  if (scene.status === 'failed') return 'Needs another pass';
+  if (scene.status === 'completed' || scene.video_url) return 'Complete';
+  if (scene.status === 'generating_video') return 'Filming';
+  if (scene.status === 'awaiting_approval' || scene.reference_image_url) return 'Frame ready';
+  if (scene.status === 'generating_image') return 'Composing frame';
+  return 'Queued';
+}
+
+export default function ProductionProgress({ session, scenes, pipelineError, onRetry, onRenderFinal, onOpenImage }: ProductionProgressProps) {
+  const isProductionPhase = ['GENERATING_IMAGES', 'AWAITING_APPROVAL', 'GENERATING_FINAL_ASSETS', 'PREVIEW_READY', 'RENDERING', 'COMPLETED'].includes(session.status);
+  if (!isProductionPhase && session.status !== 'FAILED') return null;
+
+  const completedScenes = scenes.filter((scene) => scene.status === 'completed' || scene.video_url).length;
+  const imagedScenes = scenes.filter((scene) => scene.reference_image_url).length;
+  const totalScenes = Math.max(scenes.length, 1);
+
+  const copy = (() => {
+    if (session.status === 'GENERATING_IMAGES') return { eyebrow: 'First pass', title: 'Composing scene frames', body: 'The first still images are taking shape. Each scene will fill in as its frame is ready.' };
+    if (session.status === 'GENERATING_FINAL_ASSETS') return { eyebrow: 'Second pass', title: 'Filming and narration', body: 'The approved frames are becoming moving scenes with voiceover.' };
+    if (session.status === 'FAILED') return { eyebrow: 'Production paused', title: 'One scene needs another pass', body: 'Nothing has been replaced with pretend media. Retry will continue from the missing piece.' };
+    if (session.status === 'PREVIEW_READY') return { eyebrow: 'Preview ready', title: "The Director's Cut", body: 'Your generated scenes are ready to watch.' };
+    if (session.status === 'RENDERING') return { eyebrow: 'Final pass', title: 'Preparing your film', body: 'The preview is becoming the final downloadable video.' };
+    return { eyebrow: 'Complete', title: 'Your film is ready', body: 'The final cut is ready to download.' };
+  })();
+
+  return (
+    <section className="mt-10 w-full pb-20">
+      <div className="mx-auto mb-8 max-w-4xl text-center">
+        <p className="mb-3 font-mono text-xs uppercase tracking-[0.35em] text-amber-100/45">{copy.eyebrow}</p>
+        <h2 className="font-serif text-3xl tracking-widest text-amber-100 md:text-4xl">{copy.title}</h2>
+        <p className="mx-auto mt-4 max-w-2xl font-sans text-sm leading-relaxed text-white/55">{copy.body}</p>
+
+        {(session.status === 'GENERATING_IMAGES' || session.status === 'GENERATING_FINAL_ASSETS') && (
+          <div className="mx-auto mt-6 max-w-xl">
+            <div className="flex justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-white/35">
+              <span>{session.status === 'GENERATING_IMAGES' ? `${imagedScenes}/${scenes.length || 0} frames ready` : `${completedScenes}/${scenes.length || 0} scenes complete`}</span>
+              <span>{session.status === 'GENERATING_IMAGES' ? 'image pass' : 'motion pass'}</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-amber-200 transition-all duration-700"
+                style={{ width: `${session.status === 'GENERATING_IMAGES' ? (imagedScenes / totalScenes) * 100 : (completedScenes / totalScenes) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {(session.status === 'FAILED' || pipelineError) && (
+        <div className="mx-auto mb-10 max-w-3xl rounded-xl border border-red-400/30 bg-red-950/30 p-5 shadow-[0_0_40px_rgba(248,113,113,0.12)]">
+          <div className="flex items-start gap-4">
+            <AlertTriangle className="mt-1 text-red-200" size={22} />
+            <div className="flex-1">
+              <p className="font-mono text-xs uppercase tracking-[0.25em] text-red-100/70">Paused</p>
+              <p className="mt-2 font-sans text-sm leading-relaxed text-red-50/80">{pipelineError || 'One scene could not be completed.'}</p>
+            </div>
+            <button type="button" onClick={onRetry} className="flex items-center gap-2 rounded-full border border-red-200/30 bg-white/10 px-4 py-2 font-mono text-xs uppercase tracking-widest text-red-50 transition-colors hover:bg-red-100 hover:text-black">
+              <RefreshCw size={14} /> Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(session.status === 'PREVIEW_READY' || session.status === 'RENDERING' || session.status === 'COMPLETED') ? (
+        <div className="flex flex-col items-center gap-8">
+          <RemotionPreview scenes={scenes} />
+          {session.status === 'PREVIEW_READY' && (
+            <button type="button" onClick={onRenderFinal} className="flex items-center gap-3 rounded-full bg-white px-8 py-4 font-bold uppercase tracking-widest text-black shadow-[0_0_30px_rgba(255,255,255,0.4)] transition-colors hover:bg-amber-100">
+              <Download size={20} /> Prepare Final Film
+            </button>
+          )}
+          {session.status === 'RENDERING' && (
+            <div className="flex flex-col items-center gap-4 font-mono text-sm text-amber-200/70">
+              <div className="h-12 w-12 animate-spin rounded-full border-t-2 border-amber-200" />
+              Preparing the final cut...
+            </div>
+          )}
+          {session.status === 'COMPLETED' && (
+            <button type="button" className="flex items-center gap-3 rounded-full border border-green-500/50 bg-green-500/20 px-8 py-4 font-bold uppercase tracking-widest text-green-100 transition-colors hover:bg-green-500/30">
+              <Download size={20} /> Download Film
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {scenes.length > 0 ? scenes.map((scene) => (
+            <div key={scene.id} className="flex flex-col gap-4 rounded-lg border border-white/10 bg-white/5 p-4">
+              <div className={`relative flex items-center justify-center overflow-hidden border border-white/5 bg-black/50 ${session.aspect_ratio === '9:16' ? 'aspect-[9/16]' : 'aspect-video'}`}>
+                <div className="absolute left-3 top-3 z-10 rounded-full border border-white/10 bg-black/55 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/65 backdrop-blur-md">{sceneStatusLabel(scene)}</div>
+                {scene.reference_image_url ? (
+                  <button type="button" className="relative h-full w-full" onClick={() => onOpenImage(scene.reference_image_url!)}>
+                    <Image src={scene.reference_image_url} alt="Scene frame" fill unoptimized sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw" className="object-cover" />
+                  </button>
+                ) : (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-4 w-4 animate-spin rounded-full border-t border-amber-200/50" />
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-white/30">Drafting scene...</p>
+                  </div>
+                )}
+                {scene.status === 'failed' && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-red-950/80 px-4 text-center backdrop-blur-sm">
+                    <AlertTriangle size={28} className="text-red-100" />
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-red-50/80">Needs another pass</p>
+                  </div>
+                )}
+              </div>
+              <p className="line-clamp-3 font-mono text-xs text-white/50">{scene.narrator_text}</p>
+            </div>
+          )) : (
+            Array.from({ length: 3 }).map((_, idx) => (
+              <div key={idx} className="flex animate-pulse flex-col gap-4 rounded-lg border border-white/10 bg-white/5 p-4">
+                <div className={`rounded bg-white/5 ${session.aspect_ratio === '9:16' ? 'aspect-[9/16]' : 'aspect-video'}`} />
+                <div className="h-3 w-3/4 rounded bg-white/10" />
+                <div className="h-3 w-1/2 rounded bg-white/10" />
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

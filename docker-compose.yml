@@ -7,6 +7,7 @@ services:
       - "3000:3000"
     volumes:
       - ./public/uploads:/app/public/uploads
+      - ./public/generated:/app/public/generated
       - ./data:/app/data
     environment:
       - NODE_ENV=production

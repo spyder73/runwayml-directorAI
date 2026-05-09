@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { initializeStoryBucketTables } from './story-bucket';
 
 const dataDir = path.join(process.cwd(), 'data');
 if (!fs.existsSync(dataDir)) {
@@ -45,6 +46,7 @@ db.exec(`
     video_url TEXT,
     audio_url TEXT,
     status TEXT DEFAULT 'pending',
+    is_protagonist_visible BOOLEAN DEFAULT 1,
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
 `);
@@ -52,6 +54,7 @@ try { db.exec("ALTER TABLE scenes ADD COLUMN image_prompt TEXT"); } catch {}
 try { db.exec("ALTER TABLE scenes ADD COLUMN video_prompt TEXT"); } catch {}
 try { db.exec("ALTER TABLE scenes ADD COLUMN duration INTEGER"); } catch {}
 try { db.exec("ALTER TABLE scenes ADD COLUMN scene_references TEXT"); } catch {}
+try { db.exec("ALTER TABLE scenes ADD COLUMN is_protagonist_visible BOOLEAN DEFAULT 1"); } catch {}
 
 db.exec(`
 
@@ -75,5 +78,7 @@ db.exec(`
 `);
 try { db.exec("ALTER TABLE chat_history ADD COLUMN options TEXT"); } catch {}
 try { db.exec("ALTER TABLE user_uploads ADD COLUMN vision_description TEXT"); } catch {}
+
+initializeStoryBucketTables(db);
 
 export default db;

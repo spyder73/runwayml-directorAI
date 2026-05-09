@@ -4,9 +4,15 @@ import path from 'path';
 import fs from 'fs/promises';
 import db from '@/lib/db';
 import { processInterviewTurn } from '@/lib/pipeline';
-import type { SessionRow } from '@/lib/types';
+import type { ChatHistoryRow, SessionRow } from '@/lib/types';
 import { generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { broadcastSessionUpdate } from '@/lib/sse';
+import {
+  createReferenceAsset,
+  getActiveReferenceRequest,
+  loadStoryBucket,
+} from '@/lib/story-bucket';
 
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -31,7 +37,7 @@ export async function POST(req: NextRequest) {
     await fs.mkdir(uploadDir, { recursive: true });
 
     const uploadedPaths: string[] = [];
-    const visionDescriptions: string[] = [];
+    const activeRequest = getActiveReferenceRequest(db, sessionId);
 
     // Save files locally
     for (const file of files) {
@@ -64,34 +70,50 @@ export async function POST(req: NextRequest) {
             ]
          });
          visionDescription = text;
-         visionDescriptions.push(text);
       } catch (e) {
          console.error('Vision inference failed:', e);
       }
 
       db.prepare('INSERT INTO user_uploads (id, session_id, file_path, vision_description) VALUES (?, ?, ?, ?)')
         .run(uuidv4(), sessionId, filePath, visionDescription);
+
+      const targetType = activeRequest?.target_type || (session.status === 'AWAITING_SELFIE' ? 'protagonist' : 'reference');
+      const targetLabel = activeRequest?.target_label || (targetType === 'protagonist' ? 'protagonist' : 'reference');
+      createReferenceAsset(db, sessionId, {
+        localUrl: filePath,
+        targetType,
+        targetLabel,
+        visionDescription,
+        usagePermissions: 'allowed',
+        source: 'upload',
+      });
         
       uploadedPaths.push(filePath);
     }
 
     if (uploadedPaths.length > 0) {
-       const userMsg = uploadedPaths.map((p, i) => {
-         let msg = `[Image: ${p}]`;
-         if (visionDescriptions[i]) {
-            msg += `\n*Vision Analysis: ${visionDescriptions[i]}*`;
-         }
-         return msg;
-       }).join('\n\n');
+       const userMsg = uploadedPaths.map((p) => `[Image: ${p}]`).join('\n\n');
 
+       const messageId = uuidv4();
        db.prepare('INSERT INTO chat_history (id, session_id, role, content) VALUES (?, ?, ?, ?)')
-        .run(uuidv4(), sessionId, 'user', `*User uploaded ${uploadedPaths.length} photo(s)*\n\n${userMsg}`);
+        .run(messageId, sessionId, 'user', userMsg);
         
-       if (session.status === 'AWAITING_SELFIE') {
+       if (session.status === 'AWAITING_SELFIE' || activeRequest?.target_type === 'protagonist') {
            db.prepare('UPDATE sessions SET user_selfie_url = ? WHERE id = ?').run(uploadedPaths[0], sessionId);
-       } else if (session.status === 'PRE_PRODUCTION') {
-           // just log it
        }
+
+       if (session.status === 'AWAITING_SELFIE' || session.status === 'AWAITING_REFERENCE') {
+           db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('INTERVIEW_DYNAMIC', sessionId);
+       }
+
+       const updatedSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow;
+       const chatHistory = db.prepare('SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ChatHistoryRow[];
+       broadcastSessionUpdate(sessionId, {
+         session: updatedSession,
+         chat_history: chatHistory,
+         story_bucket: loadStoryBucket(db, sessionId),
+         active_reference_request: getActiveReferenceRequest(db, sessionId) || null,
+       });
        
        processInterviewTurn(sessionId).catch(console.error);
     }

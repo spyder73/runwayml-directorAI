@@ -2,24 +2,40 @@
 import { Player } from '@remotion/player';
 import { MainComposition } from '@/remotion/MainComposition';
 import { motion } from 'framer-motion';
+import { useMemo } from 'react';
 import type { SceneRow } from '@/lib/types';
 
 export default function RemotionPreview({ scenes }: { scenes: SceneRow[] }) {
   const fps = 30;
-  // Assume each scene is 5 seconds for now
-  const sceneDurationInFrames = 5 * fps;
 
-  // We need valid scenes to play
-  const validScenes = scenes.flatMap((scene) => {
-    if (!scene.video_url) return [];
+  const { validScenes, totalDurationFrames } = useMemo(() => {
+    const parsedScenes = scenes.flatMap((scene) => {
+      if (!scene.video_url) return [];
 
-    return [{
-      id: scene.id,
-      video_url: scene.video_url,
-      audio_url: scene.audio_url ?? '',
-      narrator_text: scene.narrator_text,
-    }];
-  });
+      let parsedUrls: string[] = [];
+      try {
+        const parsed = JSON.parse(scene.video_url) as unknown;
+        parsedUrls = Array.isArray(parsed) ? parsed.filter((url): url is string => typeof url === 'string') : [];
+      } catch {
+        parsedUrls = [scene.video_url];
+      }
+
+      const duration_in_frames = Math.ceil((scene.duration || 5) * fps);
+
+      return [{
+        id: scene.id,
+        video_urls: parsedUrls,
+        audio_url: scene.audio_url ?? '',
+        narrator_text: scene.narrator_text,
+        duration_in_frames,
+      }];
+    });
+
+    return {
+      validScenes: parsedScenes,
+      totalDurationFrames: parsedScenes.reduce((total, scene) => total + scene.duration_in_frames, 0),
+    };
+  }, [scenes]);
 
   return (
     <motion.div 
@@ -38,7 +54,7 @@ export default function RemotionPreview({ scenes }: { scenes: SceneRow[] }) {
           <Player
             component={MainComposition}
             inputProps={{ scenes: validScenes }}
-            durationInFrames={validScenes.length * sceneDurationInFrames}
+            durationInFrames={totalDurationFrames > 0 ? totalDurationFrames : 1}
             compositionWidth={1280}
             compositionHeight={720}
             fps={fps}
