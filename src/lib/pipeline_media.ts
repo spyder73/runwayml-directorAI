@@ -25,7 +25,7 @@ import {
   videoRatio,
   type RunwayReferenceImage,
 } from './runway';
-import { planShots } from './shot_planner';
+import { planShots, type ShotPlan } from './shot_planner';
 import { broadcastSessionUpdate } from './sse';
 import type { ReferenceAssetRow, SceneRow, SessionRow } from './types';
 
@@ -94,6 +94,8 @@ function getScene(database: SqliteDatabase, sceneId: string | null) {
 function sceneShowsProtagonist(scene: SceneRow) {
   return scene.is_protagonist_visible === 1 || scene.is_protagonist_visible === true;
 }
+
+const OPENING_FRAME_REFERENCE_TAG = 'opening_frame';
 
 async function loadReferenceImages(assets: Array<Pick<ReferenceAssetRow, 'runway_uri' | 'local_url' | 'stable_tag'>>) {
   const referenceImages: RunwayReferenceImage[] = [];
@@ -341,6 +343,44 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
   return audioAsset.localUrl;
 }
 
+export function buildContinuityReferencePrompt(shot: ShotPlan, shotIndex: number) {
+  const basePrompt = shot.referencePrompt || shot.prompt;
+  return [
+    `Use @${OPENING_FRAME_REFERENCE_TAG} as the continuity anchor from the first sub-scene of this scene.`,
+    `Create the still reference frame for sub-scene ${shotIndex + 1}.`,
+    basePrompt,
+    'The earlier motion has already happened, so preserve the logical story state and do not reset moving objects, vehicles, or characters to the opening positions unless the prompt explicitly returns there.',
+  ].join(' ');
+}
+
+async function generateContinuityReferenceImage(params: {
+  session: SessionRow;
+  shot: ShotPlan;
+  shotIndex: number;
+  openingReferenceImageUrl: string;
+}) {
+  const openingReference = await loadReferenceImage(params.openingReferenceImageUrl, OPENING_FRAME_REFERENCE_TAG);
+  const promptText = await ensureSafePrompt(buildContinuityReferencePrompt(params.shot, params.shotIndex));
+
+  assertRunwayImagePrompt({
+    promptText,
+    referenceImages: [openingReference],
+  });
+
+  const imageAsset = await generateImageAsset({
+    promptText,
+    quality: FINAL_IMAGE_QUALITY,
+    ratio: imageRatio(params.session.aspect_ratio),
+    referenceImages: [openingReference],
+    sessionId: params.session.id,
+  });
+
+  return {
+    promptText,
+    localUrl: imageAsset.localUrl,
+  };
+}
+
 async function executeVideoTask(params: { database: SqliteDatabase; task: MediaTaskRow; session: SessionRow }) {
   const { database, task, session } = params;
   const scene = getScene(database, task.scene_id);
@@ -367,16 +407,36 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
   const exactDuration = scene.duration || 5;
   const shots = await planShots(scene.video_prompt || scene.visual_prompt, exactDuration);
   const videoUrls: string[] = [];
-  const shotPlan: Array<{ duration: number; prompt: string; url: string }> = [];
+  const shotPlan: Array<{
+    duration: number;
+    prompt: string;
+    url: string;
+    reference_image_url: string;
+    reference_prompt?: string;
+  }> = [];
 
-  for (const shot of shots) {
+  for (const [shotIndex, shot] of shots.entries()) {
+    let promptImageUrl = scene.reference_image_url;
+    let referencePrompt = shot.referencePrompt;
+
+    if (shots.length > 1 && shotIndex > 0) {
+      const continuityReference = await generateContinuityReferenceImage({
+        session,
+        shot,
+        shotIndex,
+        openingReferenceImageUrl: scene.reference_image_url,
+      });
+      promptImageUrl = continuityReference.localUrl;
+      referencePrompt = continuityReference.promptText;
+    }
+
     const safePrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt));
     assertRunwayVideoPrompt({
       promptText: safePrompt,
       durationSeconds: shot.duration,
     });
     const videoAsset = await generateVideoAsset({
-      promptImageUrl: scene.reference_image_url,
+      promptImageUrl,
       promptText: safePrompt,
       ratio: videoRatio(session.aspect_ratio),
       duration: shot.duration,
@@ -387,6 +447,8 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       duration: shot.duration,
       prompt: safePrompt,
       url: videoAsset.localUrl,
+      reference_image_url: promptImageUrl,
+      ...(referencePrompt ? { reference_prompt: referencePrompt } : {}),
     });
   }
 

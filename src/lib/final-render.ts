@@ -1,4 +1,5 @@
-import { spawn } from 'child_process';
+import { bundle } from '@remotion/bundler';
+import { renderMedia, selectComposition } from '@remotion/renderer';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
@@ -24,13 +25,34 @@ type RenderInput = {
   tempo?: number;
 };
 
+type RemotionRenderClip = {
+  url: string;
+  duration_in_frames: number;
+};
+
+type RemotionRenderScene = {
+  id: string;
+  clips: RemotionRenderClip[];
+  audio_url: string;
+  audio_playback_rate?: number;
+  narrator_text: string;
+  duration_in_frames: number;
+};
+
 export type FinalRenderPlan = {
   publicUrl: string;
   outputFilePath: string;
   videoInputs: RenderInput[];
   audioInputs: RenderInput[];
-  filterGraph: string;
-  ffmpegArgs: string[];
+  remotionInputProps: { scenes: RemotionRenderScene[] };
+  composition: {
+    id: string;
+    width: number;
+    height: number;
+    fps: number;
+    durationInFrames: number;
+  };
+  entryPoint: string;
 };
 
 function normalizePublicUrl(url: string) {
@@ -43,6 +65,11 @@ function normalizePublicUrl(url: string) {
 
 function publicUrlToFilePath(publicUrl: string) {
   return path.join(process.cwd(), 'public', publicUrl.replace(/^\/+/, ''));
+}
+
+function remotionAssetUrl(publicUrl: string) {
+  if (!publicUrl.startsWith('/')) return publicUrl;
+  return `/public${publicUrl}`;
 }
 
 export function parseSceneVideoUrls(value: string | null) {
@@ -62,11 +89,9 @@ function dimensionsForAspectRatio(aspectRatio: AspectRatio) {
     : { width: 1280, height: 720 };
 }
 
+const FPS = 30;
 const MAX_NARRATION_TEMPO = 1.12;
-
-function formatFilterNumber(value: number) {
-  return value.toFixed(3).replace(/\.?0+$/, '');
-}
+const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
 
 function distributeDuration(totalDuration: number, count: number) {
   if (!Number.isFinite(totalDuration) || totalDuration <= 0 || count <= 0) return [];
@@ -108,74 +133,15 @@ function narrationTempo(audioDuration: number, targetDuration: number) {
   return Math.min(MAX_NARRATION_TEMPO, audioDuration / targetDuration);
 }
 
-function buildFilterGraph(params: {
-  videoInputs: RenderInput[];
-  audioInputs: RenderInput[];
-  aspectRatio: AspectRatio;
-}) {
-  const { width, height } = dimensionsForAspectRatio(params.aspectRatio);
-  const videoFilters = params.videoInputs.map((input, index) => {
-    const durationFilter = input.duration
-      ? `,tpad=stop_mode=clone:stop_duration=${formatFilterNumber(input.duration)},trim=0:${formatFilterNumber(input.duration)},setpts=PTS-STARTPTS`
-      : '';
-    return `[${index}:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1${durationFilter},fps=30,format=yuv420p[v${index}]`;
-  });
-  const videoConcat = `${params.videoInputs.map((_, index) => `[v${index}]`).join('')}concat=n=${params.videoInputs.length}:v=1:a=0[vout]`;
-
-  if (!params.audioInputs.length) {
-    return [...videoFilters, videoConcat].join(';');
-  }
-
-  const audioOffset = params.videoInputs.length;
-  const audioFilters = params.audioInputs.map((input, index) => {
-    const targetDuration = Math.max(0.1, input.targetDuration || input.duration || 2);
-    const tempoFilter = input.tempo && input.tempo > 1.001 ? `,atempo=${formatFilterNumber(input.tempo)}` : '';
-    return `[${audioOffset + index}:a]aresample=48000${tempoFilter},apad,atrim=0:${formatFilterNumber(targetDuration)},asetpts=PTS-STARTPTS[a${index}]`;
-  });
-  const audioConcat = `${params.audioInputs.map((_, index) => `[a${index}]`).join('')}concat=n=${params.audioInputs.length}:v=0:a=1[aout]`;
-
-  return [...videoFilters, videoConcat, ...audioFilters, audioConcat].join(';');
-}
-
-function buildFfmpegArgs(params: {
-  outputFilePath: string;
-  videoInputs: RenderInput[];
-  audioInputs: RenderInput[];
-  filterGraph: string;
-}) {
-  const inputArgs = [...params.videoInputs, ...params.audioInputs].flatMap((input) => ['-i', input.filePath]);
-  const audioArgs = params.audioInputs.length
-    ? ['-map', '[aout]', '-c:a', 'aac', '-b:a', '192k', '-shortest']
-    : ['-an'];
-
-  return [
-    '-y',
-    ...inputArgs,
-    '-filter_complex',
-    params.filterGraph,
-    '-map',
-    '[vout]',
-    ...audioArgs,
-    '-c:v',
-    'libx264',
-    '-preset',
-    'medium',
-    '-crf',
-    '20',
-    '-pix_fmt',
-    'yuv420p',
-    '-movflags',
-    '+faststart',
-    params.outputFilePath,
-  ];
-}
-
 export function buildFinalRenderPlan(params: {
   sessionId: string;
   aspectRatio: AspectRatio;
   scenes: RenderScene[];
 }): FinalRenderPlan {
   const orderedScenes = [...params.scenes].sort((a, b) => a.scene_index - b.scene_index);
+  const filename = `${randomUUID()}.mp4`;
+  const publicUrl = `/generated/final/${params.sessionId}/${filename}`;
+  const outputFilePath = publicUrlToFilePath(publicUrl);
   const scenePlans = orderedScenes.map((scene) => {
     const urls = parseSceneVideoUrls(scene.video_url);
     const durations = videoDurationsForScene(scene, urls.length);
@@ -213,19 +179,40 @@ export function buildFinalRenderPlan(params: {
         tempo: narrationTempo(audioDuration, targetDuration),
       };
     });
+  const { width, height } = dimensionsForAspectRatio(params.aspectRatio);
+  const remotionScenes = scenePlans.map((scenePlan) => {
+    const sceneDuration = scenePlan.videoDuration || scenePlan.scene.duration || 1;
+    const fallbackClipDuration = sceneDuration / Math.max(scenePlan.videoInputs.length, 1);
+    const audioInput = audioInputs.find((input) => input.sceneId === scenePlan.scene.id);
 
-  const filename = `${randomUUID()}.mp4`;
-  const publicUrl = `/generated/final/${params.sessionId}/${filename}`;
-  const outputFilePath = publicUrlToFilePath(publicUrl);
-  const filterGraph = buildFilterGraph({ videoInputs, audioInputs, aspectRatio: params.aspectRatio });
+    return {
+      id: scenePlan.scene.id,
+      clips: scenePlan.videoInputs.map((input) => ({
+        url: remotionAssetUrl(input.publicUrl),
+        duration_in_frames: Math.max(1, Math.ceil((input.duration || fallbackClipDuration) * FPS)),
+      })),
+      audio_url: scenePlan.scene.audio_url ? remotionAssetUrl(scenePlan.scene.audio_url) : '',
+      ...(audioInput?.tempo ? { audio_playback_rate: audioInput.tempo } : {}),
+      narrator_text: scenePlan.scene.narrator_text,
+      duration_in_frames: Math.max(1, Math.ceil(sceneDuration * FPS)),
+    };
+  });
+  const totalDurationFrames = remotionScenes.reduce((total, scene) => total + scene.duration_in_frames, 0);
 
   return {
     publicUrl,
     outputFilePath,
     videoInputs,
     audioInputs,
-    filterGraph,
-    ffmpegArgs: buildFfmpegArgs({ outputFilePath, videoInputs, audioInputs, filterGraph }),
+    remotionInputProps: { scenes: remotionScenes },
+    composition: {
+      id: REMOTION_COMPOSITION_ID,
+      width,
+      height,
+      fps: FPS,
+      durationInFrames: totalDurationFrames,
+    },
+    entryPoint: remotionEntryPoint(),
   };
 }
 
@@ -239,26 +226,46 @@ async function assertInputsExist(inputs: RenderInput[]) {
   }));
 }
 
-function runFfmpeg(args: string[]) {
-  const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg';
+function remotionBrowserExecutable() {
+  return process.env.REMOTION_BROWSER_EXECUTABLE || process.env.CHROME_BIN || null;
+}
 
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
+function remotionEntryPoint() {
+  return process.env.REMOTION_ENTRY_POINT || path.join(process.cwd(), 'src', 'remotion', 'Root.tsx');
+}
 
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
+async function runRemotionRender(plan: FinalRenderPlan) {
+  const serveUrl = await bundle({
+    entryPoint: plan.entryPoint,
+    publicDir: path.join(process.cwd(), 'public'),
+    enableCaching: true,
+  });
+  const browserExecutable = remotionBrowserExecutable() || undefined;
+  const selectedComposition = await selectComposition({
+    serveUrl,
+    id: plan.composition.id,
+    inputProps: plan.remotionInputProps,
+    ...(browserExecutable ? { browserExecutable } : {}),
+    logLevel: 'warn',
+  });
 
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`Final render failed with ffmpeg exit ${code}: ${stderr.slice(-1200)}`));
-    });
+  await renderMedia({
+    serveUrl,
+    composition: {
+      ...selectedComposition,
+      width: plan.composition.width,
+      height: plan.composition.height,
+      fps: plan.composition.fps,
+      durationInFrames: plan.composition.durationInFrames,
+    },
+    inputProps: plan.remotionInputProps,
+    codec: 'h264',
+    outputLocation: plan.outputFilePath,
+    overwrite: true,
+    crf: 20,
+    pixelFormat: 'yuv420p',
+    ...(browserExecutable ? { browserExecutable } : {}),
+    logLevel: 'warn',
   });
 }
 
@@ -270,7 +277,7 @@ export async function renderFinalFilm(params: {
   const plan = buildFinalRenderPlan(params);
   await fs.mkdir(path.dirname(plan.outputFilePath), { recursive: true });
   await assertInputsExist([...plan.videoInputs, ...plan.audioInputs]);
-  await runFfmpeg(plan.ffmpegArgs);
+  await runRemotionRender(plan);
   await fs.access(plan.outputFilePath);
   return {
     publicUrl: plan.publicUrl,

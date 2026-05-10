@@ -4,15 +4,16 @@ import { TransitionSeries, linearTiming } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { AnimatedSubtitles } from './components/AnimatedSubtitles';
 
-type Scene = {
+export type RemotionScene = {
   id: string;
   clips: Array<{ url: string; duration_in_frames: number }>;
   audio_url: string;
+  audio_playback_rate?: number;
   narrator_text: string;
   duration_in_frames: number;
 };
 
-export const MainComposition = ({ scenes }: { scenes: Scene[] }) => {
+export const MainComposition = ({ scenes }: { scenes: RemotionScene[] }) => {
   const children: React.ReactNode[] = [];
 
   scenes.forEach((scene, i) => {
@@ -35,7 +36,7 @@ export const MainComposition = ({ scenes }: { scenes: Scene[] }) => {
           })}
 
           {scene.audio_url && (
-            <Audio src={scene.audio_url} />
+            <Audio src={scene.audio_url} playbackRate={scene.audio_playback_rate || 1} />
           )}
           
           <AnimatedSubtitles text={scene.narrator_text} durationInFrames={scene.duration_in_frames} />
@@ -55,7 +56,7 @@ export const MainComposition = ({ scenes }: { scenes: Scene[] }) => {
   });
 
   return (
-    <AbsoluteFill className="bg-black">
+    <AbsoluteFill style={{ backgroundColor: 'black' }}>
       <TransitionSeries>
         {children}
       </TransitionSeries>

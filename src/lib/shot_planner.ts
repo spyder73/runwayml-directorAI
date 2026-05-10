@@ -9,14 +9,20 @@ const openrouter = createOpenRouter({
 export type ShotPlan = {
   duration: number;
   prompt: string;
+  referencePrompt?: string;
 };
 
 const shotPlanSchema = z.object({
   shots: z.array(z.object({
     duration: z.number().describe('Duration in seconds (2 to 10)'),
     prompt: z.string().describe('Cinematic prompt for this specific shot'),
+    reference_prompt: z.string().optional().describe('Still-image prompt for the reference frame at the start of this shot'),
   })),
 });
+
+type ProposedShotPlan = ShotPlan & {
+  reference_prompt?: string;
+};
 
 function clampShotDuration(duration: number) {
   return Math.max(2, Math.min(10, Math.round(duration)));
@@ -66,7 +72,7 @@ function rebalanceDurations(durations: number[], totalDuration: number) {
 export function normalizeShotPlan(
   visualPrompt: string,
   durationSeconds: number,
-  proposedShots?: ShotPlan[],
+  proposedShots?: ProposedShotPlan[],
 ): ShotPlan[] {
   const totalDuration = Math.max(2, Math.ceil(durationSeconds));
   const safePrompt = visualPrompt.trim() || 'Cinematic emotional memory scene.';
@@ -76,6 +82,12 @@ export function normalizeShotPlan(
     return boundedDurations.map((duration, index) => ({
       duration,
       prompt: index === 0 ? safePrompt : `${safePrompt} Alternate cinematic angle ${index + 1}.`,
+      referencePrompt: continuityReferencePrompt({
+        visualPrompt: safePrompt,
+        shotPrompt: index === 0 ? safePrompt : `${safePrompt} Alternate cinematic angle ${index + 1}.`,
+        previousShotPrompts: index === 0 ? [] : [safePrompt],
+        index,
+      }),
     }));
   }
 
@@ -89,7 +101,60 @@ export function normalizeShotPlan(
   return boundedDurations.map((duration, index) => ({
     duration,
     prompt: usableShots[index]?.prompt?.trim() || fallbackPrompt,
+    referencePrompt: referencePromptForShot({
+      visualPrompt: safePrompt,
+      shot: usableShots[index],
+      fallbackPrompt,
+      previousShotPrompts: usableShots.slice(0, index).map((shot) => shot.prompt.trim()).filter(Boolean),
+      index,
+    }),
   }));
+}
+
+function referencePromptForShot(params: {
+  visualPrompt: string;
+  shot: ProposedShotPlan | undefined;
+  fallbackPrompt: string;
+  previousShotPrompts: string[];
+  index: number;
+}) {
+  const proposed = params.shot?.referencePrompt || params.shot?.reference_prompt;
+  if (proposed?.trim()) return proposed.trim();
+
+  return continuityReferencePrompt({
+    visualPrompt: params.visualPrompt,
+    shotPrompt: params.shot?.prompt?.trim() || params.fallbackPrompt,
+    previousShotPrompts: params.previousShotPrompts,
+    index: params.index,
+  });
+}
+
+function continuityReferencePrompt(params: {
+  visualPrompt: string;
+  shotPrompt: string;
+  previousShotPrompts: string[];
+  index: number;
+}) {
+  if (params.index === 0) {
+    return [
+      'Opening still reference frame for the first sub-scene.',
+      `Base scene: ${params.visualPrompt}`,
+      `This shot begins with: ${params.shotPrompt}`,
+      'Show the scene before this shot motion begins.',
+    ].join(' ');
+  }
+
+  const previousAction = params.previousShotPrompts.length
+    ? params.previousShotPrompts.join(' Then ')
+    : params.visualPrompt;
+
+  return [
+    `Continuation still reference frame for sub-scene ${params.index + 1}, after the previous action already occurred.`,
+    `Base scene: ${params.visualPrompt}`,
+    `Previous action/state: ${previousAction}`,
+    `This shot begins with: ${params.shotPrompt}`,
+    'Show what is now present at the start of this sub-scene; do not reset moving objects, vehicles, or characters to their opening positions unless the current shot explicitly says so.',
+  ].join(' ');
 }
 
 function parseShotPlanJson(text: string) {
@@ -182,7 +247,9 @@ export async function planShots(visualPrompt: string, durationSeconds: number) {
 Your job is to decide if this scene should be one continuous shot or cut into multiple angles.
 Since AI video generators work best between 2 to 10 seconds, you must break down the total duration into a list of shots.
 Each shot must have a specific duration (between 2 and 10 seconds), and the sum of all shot durations must exactly equal the total duration provided.
-For each shot, provide a slightly adjusted cinematic prompt to reflect the camera angle or action (e.g. "Close up of...", "Wide shot of...").`,
+For each shot, provide a slightly adjusted cinematic prompt to reflect the camera angle or action (e.g. "Close up of...", "Wide shot of...").
+For each shot, also provide reference_prompt: a still-image prompt for the exact starting frame of that shot.
+For shot 1, describe the opening state. For later shots, reason about what remains or has changed after previous shots have already happened, and do not reset moving objects or characters to the opening position unless the story explicitly returns there.`,
       prompt: `Visual Description: ${visualPrompt}\nTotal Duration: ${durationSeconds.toFixed(1)} seconds. Break this down into shots.`,
       schema: shotPlanSchema,
     });

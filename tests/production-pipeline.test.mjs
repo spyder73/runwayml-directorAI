@@ -36,6 +36,21 @@ test('shot planner parses prose shot breakdowns when structured JSON generation 
   assert.match(shots[1].prompt, /blue suitcase/);
 });
 
+test('shot planner adds continuity image prompts for split scenes', () => {
+  const { normalizeShotPlan } = jiti('../src/lib/shot_planner.ts');
+
+  const shots = normalizeShotPlan('A train passes by on a rainy station platform.', 8, [
+    { duration: 4, prompt: 'Wide shot as the train pulls away from the platform.' },
+    { duration: 4, prompt: 'Reverse angle on the platform after the train has passed.' },
+  ]);
+
+  assert.equal(shots.length, 2);
+  assert.match(shots[0].referencePrompt, /opening|first/i);
+  assert.match(shots[1].referencePrompt, /continuation|previous/i);
+  assert.match(shots[1].referencePrompt, /train/i);
+  assert.match(shots[1].referencePrompt, /already occurred|do not reset/i);
+});
+
 test('production references choose consented tagged assets and append prompt tags', () => {
   const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
 
@@ -57,7 +72,7 @@ test('production references choose consented tagged assets and append prompt tag
   assert.doesNotMatch(references.promptText, /@denied_01/);
 });
 
-test('final render plan produces a real ffmpeg output path and command inputs', () => {
+test('final render plan produces a real output path and Remotion inputs', () => {
   const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
 
   const plan = buildFinalRenderPlan({
@@ -83,9 +98,37 @@ test('final render plan produces a real ffmpeg output path and command inputs', 
     '/generated/video/session-1/shot-2.mp4',
   ]);
   assert.deepEqual(plan.audioInputs.map((input) => input.publicUrl), ['/generated/audio/session-1/scene-1.mp3']);
-  assert.match(plan.filterGraph, /crop=720:1280/);
-  assert.match(plan.filterGraph, /trim=0:3/);
-  assert.match(plan.filterGraph, /trim=0:5/);
+  assert.equal(plan.composition.width, 720);
+  assert.equal(plan.composition.height, 1280);
+  assert.equal(plan.remotionInputProps.scenes[0].clips[0].url, '/public/generated/video/session-1/shot-1.mp4');
+  assert.equal(plan.remotionInputProps.scenes[0].audio_url, '/public/generated/audio/session-1/scene-1.mp3');
+  assert.deepEqual(plan.remotionInputProps.scenes[0].clips.map((clip) => clip.duration_in_frames), [90, 150]);
+  assert.equal(plan.remotionInputProps.scenes[0].duration_in_frames, 240);
+});
+
+test('final render plan sends readable subtitles into the Remotion composition', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+
+  const plan = buildFinalRenderPlan({
+    sessionId: 'session-1',
+    aspectRatio: '16:9',
+    scenes: [
+      {
+        id: 'scene-1',
+        scene_index: 0,
+        narrator_text: 'The train was already leaving, and the platform felt impossibly quiet.',
+        video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4']),
+        shot_plan_json: JSON.stringify([{ duration: 6 }]),
+        audio_url: '/generated/audio/session-1/scene-1.mp3',
+        duration: 6,
+      },
+    ],
+  });
+
+  assert.equal(plan.remotionInputProps.scenes.length, 1);
+  assert.match(plan.remotionInputProps.scenes[0].narrator_text, /train was already leaving/);
+  assert.equal(plan.remotionInputProps.scenes[0].duration_in_frames, 180);
+  assert.equal(plan.composition.id, 'LifeStoryFilm');
 });
 
 test('final render plan gently speeds narration when it is longer than planned clip time', () => {
@@ -109,8 +152,8 @@ test('final render plan gently speeds narration when it is longer than planned c
 
   assert.equal(plan.audioInputs[0].targetDuration, 6);
   assert.ok(plan.audioInputs[0].tempo && plan.audioInputs[0].tempo > 1);
-  assert.match(plan.filterGraph, /atempo=1\.067/);
-  assert.match(plan.filterGraph, /atrim=0:6/);
+  assert.equal(Number(plan.audioInputs[0].tempo.toFixed(3)), 1.067);
+  assert.equal(Number(plan.remotionInputProps.scenes[0].audio_playback_rate?.toFixed(3)), 1.067);
 });
 
 test('Runway video model can be configured from the environment', () => {

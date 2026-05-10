@@ -13,8 +13,31 @@ export const AnimatedSubtitles: React.FC<{ text: string; durationInFrames: numbe
   const timePerWord = words.length > 0 ? (durationInFrames * 0.8) / words.length : 0;
 
   return (
-    <div className="absolute bottom-12 w-full flex justify-center z-50 pointer-events-none">
-      <div className="flex flex-wrap justify-center items-center gap-x-2 px-8 py-4 max-w-4xl text-center">
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 48,
+        left: 0,
+        width: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        zIndex: 50,
+        pointerEvents: 'none',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          alignItems: 'center',
+          columnGap: 8,
+          rowGap: 4,
+          padding: '16px 32px',
+          maxWidth: 960,
+          textAlign: 'center',
+        }}
+      >
         {words.map((word, i) => {
           const wordStartTime = Math.max(10, i * timePerWord); // Start slightly after scene begins
           
@@ -40,8 +63,13 @@ export const AnimatedSubtitles: React.FC<{ text: string; durationInFrames: numbe
           return (
             <span
               key={i}
-              className="text-white font-serif text-3xl font-bold tracking-wide drop-shadow-[0_4px_8px_rgba(0,0,0,0.8)]"
               style={{
+                color: 'white',
+                fontFamily: 'Georgia, Times New Roman, serif',
+                fontSize: 36,
+                fontWeight: 700,
+                letterSpacing: 0.4,
+                lineHeight: 1.18,
                 opacity,
                 transform: `translateY(${translateY}px) scale(${wordProgress})`,
                 filter: `blur(${blur}px)`,
