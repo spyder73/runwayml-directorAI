@@ -29,8 +29,70 @@ export interface SessionRow {
   user_age: string | null;
   user_selfie_url: string | null;
   final_video_url: string | null;
+  user_id: string | null;
+  final_video_media_asset_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface UserRow {
+  id: string;
+  email: string;
+  password_hash: string;
+  email_confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuthSessionRow {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: string;
+  created_at: string;
+  last_seen_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface EmailVerificationTokenRow {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
+}
+
+export interface UserApiCredentialsRow {
+  user_id: string;
+  openrouter_key_encrypted: string | null;
+  openrouter_key_iv: string | null;
+  openrouter_key_tag: string | null;
+  runway_key_encrypted: string | null;
+  runway_key_iv: string | null;
+  runway_key_tag: string | null;
+  updated_at: string;
+}
+
+export type RunwayConcurrencyMode = 'serial' | 'parallel';
+
+export interface UserSettingsRow {
+  user_id: string;
+  runway_concurrency_mode: RunwayConcurrencyMode;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaAssetRow {
+  id: string;
+  user_id: string;
+  session_id: string;
+  kind: string;
+  file_path: string;
+  mime_type: string;
+  byte_size: number | null;
+  original_name: string | null;
+  created_at: string;
 }
 
 export interface SceneRow {
