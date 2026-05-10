@@ -28,6 +28,7 @@ export interface SessionRow {
   user_name: string | null;
   user_age: string | null;
   user_selfie_url: string | null;
+  final_video_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -35,6 +36,7 @@ export interface SessionRow {
 export interface SceneRow {
   id: string;
   session_id: string;
+  title: string | null;
   scene_index: number;
   narrator_text: string;
   visual_prompt: string;
@@ -47,6 +49,10 @@ export interface SceneRow {
   audio_url: string | null;
   status: string;
   is_protagonist_visible: boolean | number;
+  reference_tags: string | null;
+  shot_plan_json: string | null;
+  retry_attempts: number | null;
+  last_failure: string | null;
 }
 
 export interface ChatHistoryRow {
@@ -70,6 +76,8 @@ export interface StoryProfileRow {
   session_id: string;
   protagonist_name: string | null;
   age: string | null;
+  profession: string | null;
+  current_location: string | null;
   pronouns: string | null;
   life_phase: string | null;
   emotional_tone: string | null;
@@ -164,6 +172,8 @@ export interface ReferenceUploadRequestRow {
   reason: string | null;
   fallback_prompt: string;
   entity_id: string | null;
+  reference_scope: string | null;
+  scene_title: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -179,8 +189,24 @@ export interface StoryTimelineEventRow {
   created_at: string;
 }
 
+export interface StoryTreatmentRow {
+  id: string;
+  session_id: string;
+  title: string;
+  emotional_thesis: string;
+  narrative_arc: string;
+  visual_motif: string;
+  narrator_style: string;
+  ending_feeling: string;
+  avoid_json: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export type StoryBucket = {
   profile: StoryProfileRow | null;
+  treatment: StoryTreatmentRow | null;
   entities: StoryEntityRow[];
   referenceAssets: ReferenceAssetRow[];
   memoryCandidates: MemoryCandidateRow[];
@@ -195,6 +221,16 @@ export type InterviewMessage = {
   content: string;
 };
 
+export type RenderProgressPayload = {
+  progress: number;
+  message: string;
+  renderedFrames: number | null;
+  encodedFrames: number | null;
+  totalFrames: number | null;
+  stitchStage: string | null;
+  updatedAt: string | null;
+};
+
 export type SessionUpdatePayload = {
   session?: SessionRow;
   status?: SessionStatus;
@@ -202,6 +238,7 @@ export type SessionUpdatePayload = {
   scenes?: SceneRow[];
   story_bucket?: StoryBucket;
   active_reference_request?: ReferenceUploadRequestRow | null;
+  render_progress?: RenderProgressPayload | null;
   chat_chunk?: { id: string, text: string };
   error?: string;
 };

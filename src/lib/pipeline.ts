@@ -1,13 +1,16 @@
 import db from './db';
 import { broadcastSessionUpdate } from './sse';
-import { generateText, streamText } from 'ai';
+import { generateObject, generateText, streamText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { v4 as uuidv4 } from 'uuid';
-import { generateImagesPhase } from './pipeline_final';
+import { runFrameGenerationPhase, runMediaGenerationPhase } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
 import { buildDirectorContinuationPrompt } from './director-continuation';
+import { filmTreatmentReviewHandoff } from './treatment-reply';
 import {
   aiTools,
+  addReferenceSubjectSchema,
+  filmTreatmentSchema,
   getToolCall,
   lockSceneOutlineSchema,
   memorySketchSchema,
@@ -20,14 +23,20 @@ import {
 } from './ai/tools';
 import { buildInterviewSystemPrompt } from './ai/prompts';
 import { generateImageAsset, imageRatio } from './runway';
+import { SKETCH_IMAGE_QUALITY } from './production-config';
+import { evaluateLifeStoryOutlineReadiness } from './story-readiness';
 import {
+  addReferenceSubject,
   applyProfileBucketUpdate,
+  approveFilmTreatment,
   createReferenceAsset,
   createReferenceUploadRequest,
   getActiveReferenceRequest,
   hasProtagonistReferenceDecision,
   loadStoryBucket,
   lockSceneOutlineForProduction,
+  maybeCreateSupportingReferenceUploadRequest,
+  proposeFilmTreatment,
   proposeSceneOutline,
   recordMemorySketch,
   reviseSceneOutline,
@@ -38,6 +47,10 @@ import {
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
+
+const MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS = 8192;
+const MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS = 1200;
+const MAX_DIRECTOR_TOOL_OUTPUT_TOKENS = 8192;
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -65,12 +78,18 @@ export function formatStoryBucketForPrompt(bucket: StoryBucket) {
     const profileBits = [
       bucket.profile.protagonist_name ? `name: ${bucket.profile.protagonist_name}` : '',
       bucket.profile.age ? `age: ${bucket.profile.age}` : '',
+      bucket.profile.profession ? `profession: ${bucket.profile.profession}` : '',
+      bucket.profile.current_location ? `current place: ${bucket.profile.current_location}` : '',
       bucket.profile.life_phase ? `phase: ${bucket.profile.life_phase}` : '',
       bucket.profile.emotional_tone ? `tone: ${bucket.profile.emotional_tone}` : '',
       bucket.profile.summary ? `summary: ${bucket.profile.summary}` : '',
       formatJsonList(bucket.profile.themes_json) ? `themes: ${formatJsonList(bucket.profile.themes_json)}` : '',
     ].filter(Boolean).join('; ');
     if (profileBits) parts.push(`Profile: ${profileBits}`);
+  }
+
+  if (bucket.treatment) {
+    parts.push(`Film treatment: ${bucket.treatment.title}; thesis: ${bucket.treatment.emotional_thesis}; arc: ${bucket.treatment.narrative_arc}; motif: ${bucket.treatment.visual_motif}; narrator style: ${bucket.treatment.narrator_style}; ending: ${bucket.treatment.ending_feeling}`);
   }
 
   if (bucket.entities.length) {
@@ -103,7 +122,13 @@ function advanceInterviewStatus(session: SessionRow, bucket: StoryBucket) {
       return;
     }
 
-    if (session.mode === 'life_story' && bucket.profile?.protagonist_name && bucket.profile?.age) {
+    if (
+      session.mode === 'life_story'
+      && bucket.profile?.protagonist_name
+      && bucket.profile?.age
+      && bucket.profile?.profession
+      && bucket.profile?.current_location
+    ) {
       db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('INTERVIEW_PSYCH_PROFILE', session.id);
       return;
     }
@@ -126,7 +151,144 @@ function getFullSessionUpdate(sessionId: string) {
 
 function protagonistReferencePrompt(session: SessionRow) {
   const name = session.user_name || 'you';
-  return `Before I sketch scenes with ${name} on screen, would you like to add a protagonist reference photo? It is completely optional. You can upload one, describe how ${name} should appear, or skip it and I will keep the scene less dependent on likeness.`;
+  return `If you are comfortable with it, you can add a selfie now so I can keep ${name} visually consistent in the film. Drop a photo into the upload box, describe yourself instead, or skip it.`;
+}
+
+function hasBasicLifeStoryProfile(bucket: StoryBucket) {
+  return Boolean(
+    bucket.profile?.protagonist_name
+    && bucket.profile?.age
+    && bucket.profile?.profession
+    && bucket.profile?.current_location,
+  );
+}
+
+function hasLifePathContext(bucket: StoryBucket) {
+  return Boolean(
+    bucket.timelineEvents.length > 0
+    || bucket.memoryCandidates.length > 0
+    || (bucket.profile?.summary && bucket.profile.summary.length > 40),
+  );
+}
+
+function latestUserText(messages: InterviewMessage[]) {
+  return [...messages].reverse().find((message) => message.role === 'user')?.content || '';
+}
+
+export function isTreatmentApprovalForOutline(message: string, bucket: StoryBucket) {
+  if (!bucket.treatment || bucket.sceneOutline.length > 0) return false;
+
+  const text = message.trim();
+  if (!text) return false;
+  if (/\b(?:but|however|change|revise|revision|add|remove|instead|maybe|perhaps|not yet|wait)\b/i.test(text)) {
+    return false;
+  }
+
+  return /\b(?:approve|approved|accept|accepted|yes|sure|ok|okay|go ahead|implement|draft|outline|scenes?|move on|looks good|like it)\b/i.test(text);
+}
+
+function compactText(value: string | null | undefined, fallback: string) {
+  const text = value?.replace(/\s+/g, ' ').trim();
+  return text || fallback;
+}
+
+function shortenForNarration(value: string, fallback: string) {
+  const text = compactText(value, fallback);
+  return text.length > 136 ? `${text.slice(0, 133).trim()}...` : text;
+}
+
+export function buildFallbackSceneOutlineFromBucket(bucket: StoryBucket) {
+  const treatment = bucket.treatment;
+  const motif = treatment?.visual_motif || 'cinematic light and movement';
+  const seeds = bucket.memoryCandidates.length
+    ? bucket.memoryCandidates.map((candidate) => ({
+      title: candidate.title,
+      summary: compactText(candidate.description, candidate.title),
+      emotionalPurpose: compactText(candidate.emotional_purpose, treatment?.emotional_thesis || 'A meaningful life-story beat.'),
+      visualSummary: compactText(candidate.visual_summary, candidate.description),
+    }))
+    : bucket.timelineEvents.map((event) => ({
+      title: event.label,
+      summary: compactText(event.description, event.label),
+      emotionalPurpose: compactText(event.emotion, treatment?.emotional_thesis || 'A meaningful life-story beat.'),
+      visualSummary: compactText(event.description, event.label),
+    }));
+
+  const usableSeeds = seeds.length ? seeds.slice(0, 6) : [{
+    title: treatment?.title || 'The Life Story',
+    summary: treatment?.narrative_arc || treatment?.emotional_thesis || 'A concise emotional life-story arc.',
+    emotionalPurpose: treatment?.emotional_thesis || 'The emotional truth of the film.',
+    visualSummary: treatment?.visual_motif || 'A cinematic symbolic scene.',
+  }];
+
+  return {
+    scenes: usableSeeds.map((seed) => ({
+      title: seed.title,
+      summary: seed.summary,
+      narratorText: shortenForNarration(seed.emotionalPurpose, seed.summary),
+      imagePrompt: `Cinematic life-story frame: ${seed.visualSummary}. Visual motif: ${motif}.`,
+      videoPrompt: `The camera slowly moves through the scene as ${seed.visualSummary} unfolds with subtle motion and changing light.`,
+      duration: 8,
+      emotionalPurpose: seed.emotionalPurpose,
+      referenceNeeds: [],
+      protagonistVisible: true,
+    })),
+    directorReply: 'I drafted the scene outline below. Review the scenes and approve them when they feel right, or leave notes for changes.',
+  };
+}
+
+async function draftSceneOutlineAfterTreatmentApproval(sessionId: string) {
+  const bucket = loadStoryBucket(db, sessionId);
+  const prompt = [
+    'Create a concise reviewable LifeStory scene outline from this approved film treatment and private story bucket.',
+    'Each scene must be cinematic, emotionally specific, and ready for image/video generation.',
+    'Return only the structured scene outline. Keep narratorText short.',
+    formatStoryBucketForPrompt(bucket),
+  ].join('\n\n');
+
+  if (process.env.OPENROUTER_API_KEY) {
+    try {
+      const { object } = await generateObject({
+        model: openrouter('google/gemini-3.1-flash-lite'),
+        maxOutputTokens: MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS,
+        system: 'You are a film outline drafter. Create production-ready scenes from an approved treatment. Do not ask more interview questions.',
+        prompt,
+        schema: proposeSceneOutlineSchema,
+      });
+      proposeSceneOutline(db, sessionId, object);
+      approveFilmTreatment(db, sessionId);
+      return object;
+    } catch (error) {
+      console.warn('AI outline fallback failed; using deterministic treatment outline.', error);
+    }
+  }
+
+  const outline = buildFallbackSceneOutlineFromBucket(bucket);
+  proposeSceneOutline(db, sessionId, outline);
+  approveFilmTreatment(db, sessionId);
+  return outline;
+}
+
+function maybeRequestLifeStorySelfie(session: SessionRow, bucket: StoryBucket) {
+  if (session.mode !== 'life_story') return null;
+  if (!hasBasicLifeStoryProfile(bucket) || !hasLifePathContext(bucket)) return null;
+  if (hasProtagonistReferenceDecision(db, session.id)) return null;
+
+  const active = getActiveReferenceRequest(db, session.id);
+  if (active?.target_type === 'protagonist' && active.reference_scope !== 'scene') {
+    return active.prompt_text;
+  }
+
+  const promptText = protagonistReferencePrompt(session);
+  const request = createReferenceUploadRequest(db, session.id, {
+    targetType: 'protagonist',
+    targetLabel: session.user_name || bucket.profile?.protagonist_name || 'you',
+    promptText,
+    reason: 'This helps keep you visually consistent in generated scenes, but it is optional.',
+    fallbackPrompt: 'No problem if you would rather not upload one. You can describe how you should appear instead.',
+  });
+
+  return request ? promptText : null;
 }
 
 async function generateDirectorContinuation(sessionId: string, messages: InterviewMessage[]) {
@@ -139,6 +301,7 @@ async function generateDirectorContinuation(sessionId: string, messages: Intervi
 
   const { text } = await generateText({
     model: openrouter('google/gemini-3.1-flash-lite'),
+    maxOutputTokens: MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS,
     system: prompt,
     messages,
     toolChoice: 'none',
@@ -166,6 +329,8 @@ export async function processInterviewTurn(sessionId: string) {
       .join('\n');
 
     const storyBucket = loadStoryBucket(db, sessionId);
+    const latestUserMessage = latestUserText(messages);
+    const treatmentApprovalRequested = isTreatmentApprovalForOutline(latestUserMessage, storyBucket);
     const systemPrompt = buildInterviewSystemPrompt({
       mode: session.mode,
       status: session.status,
@@ -194,6 +359,7 @@ export async function processInterviewTurn(sessionId: string) {
 
     const result = await streamText({
       model: openrouter('google/gemini-3.1-flash-lite'),
+      maxOutputTokens: MAX_DIRECTOR_TOOL_OUTPUT_TOKENS,
       system: systemPrompt,
       messages,
       tools: aiTools,
@@ -225,11 +391,19 @@ export async function processInterviewTurn(sessionId: string) {
            const args = updateProfileBucketSchema.parse(call.input);
            const updatedBucket = applyProfileBucketUpdate(db, sessionId, args);
            advanceInterviewStatus(session, updatedBucket);
-           finalReply = text || args.directorReply || finalReply;
+           const selfiePrompt = maybeRequestLifeStorySelfie(session, updatedBucket);
+           const supportingReferenceRequest = maybeCreateSupportingReferenceUploadRequest(db, sessionId, args.entities);
+           finalReply = selfiePrompt || supportingReferenceRequest?.prompt_text || text || args.directorReply || finalReply;
         } else if (call.toolName === 'request_reference_upload') {
            const args = requestReferenceUploadSchema.parse(call.input);
-           createReferenceUploadRequest(db, sessionId, args);
-           finalReply = text || args.promptText;
+           const request = createReferenceUploadRequest(db, sessionId, args);
+           finalReply = request
+             ? (text || args.promptText)
+             : (text || 'I already have the protagonist reference, so I will keep using that unless we need a specific scene-era image later. What should we explore next?');
+        } else if (call.toolName === 'add_reference_subject') {
+           const args = addReferenceSubjectSchema.parse(call.input);
+           const result = addReferenceSubject(db, sessionId, args);
+           finalReply = text || args.directorReply || `I will remember ${args.displayName} as @${result.referenceAsset.stable_tag} for future scenes.`;
         } else if (call.toolName === 'save_reference_description') {
            const args = saveReferenceDescriptionSchema.parse(call.input);
            saveReferenceDescription(db, sessionId, args);
@@ -277,7 +451,7 @@ export async function processInterviewTurn(sessionId: string) {
            try {
              const imageAsset = await generateImageAsset({
                promptText: args.visualPrompt,
-               quality: 'low',
+               quality: SKETCH_IMAGE_QUALITY,
                ratio: imageRatio(session.aspect_ratio),
                sessionId,
              });
@@ -319,8 +493,25 @@ export async function processInterviewTurn(sessionId: string) {
            const args = saveSketchFeedbackSchema.parse(call.input);
            saveSketchFeedback(db, sessionId, args);
            finalReply = text || args.directorReply || finalReply;
+        } else if (call.toolName === 'propose_film_treatment') {
+           const args = filmTreatmentSchema.parse(call.input);
+           proposeFilmTreatment(db, sessionId, args);
+           finalReply = filmTreatmentReviewHandoff();
         } else if (call.toolName === 'propose_scene_outline') {
            const args = proposeSceneOutlineSchema.parse(call.input);
+           const bucketBeforeOutline = loadStoryBucket(db, sessionId);
+           if (!bucketBeforeOutline.treatment) {
+             finalReply = text || 'Before I turn this into scenes, I want to shape the film treatment first: the title, emotional thesis, arc, visual motif, narrator style, ending feeling, and what to avoid. What should this short film feel like at the end?';
+             continue;
+           }
+           if (session.mode === 'life_story') {
+             const readiness = evaluateLifeStoryOutlineReadiness(bucketBeforeOutline);
+             if (!readiness.ready && !treatmentApprovalRequested) {
+               finalReply = text || readiness.nextQuestion;
+               continue;
+             }
+           }
+
            const needsProtagonistReference = args.scenes.some((scene) => scene.protagonistVisible !== false);
            if (needsProtagonistReference && !hasProtagonistReferenceDecision(db, sessionId)) {
              createReferenceUploadRequest(db, sessionId, {
@@ -335,6 +526,7 @@ export async function processInterviewTurn(sessionId: string) {
            }
 
            proposeSceneOutline(db, sessionId, args);
+           if (treatmentApprovalRequested) approveFilmTreatment(db, sessionId);
            finalReply = text || args.directorReply || args.chatMessage || finalReply;
         } else if (call.toolName === 'revise_scene_outline') {
            const args = reviseSceneOutlineSchema.parse(call.input);
@@ -345,12 +537,24 @@ export async function processInterviewTurn(sessionId: string) {
            lockSceneOutlineForProduction(db, sessionId);
 
             // Fire off phase 1 of generation (Images only)
-            generateImagesPhase(sessionId).catch(console.error);
+            const runner = session.mode === 'life_story' ? runFrameGenerationPhase : runMediaGenerationPhase;
+            runner(sessionId).catch(console.error);
 
             const productionMessage = "Perfect. I am moving from outline into production now. You will see each scene come to life as the cut takes shape.";
             finalReply = text ? `${text}\n\n${productionMessage}` : productionMessage;
         }
       }
+    }
+
+    const bucketAfterTools = loadStoryBucket(db, sessionId);
+    if (
+      treatmentApprovalRequested
+      && isTreatmentApprovalForOutline(latestUserMessage, bucketAfterTools)
+      && !getActiveReferenceRequest(db, sessionId)
+    ) {
+      const outline = await draftSceneOutlineAfterTreatmentApproval(sessionId);
+      const outlineReply = outline.directorReply || 'I drafted the scene outline below. Review the scenes and approve them when they feel right, or leave notes for changes.';
+      finalReply = finalReply?.trim() ? `${finalReply}\n\n${outlineReply}` : outlineReply;
     }
 
     if (!finalReply?.trim()) {

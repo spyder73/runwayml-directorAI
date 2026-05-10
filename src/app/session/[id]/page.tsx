@@ -4,18 +4,29 @@ import { useEffect, useRef, useState, use } from 'react';
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Film, Send, X } from 'lucide-react';
+import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 import InterviewChat from '@/components/session/InterviewChat';
+import FilmTreatmentCard from '@/components/session/FilmTreatmentCard';
+import MemorySketchCard from '@/components/session/MemorySketchCard';
 import ProductionProgress from '@/components/session/ProductionProgress';
 import ReferenceUploadRequest from '@/components/session/ReferenceUploadRequest';
 import SceneOutlineReview from '@/components/session/SceneOutlineReview';
 import type {
   ChatHistoryRow,
+  MemoryCandidateRow,
   ReferenceUploadRequestRow,
+  RenderProgressPayload,
   SceneOutlineRow,
   SceneRow,
   SessionRow,
   StoryBucket,
 } from '@/lib/types';
+
+function isRenderProgressPayload(value: unknown): value is RenderProgressPayload {
+  if (!value || typeof value !== 'object') return false;
+  const progress = (value as { progress?: unknown }).progress;
+  return typeof progress === 'number' && Number.isFinite(progress);
+}
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -28,22 +39,13 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDraftingOutline, setIsDraftingOutline] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [renderProgress, setRenderProgress] = useState<RenderProgressPayload | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [particles] = useState(() => (
-    Array.from({ length: 45 }).map((_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      size: Math.random() * 2 + 1,
-      duration: Math.random() * 20 + 10,
-      delay: Math.random() * 5,
-    }))
-  ));
 
   useEffect(() => {
     const eventSource = new EventSource(`/api/pipeline/events?sessionId=${sessionId}`);
@@ -56,8 +58,11 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         if (data.chat_history) setChatHistory(data.chat_history);
         if (data.story_bucket) setStoryBucket(data.story_bucket);
         if ('active_reference_request' in data) setActiveReferenceRequest(data.active_reference_request);
+        if ('render_progress' in data) setRenderProgress(isRenderProgressPayload(data.render_progress) ? data.render_progress : null);
         if (data.error) setPipelineError(data.error);
         if (data.status && data.status !== 'FAILED') setPipelineError(null);
+        const incomingStatus = data.session?.status || data.status;
+        if (incomingStatus && incomingStatus !== 'RENDERING') setRenderProgress(null);
         if (data.chat_chunk) {
           setChatHistory((current) => current.map((row, index) => {
             const isTarget = row.id === data.chat_chunk.id || (index === current.length - 1 && row.role === 'assistant');
@@ -78,6 +83,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
 
   const handleSendMessage = async (e?: React.FormEvent, customMsg?: string) => {
     if (e) e.preventDefault();
+    if (!customMsg && freeChatDisabled) return;
     const msg = customMsg || message;
     if (!msg.trim()) return;
 
@@ -145,25 +151,81 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     });
   };
 
+  const handleAcceptTreatment = async () => {
+    setIsDraftingOutline(true);
+    await handleSendMessage(undefined, 'I approve this film treatment. Please draft the scene outline now.');
+  };
+
+  const handleTreatmentRevision = async (comment: string) => {
+    await handleSendMessage(undefined, `Please revise the film treatment: ${comment}`);
+  };
+
   const handleRenderFinal = async () => {
-    await fetch('/api/pipeline/render', {
+    const previousSession = session;
+    setPipelineError(null);
+    setRenderProgress(null);
+    setSession((current) => current ? { ...current, status: 'RENDERING', final_video_url: null } : current);
+    try {
+      const response = await fetch('/api/pipeline/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to start final render.');
+      }
+    } catch (error) {
+      setSession(previousSession);
+      setPipelineError(error instanceof Error ? error.message : 'Failed to start final render.');
+    }
+  };
+
+  const handleApproveFrames = async () => {
+    await fetch('/api/pipeline/synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId }),
     });
   };
 
-  const handleRetryGeneration = async () => {
+  const handleFrameComment = async (scene: SceneRow, comment: string) => {
+    await fetch('/api/pipeline/director', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, message: `For scene ${scene.scene_index + 1}, revise the still frame before motion: ${comment}` }),
+    });
+  };
+
+  const handleSketchFeedback = async (candidate: MemoryCandidateRow, feedback: 'accepted' | 'rejected' | 'revised') => {
+    await fetch('/api/pipeline/sketch-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, candidateId: candidate.id, feedback }),
+    });
+  };
+
+  const handleRetryGeneration = async (unit?: 'image' | 'audio' | 'video' | 'render', sceneId?: string) => {
     setPipelineError(null);
     try {
       await fetch('/api/pipeline/retry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId, unit, sceneId }),
       });
     } catch (error) {
       setPipelineError(error instanceof Error ? error.message : 'Failed to restart production.');
     }
+  };
+
+  const resolveActiveReferenceRequest = async (status: 'skipped' | 'described') => {
+    if (!session) return;
+    if (!activeReferenceRequest && session.status !== 'AWAITING_SELFIE' && session.status !== 'AWAITING_REFERENCE') return;
+    setActiveReferenceRequest(null);
+    await fetch('/api/pipeline/reference-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, status }),
+    });
   };
 
   const handleDrop = (event: React.DragEvent) => {
@@ -192,25 +254,35 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   }
 
   const showReferenceRequest = Boolean(activeReferenceRequest) || (session.status === 'AWAITING_SELFIE' && !session.user_selfie_url);
+  const isReferenceDescribeDraft = showReferenceRequest && message.trim().length > 0;
+  const showComposer = !showReferenceRequest || isReferenceDescribeDraft;
+  const productionStarted = [
+    'GENERATING_IMAGES',
+    'AWAITING_APPROVAL',
+    'GENERATING_FINAL_ASSETS',
+    'PREVIEW_READY',
+    'RENDERING',
+    'COMPLETED',
+  ].includes(session.status) || scenes.length > 0;
+  const hasUnlockedOutline = Boolean(storyBucket?.sceneOutline.some((scene) => scene.status !== 'locked'));
+  const hasTreatmentAwaitingDecision = Boolean(storyBucket?.treatment && !hasUnlockedOutline && !productionStarted && !showReferenceRequest);
+  const hasOutlineAwaitingDecision = Boolean(hasUnlockedOutline && session.status === 'OUTLINE_REVIEW' && !showReferenceRequest);
+  const hasSceneOutline = (storyBucket?.sceneOutline.length || 0) > 0;
+  const isDraftingFilmShape = isDraftingOutline && !hasSceneOutline && !showReferenceRequest && !pipelineError && !productionStarted;
+  const freeChatDisabled = isUploading || isSending || isDraftingFilmShape || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision;
   const inputPlaceholder = showReferenceRequest
     ? 'Upload, describe, or skip the reference...'
-    : session.status === 'OUTLINE_REVIEW'
-      ? 'Share outline notes or approve it above...'
-      : 'Type your response...';
+    : isDraftingFilmShape
+      ? 'Drafting the film shape...'
+      : hasTreatmentAwaitingDecision
+      ? 'Approve or revise the treatment above...'
+      : hasOutlineAwaitingDecision
+        ? 'Use the outline notes or approve it above...'
+        : 'Type your response...';
 
   return (
     <main className="relative flex min-h-screen flex-col overflow-hidden bg-[#0A0A0F] font-serif text-white">
-      <div className="pointer-events-none fixed inset-0 z-0 shadow-[inset_0_0_150px_rgba(0,0,0,0.9)]">
-        {particles.map((particle) => (
-          <motion.div
-            key={particle.id}
-            className="absolute rounded-full bg-white/20"
-            style={{ width: particle.size, height: particle.size, left: `${particle.x}%`, top: `${particle.y}%` }}
-            animate={{ y: [0, -100, 0], opacity: [0.1, 0.5, 0.1] }}
-            transition={{ duration: particle.duration, repeat: Infinity, delay: particle.delay, ease: 'linear' }}
-          />
-        ))}
-      </div>
+      <AmbientFractalBackground intensity="session" />
 
       <header className="pointer-events-none fixed left-0 right-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-[#0A0A0F] to-transparent p-6">
         <div className="flex items-center gap-3 text-white/40">
@@ -219,13 +291,28 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       </header>
 
-      <div className="relative z-[1] flex flex-1 flex-col overflow-y-auto px-4 pb-36 pt-24 md:px-20">
+      <div className={`relative z-[1] flex flex-1 flex-col overflow-y-auto px-4 pt-24 md:px-20 ${showReferenceRequest && !isReferenceDescribeDraft ? 'pb-80 md:pb-72' : 'pb-36'}`}>
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
           <InterviewChat
             chatHistory={chatHistory}
             isThinking={isSending || isUploading}
             onOption={(option) => handleSendMessage(undefined, option)}
             onOpenImage={setModalImage}
+          />
+
+          <FilmTreatmentCard
+            treatment={storyBucket?.treatment || null}
+            isActionable={hasTreatmentAwaitingDecision}
+            isBusy={isSending || isDraftingFilmShape}
+            isDrafting={isDraftingFilmShape}
+            onAccept={handleAcceptTreatment}
+            onRequestChanges={handleTreatmentRevision}
+          />
+
+          <MemorySketchCard
+            candidates={storyBucket?.memoryCandidates || []}
+            onOpenImage={setModalImage}
+            onFeedback={handleSketchFeedback}
           />
 
           <SceneOutlineReview
@@ -235,69 +322,82 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           />
 
           <ProductionProgress
-            session={session}
-            scenes={scenes}
-            pipelineError={pipelineError}
-            onRetry={handleRetryGeneration}
-            onRenderFinal={handleRenderFinal}
-            onOpenImage={setModalImage}
-          />
+          session={session}
+          scenes={scenes}
+          renderProgress={renderProgress}
+          pipelineError={pipelineError}
+          onRetry={handleRetryGeneration}
+          onApproveFrames={handleApproveFrames}
+          onFrameComment={handleFrameComment}
+          onRenderFinal={handleRenderFinal}
+          onOpenImage={setModalImage}
+        />
 
           <div ref={chatEndRef} />
         </div>
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10 flex flex-col items-center bg-gradient-to-t from-[#0A0A0F] via-[#0A0A0F] to-transparent p-6">
-        <ReferenceUploadRequest
-          request={activeReferenceRequest}
-          isSelfieRequest={session.status === 'AWAITING_SELFIE' && !session.user_selfie_url}
-          isUploading={isUploading}
-          onChooseFiles={() => fileInputRef.current?.click()}
-          onSkip={() => handleSendMessage(undefined, "I'd like to skip that image for now. Please ask me for visual details instead.")}
-          onDescribeInstead={() => {
-            const label = activeReferenceRequest?.target_label || 'this reference';
-            setMessage(`Here is how ${label} looks: `);
-          }}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          ref={fileInputRef}
+          onChange={(event) => uploadFiles(event.target.files)}
         />
 
-        <form onSubmit={handleSendMessage} className="group relative w-full max-w-3xl">
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            ref={fileInputRef}
-            onChange={(event) => uploadFiles(event.target.files)}
+        {!isReferenceDescribeDraft && (
+          <ReferenceUploadRequest
+            request={activeReferenceRequest}
+            isSelfieRequest={session.status === 'AWAITING_SELFIE' && !session.user_selfie_url}
+            hasSelfie={Boolean(session.user_selfie_url)}
+            isUploading={isUploading}
+            onChooseFiles={() => fileInputRef.current?.click()}
+            onSkip={async () => {
+              await resolveActiveReferenceRequest('skipped');
+              await handleSendMessage(undefined, "I'd like to skip that image for now. Please ask me for visual details instead.");
+            }}
+            onDescribeInstead={async () => {
+              const label = activeReferenceRequest?.target_label || 'this reference';
+              setMessage(`Here is how ${label} looks: `);
+            }}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
           />
-          <div className="absolute inset-y-0 left-4 z-20 flex items-center">
+        )}
+
+        {showComposer && (
+          <form onSubmit={handleSendMessage} className="group relative w-full max-w-3xl">
+            <div className="absolute inset-y-0 left-4 z-20 flex items-center">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={freeChatDisabled}
+                className="rounded-full bg-white/5 p-2 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Add image"
+              >
+                <Camera size={20} />
+              </button>
+            </div>
+            <input
+              autoFocus
+              type="text"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder={inputPlaceholder}
+              className="w-full rounded-full border border-white/10 bg-[#111116]/90 py-4 pl-14 pr-16 font-serif text-lg text-white shadow-2xl outline-none backdrop-blur-xl transition-all placeholder:text-white/30 hover:border-white/20 focus:border-amber-200/50 focus:ring-1 focus:ring-amber-200/20"
+              disabled={freeChatDisabled}
+            />
             <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-full bg-white/5 p-2 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
-              aria-label="Add image"
+              type="submit"
+              disabled={freeChatDisabled || !message.trim()}
+              className="absolute inset-y-2 right-2 flex items-center justify-center rounded-full bg-white px-5 text-black transition-all hover:scale-105 hover:bg-amber-200 active:scale-95 disabled:bg-white/20 disabled:text-white disabled:opacity-20"
             >
-              <Camera size={20} />
+              <Send size={18} className="ml-0.5" />
             </button>
-          </div>
-          <input
-            autoFocus
-            type="text"
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            placeholder={inputPlaceholder}
-            className="w-full rounded-full border border-white/10 bg-[#111116]/90 py-4 pl-14 pr-16 font-serif text-lg text-white shadow-2xl outline-none backdrop-blur-xl transition-all placeholder:text-white/30 hover:border-white/20 focus:border-amber-200/50 focus:ring-1 focus:ring-amber-200/20"
-            disabled={isUploading}
-          />
-          <button
-            type="submit"
-            disabled={isUploading || !message.trim()}
-            className="absolute inset-y-2 right-2 flex items-center justify-center rounded-full bg-white px-5 text-black transition-all hover:scale-105 hover:bg-amber-200 active:scale-95 disabled:bg-white/20 disabled:text-white disabled:opacity-20"
-          >
-            <Send size={18} className="ml-0.5" />
-          </button>
-        </form>
+          </form>
+        )}
       </div>
 
       <AnimatePresence>

@@ -3,11 +3,22 @@ import type { TaskRetrieveResponse } from '@runwayml/sdk/resources/tasks';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  IMAGE_MODEL,
+  NARRATION_MODEL,
+  RUNWAY_TASK_CREATE_TIMEOUT_MS,
+  RUNWAY_TASK_POLL_INTERVAL_MS,
+  RUNWAY_TASK_WAIT_TIMEOUT_MS,
+  getRunwayVideoModel,
+} from './production-config';
+import { logMediaGeneration, type MediaGenerationLogDetails } from './media-logging';
 
 type AspectRatio = '16:9' | '9:16';
 type MediaType = 'image' | 'audio' | 'video';
 type RunwayTaskOutput = { output: string[] };
 type GptImageQuality = 'low' | 'medium' | 'high' | 'auto';
+type RunwayVideoRatio = '720:1280' | '1280:720' | '1080:1920' | '1920:1080';
+type RunwayImageToVideoModel = 'gen4_turbo' | 'gen4.5' | 'seedance2' | 'veo3.1_fast' | string;
 
 export type GeneratedAsset = {
   remoteUrl: string;
@@ -22,23 +33,102 @@ export type RunwayReferenceImage = {
 };
 
 type GptImage2CreateParams = {
-  model: 'gpt_image_2';
+  model: typeof IMAGE_MODEL;
   promptText: string;
   quality: GptImageQuality;
   ratio: '1920:1088' | '1088:1920';
   referenceImages?: RunwayReferenceImage[];
 };
 
+type ImageToVideoCreateParams = {
+  model: RunwayImageToVideoModel;
+  promptImage: Array<{ uri: string; position: 'first' }>;
+  ratio: RunwayVideoRatio;
+  promptText: string;
+  duration: number;
+};
+
 const runway = new RunwayML({
   apiKey: process.env.RUNWAYML_API_SECRET || '',
 });
 
+export const RUNWAY_REFERENCE_DATA_URI_MAX_LENGTH = 5_242_880;
+
 const runwayUploadCache = new Map<string, Promise<string>>();
 
-const createGptImage2 = runway.textToImage.create.bind(runway.textToImage) as unknown as (
-  body: GptImage2CreateParams,
-  options?: { timeout?: number },
-) => Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>;
+type TextToImageResource = {
+  create: (
+    body: GptImage2CreateParams,
+    options?: { timeout?: number },
+  ) => Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>;
+};
+
+type ImageToVideoResource = {
+  create: (
+    body: ImageToVideoCreateParams,
+    options?: { timeout?: number },
+  ) => Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>;
+};
+
+type DataUriReferenceUploader = (uri: string) => Promise<string>;
+
+function isOversizedReferenceDataUri(uri: string) {
+  return /^data:image\//i.test(uri) && uri.length > RUNWAY_REFERENCE_DATA_URI_MAX_LENGTH;
+}
+
+function imageExtensionForMimeType(mimeType: string) {
+  if (mimeType.includes('png')) return 'png';
+  if (mimeType.includes('webp')) return 'webp';
+  return 'jpg';
+}
+
+async function uploadDataUriReferenceForRunway(uri: string) {
+  const match = uri.match(/^data:([^;,]+);base64,(.*)$/i);
+  if (!match) {
+    throw new Error('Cannot upload non-base64 image reference data URI to Runway.');
+  }
+
+  const [, mimeType, base64] = match;
+  const buffer = Buffer.from(base64, 'base64');
+  const file = await toFile(buffer, `reference-${uuidv4()}.${imageExtensionForMimeType(mimeType)}`, { type: mimeType });
+  const upload = await runway.uploads.createEphemeral({ file }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
+  return upload.uri;
+}
+
+export async function prepareRunwayReferenceImages(
+  referenceImages?: RunwayReferenceImage[],
+  uploadReference: DataUriReferenceUploader = uploadDataUriReferenceForRunway,
+) {
+  if (!referenceImages?.length) return undefined;
+
+  return Promise.all(referenceImages.map(async (image) => {
+    if (!isOversizedReferenceDataUri(image.uri)) return image;
+    return { ...image, uri: await uploadReference(image.uri) };
+  }));
+}
+
+export async function createTextToImageTask(
+  resource: TextToImageResource,
+  params: {
+    promptText: string;
+    quality: GptImageQuality;
+    ratio: GptImage2CreateParams['ratio'];
+    referenceImages?: RunwayReferenceImage[];
+  },
+) {
+  const referenceImages = await prepareRunwayReferenceImages(params.referenceImages);
+  return resource.create({
+    model: IMAGE_MODEL,
+    promptText: params.promptText,
+    quality: params.quality,
+    ratio: params.ratio,
+    referenceImages,
+  }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
+}
+
+const textToImageResource = runway.textToImage as unknown as TextToImageResource;
+
+type RunwayTaskPromise = ReturnType<TextToImageResource['create']>;
 
 function requireRunwayApiKey() {
   if (!process.env.RUNWAYML_API_SECRET) {
@@ -52,6 +142,49 @@ export function imageRatio(aspectRatio: AspectRatio): GptImage2CreateParams['rat
 
 export function videoRatio(aspectRatio: AspectRatio) {
   return aspectRatio === '9:16' ? '720:1280' : '1280:720';
+}
+
+function isVeo31Model(model: string) {
+  return model.startsWith('veo3.1');
+}
+
+export function runwayVideoRatio(model: string, ratio: ReturnType<typeof videoRatio>): RunwayVideoRatio {
+  if (!isVeo31Model(model)) return ratio;
+  return ratio === '720:1280' ? '1080:1920' : '1920:1080';
+}
+
+export function runwayVideoDuration(model: string, duration: number) {
+  if (!isVeo31Model(model)) {
+    return Math.max(2, Math.min(10, Math.ceil(duration)));
+  }
+
+  const allowedDurations = [4, 6, 8];
+  return allowedDurations.reduce((nearest, candidate) => {
+    const currentDistance = Math.abs(nearest - duration);
+    const candidateDistance = Math.abs(candidate - duration);
+    if (candidateDistance < currentDistance) return candidate;
+    if (candidateDistance === currentDistance && candidate > nearest) return candidate;
+    return nearest;
+  }, allowedDurations[0]);
+}
+
+export function createImageToVideoTask(
+  resource: ImageToVideoResource,
+  params: {
+    model: string;
+    promptImageUri: string;
+    promptText: string;
+    ratio: ReturnType<typeof videoRatio>;
+    duration: number;
+  },
+) {
+  return resource.create({
+    model: params.model,
+    promptImage: [{ uri: params.promptImageUri, position: 'first' }],
+    ratio: runwayVideoRatio(params.model, params.ratio),
+    promptText: params.promptText,
+    duration: runwayVideoDuration(params.model, params.duration),
+  }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
 }
 
 export async function loadReferenceImage(filePath: string, tag?: string): Promise<RunwayReferenceImage> {
@@ -91,7 +224,7 @@ async function uploadLocalAssetForRunway(localOrRemoteUrl: string) {
     const buffer = await fs.readFile(absolutePath);
     const fileName = path.basename(normalizedPath);
     const file = await toFile(buffer, fileName, { type: mimeTypeForLocalPath(normalizedPath) });
-    const upload = await runway.uploads.createEphemeral({ file }, { timeout: 60000 });
+    const upload = await runway.uploads.createEphemeral({ file }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
     return upload.uri;
   })();
 
@@ -105,23 +238,32 @@ async function uploadLocalAssetForRunway(localOrRemoteUrl: string) {
   }
 }
 
-async function retryTaskCreation<T>(label: string, createTask: () => Promise<T>, maxAttempts = 3): Promise<T> {
+async function retryTaskCreation<T>(
+  label: string,
+  createTask: () => Promise<T>,
+  maxAttempts = 3,
+  logContext: MediaGenerationLogDetails = {},
+): Promise<T> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
+      logMediaGeneration('runway_task_create_attempt', { ...logContext, attempt, maxAttempts, provider: 'runway' });
       return await createTask();
     } catch (error) {
       lastError = error;
       if (isValidationError(error)) {
+        logMediaGeneration('runway_task_create_validation_failed', { ...logContext, attempt, maxAttempts, provider: 'runway', error }, 'warn');
         break;
       }
       if (attempt === maxAttempts) break;
+      logMediaGeneration('runway_task_create_retry', { ...logContext, attempt, maxAttempts, provider: 'runway', error }, 'warn');
       console.warn(`${label} task creation failed, retrying (${attempt}/${maxAttempts})`, error);
       await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
     }
   }
 
+  logMediaGeneration('runway_task_create_failed', { ...logContext, maxAttempts, provider: 'runway', error: lastError }, 'error');
   throw lastError instanceof Error ? lastError : new Error(`${label} task creation failed`);
 }
 
@@ -134,22 +276,37 @@ function isValidationError(error: unknown) {
 async function waitForOutput(
   taskPromise: Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>,
   label: string,
+  timeoutMs = RUNWAY_TASK_WAIT_TIMEOUT_MS,
+  logContext: MediaGenerationLogDetails = {},
 ): Promise<RunwayTaskOutput> {
   const task = await taskPromise;
+  logMediaGeneration('runway_task_created', { ...logContext, provider: 'runway', runwayTaskId: task.id });
   if (task.waitForTaskOutput) {
-    const output = await task.waitForTaskOutput({ timeout: 600000 });
+    logMediaGeneration('runway_task_wait_start', { ...logContext, provider: 'runway', runwayTaskId: task.id });
+    const output = await task.waitForTaskOutput({ timeout: timeoutMs });
+    logMediaGeneration('runway_task_succeeded', { ...logContext, provider: 'runway', runwayTaskId: task.id, outputCount: output.output.length });
     return { output: output.output };
   }
 
   const startTime = Date.now();
-  while (Date.now() - startTime < 600000) {
+  while (Date.now() - startTime < timeoutMs) {
     const current = await runway.tasks.retrieve(task.id);
-    if (current.status === 'SUCCEEDED') return { output: current.output };
-    if (current.status === 'FAILED') throw new Error(`${label} failed: ${current.failure}`);
-    if (current.status === 'CANCELLED') throw new Error(`${label} was cancelled`);
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    if (current.status === 'SUCCEEDED') {
+      logMediaGeneration('runway_task_succeeded', { ...logContext, provider: 'runway', runwayTaskId: task.id, outputCount: current.output.length });
+      return { output: current.output };
+    }
+    if (current.status === 'FAILED') {
+      logMediaGeneration('runway_task_failed', { ...logContext, provider: 'runway', runwayTaskId: task.id, error: current.failure }, 'error');
+      throw new Error(`${label} failed: ${current.failure}`);
+    }
+    if (current.status === 'CANCELLED') {
+      logMediaGeneration('runway_task_cancelled', { ...logContext, provider: 'runway', runwayTaskId: task.id }, 'warn');
+      throw new Error(`${label} was cancelled`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, RUNWAY_TASK_POLL_INTERVAL_MS));
   }
 
+  logMediaGeneration('runway_task_timeout', { ...logContext, provider: 'runway', runwayTaskId: task.id }, 'error');
   throw new Error(`${label} timed out waiting for Runway task output`);
 }
 
@@ -176,7 +333,13 @@ function extensionFor(contentType: string | null, remoteUrl: string, mediaType: 
   return 'mp4';
 }
 
-export async function persistGeneratedAsset(remoteUrl: string, mediaType: MediaType, sessionId: string): Promise<GeneratedAsset> {
+export async function persistGeneratedAsset(
+  remoteUrl: string,
+  mediaType: MediaType,
+  sessionId: string,
+  logContext: MediaGenerationLogDetails = {},
+): Promise<GeneratedAsset> {
+  logMediaGeneration('asset_download_start', { ...logContext, sessionId, mediaType, remoteUrl });
   const response = await fetch(remoteUrl);
   if (!response.ok) {
     throw new Error(`Failed to download generated ${mediaType}: ${response.status} ${response.statusText}`);
@@ -190,6 +353,15 @@ export async function persistGeneratedAsset(remoteUrl: string, mediaType: MediaT
 
   await fs.mkdir(path.dirname(absolutePath), { recursive: true });
   await fs.writeFile(absolutePath, Buffer.from(await response.arrayBuffer()));
+
+  logMediaGeneration('asset_persisted', {
+    ...logContext,
+    sessionId,
+    mediaType,
+    remoteUrl,
+    localUrl: `/${filePath}`,
+    filePath,
+  });
 
   return {
     remoteUrl,
@@ -205,37 +377,59 @@ export async function generateImageAsset(params: {
   ratio: GptImage2CreateParams['ratio'];
   referenceImages?: RunwayReferenceImage[];
   sessionId: string;
+  logContext?: MediaGenerationLogDetails;
 }) {
   requireRunwayApiKey();
+  const logContext = {
+    ...params.logContext,
+    sessionId: params.sessionId,
+    mediaType: 'image' as const,
+    model: IMAGE_MODEL,
+    quality: params.quality,
+    ratio: params.ratio,
+    referenceImageCount: params.referenceImages?.length || 0,
+    promptText: params.promptText,
+  };
   const task = await waitForOutput(
-    retryTaskCreation('Runway image', () => createGptImage2({
-      model: 'gpt_image_2',
+    retryTaskCreation('Runway image', (): RunwayTaskPromise => createTextToImageTask(textToImageResource, {
       promptText: params.promptText,
       quality: params.quality,
       ratio: params.ratio,
       referenceImages: params.referenceImages?.length ? params.referenceImages : undefined,
-    }, { timeout: 60000 })),
+    }), 3, logContext),
     'Runway image generation',
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+    logContext,
   );
 
-  return persistGeneratedAsset(firstOutputUrl(task, 'Runway image generation'), 'image', params.sessionId);
+  return persistGeneratedAsset(firstOutputUrl(task, 'Runway image generation'), 'image', params.sessionId, logContext);
 }
 
 export async function generateSpeechAsset(params: {
   promptText: string;
   sessionId: string;
+  logContext?: MediaGenerationLogDetails;
 }) {
   requireRunwayApiKey();
+  const logContext = {
+    ...params.logContext,
+    sessionId: params.sessionId,
+    mediaType: 'audio' as const,
+    model: NARRATION_MODEL,
+    promptText: params.promptText,
+  };
   const task = await waitForOutput(
     retryTaskCreation('Runway TTS', () => runway.textToSpeech.create({
-      model: 'eleven_multilingual_v2',
+      model: NARRATION_MODEL,
       promptText: params.promptText,
       voice: { type: 'runway-preset', presetId: 'Bernard' },
-    }, { timeout: 60000 })),
+    }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS }), 3, logContext),
     'Runway TTS generation',
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+    logContext,
   );
 
-  return persistGeneratedAsset(firstOutputUrl(task, 'Runway TTS generation'), 'audio', params.sessionId);
+  return persistGeneratedAsset(firstOutputUrl(task, 'Runway TTS generation'), 'audio', params.sessionId, logContext);
 }
 
 export async function generateVideoAsset(params: {
@@ -244,19 +438,35 @@ export async function generateVideoAsset(params: {
   ratio: ReturnType<typeof videoRatio>;
   duration: number;
   sessionId: string;
+  logContext?: MediaGenerationLogDetails;
 }) {
   requireRunwayApiKey();
   const promptImageUri = await uploadLocalAssetForRunway(params.promptImageUrl);
+  const model = getRunwayVideoModel();
+  const logContext = {
+    ...params.logContext,
+    sessionId: params.sessionId,
+    mediaType: 'video' as const,
+    model,
+    duration: runwayVideoDuration(model, params.duration),
+    requestedDuration: params.duration,
+    ratio: runwayVideoRatio(model, params.ratio),
+    promptImageUrl: params.promptImageUrl,
+    promptText: params.promptText,
+  };
+  const imageToVideoResource = runway.imageToVideo as unknown as ImageToVideoResource;
   const task = await waitForOutput(
-    retryTaskCreation('Runway video', () => runway.imageToVideo.create({
-      model: 'gen4_turbo',
-      promptImage: [{ uri: promptImageUri, position: 'first' }],
-      ratio: params.ratio,
+    retryTaskCreation('Runway video', () => createImageToVideoTask(imageToVideoResource, {
+      model,
+      promptImageUri,
       promptText: params.promptText,
-      duration: Math.max(2, Math.min(10, Math.ceil(params.duration))),
-    }, { timeout: 60000 })),
+      ratio: params.ratio,
+      duration: params.duration,
+    }), 3, logContext),
     'Runway video generation',
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+    logContext,
   );
 
-  return persistGeneratedAsset(firstOutputUrl(task, 'Runway video generation'), 'video', params.sessionId);
+  return persistGeneratedAsset(firstOutputUrl(task, 'Runway video generation'), 'video', params.sessionId, logContext);
 }

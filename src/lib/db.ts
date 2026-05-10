@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { initializeStoryBucketTables } from './story-bucket';
+import { initializeMediaTaskTables } from './media-tasks';
 
 const dataDir = path.join(process.cwd(), 'data');
 if (!fs.existsSync(dataDir)) {
@@ -21,6 +22,7 @@ db.exec(`
     user_name TEXT,
     user_age TEXT,
     user_selfie_url TEXT,
+    final_video_url TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -30,11 +32,13 @@ try { db.exec("ALTER TABLE sessions ADD COLUMN user_name TEXT"); } catch {}
 try { db.exec("ALTER TABLE sessions ADD COLUMN user_age TEXT"); } catch {}
 try { db.exec("ALTER TABLE sessions ADD COLUMN user_selfie_url TEXT"); } catch {}
 try { db.exec("ALTER TABLE sessions ADD COLUMN mode TEXT DEFAULT 'life_story'"); } catch {}
+try { db.exec("ALTER TABLE sessions ADD COLUMN final_video_url TEXT"); } catch {}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS scenes (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
+    title TEXT,
     scene_index INTEGER NOT NULL,
     narrator_text TEXT NOT NULL,
     visual_prompt TEXT NOT NULL,
@@ -47,6 +51,10 @@ db.exec(`
     audio_url TEXT,
     status TEXT DEFAULT 'pending',
     is_protagonist_visible BOOLEAN DEFAULT 1,
+    reference_tags TEXT,
+    shot_plan_json TEXT,
+    retry_attempts INTEGER DEFAULT 0,
+    last_failure TEXT,
     FOREIGN KEY (session_id) REFERENCES sessions(id)
   );
 `);
@@ -55,6 +63,11 @@ try { db.exec("ALTER TABLE scenes ADD COLUMN video_prompt TEXT"); } catch {}
 try { db.exec("ALTER TABLE scenes ADD COLUMN duration INTEGER"); } catch {}
 try { db.exec("ALTER TABLE scenes ADD COLUMN scene_references TEXT"); } catch {}
 try { db.exec("ALTER TABLE scenes ADD COLUMN is_protagonist_visible BOOLEAN DEFAULT 1"); } catch {}
+try { db.exec("ALTER TABLE scenes ADD COLUMN title TEXT"); } catch {}
+try { db.exec("ALTER TABLE scenes ADD COLUMN reference_tags TEXT"); } catch {}
+try { db.exec("ALTER TABLE scenes ADD COLUMN shot_plan_json TEXT"); } catch {}
+try { db.exec("ALTER TABLE scenes ADD COLUMN retry_attempts INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE scenes ADD COLUMN last_failure TEXT"); } catch {}
 
 db.exec(`
 
@@ -80,5 +93,6 @@ try { db.exec("ALTER TABLE chat_history ADD COLUMN options TEXT"); } catch {}
 try { db.exec("ALTER TABLE user_uploads ADD COLUMN vision_description TEXT"); } catch {}
 
 initializeStoryBucketTables(db);
+initializeMediaTaskTables(db);
 
 export default db;

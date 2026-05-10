@@ -18,6 +18,15 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+const MAX_VISION_DESCRIPTION_OUTPUT_TOKENS = 1024;
+
+function nextStatusAfterUpload(session: SessionRow, activeRequest: ReturnType<typeof getActiveReferenceRequest>) {
+  if (session.mode === 'life_story' && activeRequest?.target_type === 'protagonist' && activeRequest.reference_scope !== 'scene') {
+    return 'INTERVIEW_PSYCH_PROFILE';
+  }
+  return 'INTERVIEW_DYNAMIC';
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -59,6 +68,7 @@ export async function POST(req: NextRequest) {
          
          const { text } = await generateText({
             model: openrouter('google/gemini-3.1-flash-lite'), // using gemini 3.1 flash lite for vision
+            maxOutputTokens: MAX_VISION_DESCRIPTION_OUTPUT_TOKENS,
             messages: [
                {
                  role: 'user',
@@ -103,7 +113,7 @@ export async function POST(req: NextRequest) {
        }
 
        if (session.status === 'AWAITING_SELFIE' || session.status === 'AWAITING_REFERENCE') {
-           db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('INTERVIEW_DYNAMIC', sessionId);
+           db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(nextStatusAfterUpload(session, activeRequest), sessionId);
        }
 
        const updatedSession = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow;

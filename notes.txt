@@ -1,26 +1,113 @@
+dont use claude haiku instead gemini lite always 
 
+Error planning shots: Error [AI_NoObjectGeneratedError]: No object generated: could not parse the response.
+    at async planShots (src/lib/shot_planner.ts:60:24)
+    at async executeVideoTask (src/lib/pipeline_media.ts:351:17)
+    at async runOneTask (src/lib/pipeline_media.ts:448:27)
+    at async runMediaTaskRunner (src/lib/pipeline_media.ts:486:22)
+  58 |
+  59 |   try {
+> 60 |     const { object } = await generateObject({
+     |                        ^
+  61 |       model: openrouter('anthropic/claude-3-haiku'),
+  62 |       system: `You are an AI Video Director. The user will provide a visual description of a scene and its total duration based on the audio voiceover length.
+  63 | Your job is to decide if this scene should be one continuous shot or cut into multiple angles. {
+  text: "Okay, let's break down this 19-second scene into a series of shots:\n" +
+    '\n' +
+    'Shot 1 (6 seconds):\n' +
+    `"Close-up on Mr. Esser's hand drawing a precise equation on the board."\n` +
+    '\n' +
+    'Shot 2 (6 seconds): \n' +
+    '"Over-the-shoulder shot of Dorian watching with rapt attention, his eyes widening as a new understanding dawns."\n' +
+    '\n' +
+    'Shot 3 (7 seconds):\n' +
+    `"Wide shot of the scene as the light becomes warmer, highlighting Dorian's expression of enlightenment."`,
+  response: {
+    id: 'gen-1778406796-LTRBwQ2ZCa4uUmp7FjPA',
+    timestamp: 2026-05-10T09:53:18.420Z,
+    modelId: 'anthropic/claude-3-haiku',
+    headers: {
+      'access-control-allow-origin': '*',
+      'access-control-expose-headers': 'X-Generation-Id,cf-ray',
+      'cf-ray': '9f980e4f8fa53bcb-WAW',
+      connection: 'keep-alive',
+      'content-encoding': 'gzip',
+      'content-type': 'application/json',
+      date: 'Sun, 10 May 2026 09:53:17 GMT',
+      'permissions-policy': 'payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com" "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")',
+      'referrer-policy': 'no-referrer, strict-origin-when-cross-origin',
+      server: 'cloudflare',
+      'transfer-encoding': 'chunked',
+      'x-content-type-options': 'nosniff',
+      'x-generation-id': 'gen-1778406796-LTRBwQ2ZCa4uUmp7FjPA'
+    },
+    body: {
+      id: 'gen-1778406796-LTRBwQ2ZCa4uUmp7FjPA',
+      model: 'anthropic/claude-3-haiku',
+      provider: 'Amazon Bedrock',
+      usage: [Object],
+      choices: [Array],
+      object: 'chat.completion',
+      created: 1778406796,
+      system_fingerprint: null
+    }
+  },
+  usage: {
+    inputTokens: 231,
+    inputTokenDetails: { noCacheTokens: 231, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    outputTokens: 128,
+    outputTokenDetails: { textTokens: 128, reasoningTokens: 0 },
+    totalTokens: 359,
+    raw: {
+      prompt_tokens: 231,
+      prompt_tokens_details: [Object],
+      completion_tokens: 128,
+      completion_tokens_details: [Object],
+      total_tokens: 359,
+      cost: 0.00021775,
+      cost_details: [Object],
+      is_byok: false
+    },
+    reasoningTokens: 0,
+    cachedInputTokens: 0
+  },
+  finishReason: 'stop',
+  [cause]: Error [AI_JSONParseError]: JSON parsing failed: Text: Okay, let's break down this 19-second scene into a series of shots:
+  
+  Shot 1 (6 seconds):
+  "Close-up on Mr. Esser's hand drawing a precise equation on the board."
+  
+  Shot 2 (6 seconds): 
+  "Over-the-shoulder shot of Dorian watching with rapt attention, his eyes widening as a new understanding dawns."
+  
+  Shot 3 (7 seconds):
+  "Wide shot of the scene as the light becomes warmer, highlighting Dorian's expression of enlightenment.".
+  Error message: Unexpected token 'O', "Okay, let'"... is not valid JSON
+      at async planShots (src/lib/shot_planner.ts:60:24)
+      at async executeVideoTask (src/lib/pipeline_media.ts:351:17)
+      at async runOneTask (src/lib/pipeline_media.ts:448:27)
+      at async runMediaTaskRunner (src/lib/pipeline_media.ts:486:22)
+    58 |
+    59 |   try {
+  > 60 |     const { object } = await generateObject({
+       |                        ^
+    61 |       model: openrouter('anthropic/claude-3-haiku'),
+    62 |       system: `You are an AI Video Director. The user will provide a visual description of a scene and its total duration based on the audio voiceover length.
+    63 | Your job is to decide if this scene should be one continuous shot or cut into multiple angles. {
+    text: "Okay, let's break down this 19-second scene into a series of shots:\n" +
+      '\n' +
+      'Shot 1 (6 seconds):\n' +
+      `"Close-up on Mr. Esser's hand drawing a precise equation on the board."\n` +
+      '\n' +
+      'Shot 2 (6 seconds): \n' +
+      '"Over-the-shoulder shot of Dorian watching with rapt attention, his eyes widening as a new understanding dawns."\n' +
+      '\n' +
+      'Shot 3 (7 seconds):\n' +
+      `"Wide shot of the scene as the light becomes warmer, highlighting Dorian's expression of enlightenment."`,
+    [cause]: [SyntaxError: Unexpected token 'O', "Okay, let'"... is not valid JSON]
+  }
 
-after i uploaded an image - i saw this in the chat: 
-*User uploaded 1 photo(s)* [Image: /uploads/2db60668-33dd-448f-bdd4-771e74e38aea.jpg] *Vision Analysis: ...
-- this should not show up i only wanna see the uploaded image in the chat history.
+-> perhaps whenever we use a json somewhere of something that is ai generated we run a JSON Check using another ai model and tell it to only return cleanly formatted JSON nothing else
 
-Upload Your Protagonist ReferenceUpload a clear face photo if you want to appear in the film. This becomes the protagonist reference for visible scenes.
--> blurring text - only if specifically asking for reference for a specific scene - i got confused because i already uploaded a selfie - but then it again asked me for an image i didnt understand what it would be for (consumer pov)
--> additionally the selfie upload should also trigger an "upload" field - i had to upload via the little camera icon
-doesnt disappear when something was uploaded 
-
-error:
-
-  174 |   requireRunwayApiKey();
-  175 |   const task = await waitForOutput(
-> 176 |     retryTaskCreation('Runway image', () => createGptImage2({
-      |                                             ^
-  177 |       model: 'gpt_image_2',
-  178 |       promptText: params.promptText,
-  179 |       quality: params.quality,
-RunwayML Sketch Error: TypeError: Cannot read properties of undefined (reading '_client')
-    at eval (src/lib/runway.ts:176:45)
-    at retryTaskCreation (src/lib/runway.ts:87:20)
-    at async waitForOutput (src/lib/runway.ts:103:16)
-    at async generateImageAsset (src/lib/runway.ts:175:16)
-    at async processInterviewTurn (src/lib/pipeline.ts:126:33)
+  Selfie saved icon should be removed after a while - its staying till the end
+  remove the photo icon in the chat bar - image upload is only possible when the user is asked to do it (with the panel being rendered)

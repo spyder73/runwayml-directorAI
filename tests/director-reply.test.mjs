@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { createJiti } from 'jiti';
 
@@ -25,4 +26,26 @@ test('director continuation prompt asks for a fresh visible response', () => {
 
   assert.match(prompt, /visible response/i);
   assert.match(prompt, /fresh/i);
+});
+
+test('film treatment review uses a concise chat handoff', () => {
+  const { filmTreatmentReviewHandoff } = jiti('../src/lib/treatment-reply.ts');
+  const verboseTreatmentReply = [
+    "Lenos, thank you for being so open. I've drafted a film treatment based on our conversation.",
+    'Here is the plan:',
+    '**Title:** Between the Lab and the Language',
+    '**Narrative Arc:** We start with the disciplined past and end with the lab.',
+  ].join('\n');
+
+  const reply = filmTreatmentReviewHandoff(verboseTreatmentReply);
+
+  assert.equal(reply, 'I shaped this into a film treatment. Take a look below and tell me whether it feels right.');
+  assert.doesNotMatch(reply, /Here is the plan|Narrative Arc|Between the Lab/i);
+});
+
+test('pipeline routes treatment tool calls through the concise handoff', () => {
+  const source = fs.readFileSync(new URL('../src/lib/pipeline.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /filmTreatmentReviewHandoff\(\)/);
+  assert.doesNotMatch(source, /propose_film_treatment'[\s\S]{0,180}finalReply = text \|\| args\.directorReply/);
 });

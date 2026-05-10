@@ -26,7 +26,12 @@ function phasePrompt(mode: SessionMode, status: SessionStatus) {
 
 export function buildInterviewSystemPrompt(input: InterviewPromptInput) {
   const activeReference = input.activeReferenceRequest
-    ? `Active optional image request: ${input.activeReferenceRequest.target_label}. If the user skips it, ask for visual details instead.`
+    ? [
+      `Active optional image request: ${input.activeReferenceRequest.target_label}.`,
+      input.activeReferenceRequest.reason ? `What it is for: ${input.activeReferenceRequest.reason}.` : '',
+      input.activeReferenceRequest.scene_title ? `Scene context: ${input.activeReferenceRequest.scene_title}.` : '',
+      'If the user skips it, ask for visual details instead.',
+    ].filter(Boolean).join(' ')
     : 'No active optional image request.';
 
   const privateContext = [

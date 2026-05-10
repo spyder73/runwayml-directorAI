@@ -5,6 +5,8 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+export const MAX_PROMPT_MODERATION_OUTPUT_TOKENS = 512;
+
 export async function ensureSafePrompt(prompt: string): Promise<string> {
   if (!prompt.trim()) {
     throw new Error('Missing prompt text for generation.');
@@ -13,6 +15,7 @@ export async function ensureSafePrompt(prompt: string): Promise<string> {
   try {
     const { text } = await generateText({
       model: openrouter('google/gemini-3.1-flash-lite'),
+      maxOutputTokens: MAX_PROMPT_MODERATION_OUTPUT_TOKENS,
       system: `You are a strict safety and content moderation filter for an AI video generation pipeline.
 Your job is to read the provided prompt. 
 If it is completely safe and passes standard AI safety filters (no extreme violence, no sexual content, no hate speech, no real-world sensitive political figures in compromising situations), just output "SAFE".
