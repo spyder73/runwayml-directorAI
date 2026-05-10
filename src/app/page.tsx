@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { Clapperboard, Film, Smartphone } from 'lucide-react';
+import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 
 export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,14 +81,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#0A0A0F] text-white overflow-hidden relative flex items-center justify-center">
-      {/* Magic Starry Background with Nebula effect */}
-      <div className="absolute inset-0 z-0 opacity-60 pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-purple-900/20 rounded-full blur-[120px] mix-blend-screen"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-[600px] h-[600px] bg-amber-700/10 rounded-full blur-[150px] mix-blend-screen"></div>
-        <div className="stars"></div>
-        <div className="stars2"></div>
-        <div className="stars3"></div>
-      </div>
+      <AmbientFractalBackground intensity="landing" />
 
       <div className="z-10 w-full max-w-3xl px-6 flex flex-col items-center">
         <motion.div
@@ -205,21 +199,6 @@ export default function Home() {
         </AnimatePresence>
       </div>
 
-      <style dangerouslySetInnerHTML={{__html: `
-        .stars, .stars2, .stars3 {
-          position: absolute;
-          top: 0; left: 0; right: 0; bottom: 0;
-          background: transparent url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MDBweCIgaGVpZ2h0PSI0MDBweCI+PGNpcmNsZSBjeD0iNTAiIGN5PSI1MCIgcj0iMC41IiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMjAwIiBjeT0iMjAwIiByPSIwLjUiIGZpbGw9IiNmZmYiLz48Y2lyY2xlIGN4PSIzNTAiIGN5PSI1MCIgcj0iMC41IiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMTUwIiBjeT0iMzUwIiByPSIwLjUiIGZpbGw9IiNmZmYiLz48L3N2Zz4=') repeat top center;
-          z-index: 0;
-        }
-        .stars { animation: moveUp 100s linear infinite; }
-        .stars2 { animation: moveUp 200s linear infinite; opacity: 0.5; background-size: 200px 200px; }
-        .stars3 { animation: moveUp 300s linear infinite; opacity: 0.2; background-size: 600px 600px; }
-        @keyframes moveUp {
-          from { background-position: 0 0; }
-          to { background-position: 0 -10000px; }
-        }
-      `}} />
     </main>
   );
 }

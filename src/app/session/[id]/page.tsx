@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, use } from 'react';
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Film, Send, X } from 'lucide-react';
+import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 import InterviewChat from '@/components/session/InterviewChat';
 import FilmTreatmentCard from '@/components/session/FilmTreatmentCard';
 import MemorySketchCard from '@/components/session/MemorySketchCard';
@@ -37,17 +38,6 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [particles] = useState(() => (
-    Array.from({ length: 45 }).map((_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      size: Math.random() * 2 + 1,
-      duration: Math.random() * 20 + 10,
-      delay: Math.random() * 5,
-    }))
-  ));
 
   useEffect(() => {
     const eventSource = new EventSource(`/api/pipeline/events?sessionId=${sessionId}`);
@@ -267,17 +257,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
 
   return (
     <main className="relative flex min-h-screen flex-col overflow-hidden bg-[#0A0A0F] font-serif text-white">
-      <div className="pointer-events-none fixed inset-0 z-0 shadow-[inset_0_0_150px_rgba(0,0,0,0.9)]">
-        {particles.map((particle) => (
-          <motion.div
-            key={particle.id}
-            className="absolute rounded-full bg-white/20"
-            style={{ width: particle.size, height: particle.size, left: `${particle.x}%`, top: `${particle.y}%` }}
-            animate={{ y: [0, -100, 0], opacity: [0.1, 0.5, 0.1] }}
-            transition={{ duration: particle.duration, repeat: Infinity, delay: particle.delay, ease: 'linear' }}
-          />
-        ))}
-      </div>
+      <AmbientFractalBackground intensity="session" />
 
       <header className="pointer-events-none fixed left-0 right-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-[#0A0A0F] to-transparent p-6">
         <div className="flex items-center gap-3 text-white/40">

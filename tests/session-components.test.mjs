@@ -97,3 +97,26 @@ test('home page checks whether live demo production is ready', () => {
   assert.match(source, /\/api\/pipeline\/readiness/);
   assert.match(source, /readiness\.userMessage/);
 });
+
+test('ambient fractal background is a client component with Escape Dust motion controls', () => {
+  const source = fs.readFileSync(new URL('../src/components/AmbientFractalBackground.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /^'use client';/);
+  assert.match(source, /type AmbientFractalBackgroundProps/);
+  assert.match(source, /intensity: 'landing' \| 'session'/);
+  assert.match(source, /prefers-reduced-motion: reduce/);
+  assert.match(source, /onPointerMove/);
+  assert.match(source, /escape-dust-shard/);
+  assert.match(source, /escape-dust-micro-cell/);
+});
+
+test('home and session pages share the ambient fractal background with tuned intensity', () => {
+  const homeSource = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const sessionSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(homeSource, /AmbientFractalBackground/);
+  assert.match(homeSource, /intensity="landing"/);
+  assert.match(sessionSource, /AmbientFractalBackground/);
+  assert.match(sessionSource, /intensity="session"/);
+  assert.doesNotMatch(sessionSource, /const \[particles\]/);
+});
