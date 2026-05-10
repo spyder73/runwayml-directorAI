@@ -47,6 +47,20 @@ To deploy on a VPS using Docker:
    ```
    This will build the standalone Next.js image, set up the SQLite data volumes, and expose the app on port 3000.
 
+## Production Reviewer Account
+
+Production can seed a confirmed reviewer account at startup when these env vars are set:
+
+```env
+REVIEWER_EMAIL=reviewer@example.com
+REVIEWER_PASSWORD=replace-with-real-password
+REVIEWER_OPENROUTER_API_KEY=
+REVIEWER_RUNWAYML_API_SECRET=
+CREDENTIAL_ENCRYPTION_KEY=base64-encoded-32-byte-key
+```
+
+Set the real reviewer email, password, and optional BYOK keys shortly before deployment. The app encrypts reviewer API keys before saving them and never logs reviewer secrets.
+
 ## Tech Stack
 - Next.js (App Router)
 - React & Tailwind CSS

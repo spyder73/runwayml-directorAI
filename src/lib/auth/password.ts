@@ -1,4 +1,4 @@
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'crypto';
+import { randomBytes, scrypt as scryptCallback, scryptSync, timingSafeEqual } from 'crypto';
 
 const SCRYPT_N = 16384;
 const SCRYPT_R = 8;
@@ -33,6 +33,21 @@ export async function hashPassword(password: string) {
 
   const salt = randomBytes(16);
   const hash = await scrypt(password, salt, KEY_LENGTH, {
+    N: SCRYPT_N,
+    r: SCRYPT_R,
+    p: SCRYPT_P,
+  });
+
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${encode(salt)}$${encode(hash)}`;
+}
+
+export function hashPasswordSync(password: string) {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error('Password must be at least 8 characters.');
+  }
+
+  const salt = randomBytes(16);
+  const hash = scryptSync(password, salt, KEY_LENGTH, {
     N: SCRYPT_N,
     r: SCRYPT_R,
     p: SCRYPT_P,

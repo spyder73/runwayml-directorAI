@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { initializeStoryBucketTables } from './story-bucket';
 import { initializeMediaTaskTables } from './media-tasks';
+import { seedReviewerAccount } from './auth/seed-reviewer';
 
 type SqliteDatabase = Database.Database;
 
@@ -188,5 +189,6 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 initializeDatabaseSchema(db);
+seedReviewerAccount(db);
 
 export default db;
