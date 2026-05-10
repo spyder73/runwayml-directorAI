@@ -1,10 +1,15 @@
 'use client';
 
-import { Clapperboard } from 'lucide-react';
+import { useState } from 'react';
+import { Check, Clapperboard, MessageSquare } from 'lucide-react';
 import type { StoryTreatmentRow } from '@/lib/types';
 
 type FilmTreatmentCardProps = {
   treatment: StoryTreatmentRow | null;
+  isActionable?: boolean;
+  isBusy?: boolean;
+  onAccept?: () => void;
+  onRequestChanges?: (comment: string) => void;
 };
 
 function parseAvoid(value: string | null | undefined) {
@@ -17,9 +22,17 @@ function parseAvoid(value: string | null | undefined) {
   }
 }
 
-export default function FilmTreatmentCard({ treatment }: FilmTreatmentCardProps) {
+export default function FilmTreatmentCard({
+  treatment,
+  isActionable = false,
+  isBusy = false,
+  onAccept,
+  onRequestChanges,
+}: FilmTreatmentCardProps) {
+  const [changeNote, setChangeNote] = useState('');
   if (!treatment) return null;
   const avoid = parseAvoid(treatment.avoid_json);
+  const canSendNote = changeNote.trim().length > 0 && !isBusy;
 
   return (
     <section className="rounded-lg border border-amber-100/15 bg-white/[0.04] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
@@ -41,6 +54,42 @@ export default function FilmTreatmentCard({ treatment }: FilmTreatmentCardProps)
             <p className="mt-4 font-sans text-xs leading-relaxed text-white/42">
               <span className="font-mono uppercase tracking-[0.22em]">Keep away from</span> {avoid.join(', ')}
             </p>
+          )}
+          {isActionable && (
+            <div className="mt-6 space-y-3 border-t border-white/10 pt-5">
+              <div className="flex flex-col gap-3 md:flex-row">
+                <button
+                  type="button"
+                  onClick={onAccept}
+                  disabled={isBusy}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-3 font-mono text-xs font-bold uppercase tracking-widest text-black transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:opacity-50"
+                >
+                  <Check size={16} /> Draft scenes
+                </button>
+                <div className="flex min-w-0 flex-1 gap-2">
+                  <input
+                    value={changeNote}
+                    onChange={(event) => setChangeNote(event.target.value)}
+                    placeholder="Change the treatment..."
+                    disabled={isBusy}
+                    className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-4 py-3 font-sans text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-200/40 disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const comment = changeNote.trim();
+                      if (!comment) return;
+                      onRequestChanges?.(comment);
+                      setChangeNote('');
+                    }}
+                    disabled={!canSendNote}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-4 py-3 font-mono text-xs uppercase tracking-widest text-white/70 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    <MessageSquare size={15} /> Revise
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>

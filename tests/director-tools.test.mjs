@@ -121,6 +121,22 @@ test('LifeStory outline prompt asks for missing stories and highlighted experien
   assert.match(prompt, /broad life coverage/i);
 });
 
+test('director prompt turns approved treatments into scene outlines and asks for friend references', () => {
+  const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
+  const prompt = buildInterviewSystemPrompt({
+    mode: 'life_story',
+    status: 'INTERVIEW_DYNAMIC',
+    storyContext: 'Film treatment: Currents and Beats; Entities: Dorian (friend, kayaking friend)',
+    uploadContext: '',
+    activeReferenceRequest: null,
+  });
+
+  assert.match(prompt, /user approves an existing film treatment/i);
+  assert.match(prompt, /propose_scene_outline/);
+  assert.match(prompt, /named friend/i);
+  assert.match(prompt, /request_reference_upload/);
+});
+
 test('scene outline prompt requires a treatment before outline production', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const prompt = buildInterviewSystemPrompt({

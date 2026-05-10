@@ -511,6 +511,19 @@ export function proposeFilmTreatment(database: SqliteDatabase, sessionId: string
   return getFilmTreatment(database, sessionId) as StoryTreatmentRow;
 }
 
+export function approveFilmTreatment(database: SqliteDatabase, sessionId: string) {
+  const treatment = getFilmTreatment(database, sessionId);
+  if (!treatment) return undefined;
+
+  database.prepare(`
+    UPDATE story_treatments
+    SET status = 'approved', updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND session_id = ?
+  `).run(treatment.id, sessionId);
+
+  return getFilmTreatment(database, sessionId) as StoryTreatmentRow;
+}
+
 export function getActiveReferenceRequest(database: SqliteDatabase, sessionId: string) {
   return database.prepare(`
     SELECT * FROM reference_upload_requests
@@ -541,6 +554,80 @@ export function hasProtagonistReferenceDecision(database: SqliteDatabase, sessio
   `).get(sessionId);
 
   return Boolean(request);
+}
+
+const SUPPORTING_REFERENCE_TYPES = new Set(['person', 'friend', 'family']);
+
+function normalizedLabel(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function supportingEntityType(type: string) {
+  return SUPPORTING_REFERENCE_TYPES.has(type.trim().toLowerCase());
+}
+
+function findPersistedEntity(database: SqliteDatabase, sessionId: string, entity: EntityUpdate) {
+  return database.prepare(`
+    SELECT * FROM story_entities
+    WHERE session_id = ?
+      AND lower(display_name) = lower(?)
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `).get(sessionId, entity.displayName) as StoryEntityRow | undefined;
+}
+
+function hasReferenceDecisionForEntity(database: SqliteDatabase, sessionId: string, entity: StoryEntityRow) {
+  if (entity.reference_asset_id) return true;
+
+  const asset = database.prepare(`
+    SELECT 1 FROM reference_assets
+    WHERE session_id = ?
+      AND (
+        owner_entity_id = ?
+        OR lower(COALESCE(vision_description, '')) LIKE ?
+        OR lower(stable_tag) = ?
+      )
+    LIMIT 1
+  `).get(
+    sessionId,
+    entity.id,
+    `%${normalizedLabel(entity.display_name)}%`,
+    normalizedLabel(entity.display_name).replace(/[^a-z0-9_]+/g, '_'),
+  );
+  if (asset) return true;
+
+  const request = database.prepare(`
+    SELECT 1 FROM reference_upload_requests
+    WHERE session_id = ?
+      AND lower(target_label) = lower(?)
+      AND status IN ('pending', 'fulfilled', 'skipped', 'described')
+    LIMIT 1
+  `).get(sessionId, entity.display_name);
+
+  return Boolean(request);
+}
+
+export function maybeCreateSupportingReferenceUploadRequest(
+  database: SqliteDatabase,
+  sessionId: string,
+  entities: EntityUpdate[] | undefined,
+) {
+  if (!entities?.length || getActiveReferenceRequest(database, sessionId)) return undefined;
+
+  const candidate = entities.find((entity) => entity.displayName && supportingEntityType(String(entity.type)));
+  if (!candidate) return undefined;
+
+  const entity = findPersistedEntity(database, sessionId, candidate);
+  if (!entity || hasReferenceDecisionForEntity(database, sessionId, entity)) return undefined;
+
+  return createReferenceUploadRequest(database, sessionId, {
+    targetType: entity.type,
+    targetLabel: entity.display_name,
+    entityId: entity.id,
+    promptText: `You mentioned ${entity.display_name}${entity.relationship ? `, your ${entity.relationship}` : ''}. If you have a photo, it could help keep them visually consistent in the film. You can upload one, describe them, or skip it.`,
+    reason: `${entity.display_name} may appear in one of the life-story scenes as an important supporting person.`,
+    fallbackPrompt: `No problem if you would rather not upload a photo of ${entity.display_name}. Could you describe what they look like instead?`,
+  });
 }
 
 function getPendingGeneralProtagonistRequest(database: SqliteDatabase, sessionId: string) {

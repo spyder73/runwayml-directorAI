@@ -51,6 +51,18 @@ test('production progress exposes sub-scene frames while motion is optimized', (
   assert.match(source, /shot\.reference_image_url/);
 });
 
+test('treatment review uses explicit actions and disables free chat decisions', () => {
+  const cardSource = fs.readFileSync(new URL('../src/components/session/FilmTreatmentCard.tsx', import.meta.url), 'utf8');
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(cardSource, /onAccept/);
+  assert.match(cardSource, /onRequestChanges/);
+  assert.match(cardSource, /Draft scenes/i);
+  assert.match(pageSource, /hasTreatmentAwaitingDecision/);
+  assert.match(pageSource, /freeChatDisabled/);
+  assert.match(pageSource, /I approve this film treatment/);
+});
+
 test('director route can revise a single generated sub-scene prompt', () => {
   const source = fs.readFileSync(new URL('../src/app/api/pipeline/director/route.ts', import.meta.url), 'utf8');
 

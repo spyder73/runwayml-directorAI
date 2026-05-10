@@ -81,6 +81,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
 
   const handleSendMessage = async (e?: React.FormEvent, customMsg?: string) => {
     if (e) e.preventDefault();
+    if (!customMsg && freeChatDisabled) return;
     const msg = customMsg || message;
     if (!msg.trim()) return;
 
@@ -146,6 +147,14 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, action: 'lock' }),
     });
+  };
+
+  const handleAcceptTreatment = async () => {
+    await handleSendMessage(undefined, 'I approve this film treatment. Please draft the scene outline now.');
+  };
+
+  const handleTreatmentRevision = async (comment: string) => {
+    await handleSendMessage(undefined, `Please revise the film treatment: ${comment}`);
   };
 
   const handleRenderFinal = async () => {
@@ -230,11 +239,25 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   }
 
   const showReferenceRequest = Boolean(activeReferenceRequest) || (session.status === 'AWAITING_SELFIE' && !session.user_selfie_url);
+  const productionStarted = [
+    'GENERATING_IMAGES',
+    'AWAITING_APPROVAL',
+    'GENERATING_FINAL_ASSETS',
+    'PREVIEW_READY',
+    'RENDERING',
+    'COMPLETED',
+  ].includes(session.status) || scenes.length > 0;
+  const hasUnlockedOutline = Boolean(storyBucket?.sceneOutline.some((scene) => scene.status !== 'locked'));
+  const hasTreatmentAwaitingDecision = Boolean(storyBucket?.treatment && !hasUnlockedOutline && !productionStarted && !showReferenceRequest);
+  const hasOutlineAwaitingDecision = Boolean(hasUnlockedOutline && session.status === 'OUTLINE_REVIEW' && !showReferenceRequest);
+  const freeChatDisabled = isUploading || isSending || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision;
   const inputPlaceholder = showReferenceRequest
     ? 'Upload, describe, or skip the reference...'
-    : session.status === 'OUTLINE_REVIEW'
-      ? 'Share outline notes or approve it above...'
-      : 'Type your response...';
+    : hasTreatmentAwaitingDecision
+      ? 'Approve or revise the treatment above...'
+      : hasOutlineAwaitingDecision
+        ? 'Use the outline notes or approve it above...'
+        : 'Type your response...';
 
   return (
     <main className="relative flex min-h-screen flex-col overflow-hidden bg-[#0A0A0F] font-serif text-white">
@@ -266,7 +289,13 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
             onOpenImage={setModalImage}
           />
 
-          <FilmTreatmentCard treatment={storyBucket?.treatment || null} />
+          <FilmTreatmentCard
+            treatment={storyBucket?.treatment || null}
+            isActionable={hasTreatmentAwaitingDecision}
+            isBusy={isSending}
+            onAccept={handleAcceptTreatment}
+            onRequestChanges={handleTreatmentRevision}
+          />
 
           <MemorySketchCard
             candidates={storyBucket?.memoryCandidates || []}
@@ -327,6 +356,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
+              disabled={freeChatDisabled}
               className="rounded-full bg-white/5 p-2 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
               aria-label="Add image"
             >
@@ -340,11 +370,11 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
             onChange={(event) => setMessage(event.target.value)}
             placeholder={inputPlaceholder}
             className="w-full rounded-full border border-white/10 bg-[#111116]/90 py-4 pl-14 pr-16 font-serif text-lg text-white shadow-2xl outline-none backdrop-blur-xl transition-all placeholder:text-white/30 hover:border-white/20 focus:border-amber-200/50 focus:ring-1 focus:ring-amber-200/20"
-            disabled={isUploading}
+            disabled={freeChatDisabled}
           />
           <button
             type="submit"
-            disabled={isUploading || !message.trim()}
+            disabled={freeChatDisabled || !message.trim()}
             className="absolute inset-y-2 right-2 flex items-center justify-center rounded-full bg-white px-5 text-black transition-all hover:scale-105 hover:bg-amber-200 active:scale-95 disabled:bg-white/20 disabled:text-white disabled:opacity-20"
           >
             <Send size={18} className="ml-0.5" />

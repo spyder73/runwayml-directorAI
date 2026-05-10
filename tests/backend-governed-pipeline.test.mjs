@@ -176,6 +176,99 @@ test('film treatment persists as the required bridge before outline lock', () =>
   assert.equal(loadStoryBucket(db, 'session-1').treatment?.title, 'The Suitcase I Carried');
 });
 
+test('explicit treatment approval can move a LifeStory into scene outline despite remaining readiness gaps', () => {
+  const { initializeStoryBucketTables, loadStoryBucket, proposeFilmTreatment } = jiti('../src/lib/story-bucket.ts');
+  const { isTreatmentApprovalForOutline } = jiti('../src/lib/pipeline.ts');
+
+  const db = createDb();
+  initializeStoryBucketTables(db);
+  db.prepare('UPDATE sessions SET mode = ? WHERE id = ?').run('life_story', 'session-1');
+  proposeFilmTreatment(db, 'session-1', {
+    title: 'Currents and Beats',
+    emotionalThesis: 'Transformation through extremes.',
+    narrativeArc: 'Aachen focus to Albania danger to Berlin energy.',
+    visualMotif: 'Water becoming light.',
+    narratorStyle: 'Introspective and rhythmic.',
+    endingFeeling: 'Open momentum.',
+  });
+
+  const bucket = loadStoryBucket(db, 'session-1');
+
+  assert.equal(isTreatmentApprovalForOutline('just implement this draft i like it', bucket), true);
+  assert.equal(isTreatmentApprovalForOutline('sure but I would add Aachen', bucket), false);
+});
+
+test('fallback treatment outline creates scene rows from the approved story bucket', () => {
+  const {
+    applyProfileBucketUpdate,
+    initializeStoryBucketTables,
+    loadStoryBucket,
+    proposeFilmTreatment,
+  } = jiti('../src/lib/story-bucket.ts');
+  const { buildFallbackSceneOutlineFromBucket } = jiti('../src/lib/pipeline.ts');
+
+  const db = createDb();
+  initializeStoryBucketTables(db);
+  proposeFilmTreatment(db, 'session-1', {
+    title: 'Currents and Beats',
+    emotionalThesis: 'Transformation through extremes.',
+    narrativeArc: 'Aachen focus to Albania danger to Berlin energy.',
+    visualMotif: 'Water becoming light.',
+    narratorStyle: 'Introspective and rhythmic.',
+    endingFeeling: 'Open momentum.',
+  });
+  applyProfileBucketUpdate(db, 'session-1', {
+    memoryCandidates: [
+      {
+        title: 'The Drin River',
+        description: 'Kayaking down the Drin river with Dorian and nearly losing control.',
+        emotionalPurpose: 'Adventure and danger.',
+        visualSummary: 'A kayak cutting through wild river water in Albania.',
+      },
+    ],
+  });
+
+  const outline = buildFallbackSceneOutlineFromBucket(loadStoryBucket(db, 'session-1'));
+
+  assert.ok(outline.scenes.length >= 1);
+  assert.match(outline.scenes[0].title, /Drin River|Currents and Beats/);
+  assert.match(outline.scenes[0].videoPrompt, /camera/i);
+  assert.ok(outline.scenes[0].duration >= 2);
+  assert.ok(outline.scenes[0].duration <= 10);
+});
+
+test('new supporting people can trigger an optional reference upload checkpoint', () => {
+  const {
+    applyProfileBucketUpdate,
+    initializeStoryBucketTables,
+    maybeCreateSupportingReferenceUploadRequest,
+  } = jiti('../src/lib/story-bucket.ts');
+
+  const db = createDb();
+  initializeStoryBucketTables(db);
+  applyProfileBucketUpdate(db, 'session-1', {
+    entities: [
+      {
+        type: 'friend',
+        displayName: 'Dorian',
+        relationship: 'kayaking friend',
+        description: 'He was with Moritz on the Drin river trip.',
+      },
+    ],
+  });
+
+  const request = maybeCreateSupportingReferenceUploadRequest(db, 'session-1', [
+    { type: 'friend', displayName: 'Dorian', relationship: 'kayaking friend' },
+  ]);
+  const session = db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1');
+
+  assert.equal(request?.target_label, 'Dorian');
+  assert.equal(request?.target_type, 'friend');
+  assert.match(request?.prompt_text || '', /Dorian/);
+  assert.match(request?.prompt_text || '', /skip/i);
+  assert.equal(session.status, 'AWAITING_REFERENCE');
+});
+
 test('media task DAG selects only dependency-ready queued tasks and tracks retries', () => {
   const {
     createMediaTask,

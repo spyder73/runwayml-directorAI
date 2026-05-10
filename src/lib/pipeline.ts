@@ -1,6 +1,6 @@
 import db from './db';
 import { broadcastSessionUpdate } from './sse';
-import { generateText, streamText } from 'ai';
+import { generateObject, generateText, streamText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { v4 as uuidv4 } from 'uuid';
 import { runFrameGenerationPhase, runMediaGenerationPhase } from './pipeline_media';
@@ -27,12 +27,14 @@ import { evaluateLifeStoryOutlineReadiness } from './story-readiness';
 import {
   addReferenceSubject,
   applyProfileBucketUpdate,
+  approveFilmTreatment,
   createReferenceAsset,
   createReferenceUploadRequest,
   getActiveReferenceRequest,
   hasProtagonistReferenceDecision,
   loadStoryBucket,
   lockSceneOutlineForProduction,
+  maybeCreateSupportingReferenceUploadRequest,
   proposeFilmTreatment,
   proposeSceneOutline,
   recordMemorySketch,
@@ -164,6 +166,103 @@ function hasLifePathContext(bucket: StoryBucket) {
   );
 }
 
+function latestUserText(messages: InterviewMessage[]) {
+  return [...messages].reverse().find((message) => message.role === 'user')?.content || '';
+}
+
+export function isTreatmentApprovalForOutline(message: string, bucket: StoryBucket) {
+  if (!bucket.treatment || bucket.sceneOutline.length > 0) return false;
+
+  const text = message.trim();
+  if (!text) return false;
+  if (/\b(?:but|however|change|revise|revision|add|remove|instead|maybe|perhaps|not yet|wait)\b/i.test(text)) {
+    return false;
+  }
+
+  return /\b(?:approve|approved|accept|accepted|yes|sure|ok|okay|go ahead|implement|draft|outline|scenes?|move on|looks good|like it)\b/i.test(text);
+}
+
+function compactText(value: string | null | undefined, fallback: string) {
+  const text = value?.replace(/\s+/g, ' ').trim();
+  return text || fallback;
+}
+
+function shortenForNarration(value: string, fallback: string) {
+  const text = compactText(value, fallback);
+  return text.length > 136 ? `${text.slice(0, 133).trim()}...` : text;
+}
+
+export function buildFallbackSceneOutlineFromBucket(bucket: StoryBucket) {
+  const treatment = bucket.treatment;
+  const motif = treatment?.visual_motif || 'cinematic light and movement';
+  const seeds = bucket.memoryCandidates.length
+    ? bucket.memoryCandidates.map((candidate) => ({
+      title: candidate.title,
+      summary: compactText(candidate.description, candidate.title),
+      emotionalPurpose: compactText(candidate.emotional_purpose, treatment?.emotional_thesis || 'A meaningful life-story beat.'),
+      visualSummary: compactText(candidate.visual_summary, candidate.description),
+    }))
+    : bucket.timelineEvents.map((event) => ({
+      title: event.label,
+      summary: compactText(event.description, event.label),
+      emotionalPurpose: compactText(event.emotion, treatment?.emotional_thesis || 'A meaningful life-story beat.'),
+      visualSummary: compactText(event.description, event.label),
+    }));
+
+  const usableSeeds = seeds.length ? seeds.slice(0, 6) : [{
+    title: treatment?.title || 'The Life Story',
+    summary: treatment?.narrative_arc || treatment?.emotional_thesis || 'A concise emotional life-story arc.',
+    emotionalPurpose: treatment?.emotional_thesis || 'The emotional truth of the film.',
+    visualSummary: treatment?.visual_motif || 'A cinematic symbolic scene.',
+  }];
+
+  return {
+    scenes: usableSeeds.map((seed) => ({
+      title: seed.title,
+      summary: seed.summary,
+      narratorText: shortenForNarration(seed.emotionalPurpose, seed.summary),
+      imagePrompt: `Cinematic life-story frame: ${seed.visualSummary}. Visual motif: ${motif}.`,
+      videoPrompt: `The camera slowly moves through the scene as ${seed.visualSummary} unfolds with subtle motion and changing light.`,
+      duration: 8,
+      emotionalPurpose: seed.emotionalPurpose,
+      referenceNeeds: [],
+      protagonistVisible: true,
+    })),
+    directorReply: 'I drafted the scene outline below. Review the scenes and approve them when they feel right, or leave notes for changes.',
+  };
+}
+
+async function draftSceneOutlineAfterTreatmentApproval(sessionId: string) {
+  const bucket = loadStoryBucket(db, sessionId);
+  const prompt = [
+    'Create a concise reviewable LifeStory scene outline from this approved film treatment and private story bucket.',
+    'Each scene must be cinematic, emotionally specific, and ready for image/video generation.',
+    'Return only the structured scene outline. Keep narratorText short.',
+    formatStoryBucketForPrompt(bucket),
+  ].join('\n\n');
+
+  if (process.env.OPENROUTER_API_KEY) {
+    try {
+      const { object } = await generateObject({
+        model: openrouter('google/gemini-3.1-flash-lite'),
+        system: 'You are a film outline drafter. Create production-ready scenes from an approved treatment. Do not ask more interview questions.',
+        prompt,
+        schema: proposeSceneOutlineSchema,
+      });
+      proposeSceneOutline(db, sessionId, object);
+      approveFilmTreatment(db, sessionId);
+      return object;
+    } catch (error) {
+      console.warn('AI outline fallback failed; using deterministic treatment outline.', error);
+    }
+  }
+
+  const outline = buildFallbackSceneOutlineFromBucket(bucket);
+  proposeSceneOutline(db, sessionId, outline);
+  approveFilmTreatment(db, sessionId);
+  return outline;
+}
+
 function maybeRequestLifeStorySelfie(session: SessionRow, bucket: StoryBucket) {
   if (session.mode !== 'life_story') return null;
   if (!hasBasicLifeStoryProfile(bucket) || !hasLifePathContext(bucket)) return null;
@@ -223,6 +322,8 @@ export async function processInterviewTurn(sessionId: string) {
       .join('\n');
 
     const storyBucket = loadStoryBucket(db, sessionId);
+    const latestUserMessage = latestUserText(messages);
+    const treatmentApprovalRequested = isTreatmentApprovalForOutline(latestUserMessage, storyBucket);
     const systemPrompt = buildInterviewSystemPrompt({
       mode: session.mode,
       status: session.status,
@@ -283,7 +384,8 @@ export async function processInterviewTurn(sessionId: string) {
            const updatedBucket = applyProfileBucketUpdate(db, sessionId, args);
            advanceInterviewStatus(session, updatedBucket);
            const selfiePrompt = maybeRequestLifeStorySelfie(session, updatedBucket);
-           finalReply = selfiePrompt || text || args.directorReply || finalReply;
+           const supportingReferenceRequest = maybeCreateSupportingReferenceUploadRequest(db, sessionId, args.entities);
+           finalReply = selfiePrompt || supportingReferenceRequest?.prompt_text || text || args.directorReply || finalReply;
         } else if (call.toolName === 'request_reference_upload') {
            const args = requestReferenceUploadSchema.parse(call.input);
            const request = createReferenceUploadRequest(db, sessionId, args);
@@ -396,7 +498,7 @@ export async function processInterviewTurn(sessionId: string) {
            }
            if (session.mode === 'life_story') {
              const readiness = evaluateLifeStoryOutlineReadiness(bucketBeforeOutline);
-             if (!readiness.ready) {
+             if (!readiness.ready && !treatmentApprovalRequested) {
                finalReply = text || readiness.nextQuestion;
                continue;
              }
@@ -416,6 +518,7 @@ export async function processInterviewTurn(sessionId: string) {
            }
 
            proposeSceneOutline(db, sessionId, args);
+           if (treatmentApprovalRequested) approveFilmTreatment(db, sessionId);
            finalReply = text || args.directorReply || args.chatMessage || finalReply;
         } else if (call.toolName === 'revise_scene_outline') {
            const args = reviseSceneOutlineSchema.parse(call.input);
@@ -433,6 +536,17 @@ export async function processInterviewTurn(sessionId: string) {
             finalReply = text ? `${text}\n\n${productionMessage}` : productionMessage;
         }
       }
+    }
+
+    const bucketAfterTools = loadStoryBucket(db, sessionId);
+    if (
+      treatmentApprovalRequested
+      && isTreatmentApprovalForOutline(latestUserMessage, bucketAfterTools)
+      && !getActiveReferenceRequest(db, sessionId)
+    ) {
+      const outline = await draftSceneOutlineAfterTreatmentApproval(sessionId);
+      const outlineReply = outline.directorReply || 'I drafted the scene outline below. Review the scenes and approve them when they feel right, or leave notes for changes.';
+      finalReply = finalReply?.trim() ? `${finalReply}\n\n${outlineReply}` : outlineReply;
     }
 
     if (!finalReply?.trim()) {

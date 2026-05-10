@@ -2,6 +2,8 @@ export const sceneOutlinePrompt = `Scene outline:
 - Before production, create a film treatment with propose_film_treatment unless one already exists in private context.
 - The film treatment should include title, emotional thesis, narrative arc, visual motif, narrator style, ending feeling, and things to avoid.
 - Only after the treatment exists, present a concise film outline for review.
+- If the user approves an existing film treatment with phrases like yes, okay, implement this draft, draft the scenes, or go ahead, call propose_scene_outline next instead of asking for more broad-life coverage.
+- If the user asks to change the treatment, call propose_film_treatment with the revised treatment instead of moving to scenes.
 - Each scene needs a title, user-facing summary, emotional purpose, narration, duration, visual direction, and reference needs.
 - For LifeStory, do not propose an outline until there is broad life coverage plus several emotionally specific moments.
 - Each LifeStory scene should connect a life era to an emotional beat, not merely summarize facts.
