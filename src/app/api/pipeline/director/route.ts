@@ -12,6 +12,8 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+const MAX_DIRECTOR_REVISION_OUTPUT_TOKENS = 4096;
+
 const updateScenePromptSchema = z.object({
   scene_index: z.number().int().nonnegative(),
   new_visual_prompt: z.string().min(1),
@@ -52,6 +54,7 @@ export async function POST(req: NextRequest) {
     // Vercel AI SDK with Tools for MCP simulation
     const { text, toolCalls } = await generateText({
       model: openrouter('google/gemini-3.1-flash-lite'),
+      maxOutputTokens: MAX_DIRECTOR_REVISION_OUTPUT_TOKENS,
       prompt: `You are a film director. The user wants to adjust the following timeline of scenes.
 Current Scenes:
 ${JSON.stringify(scenes, null, 2)}

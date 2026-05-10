@@ -5,13 +5,14 @@ import { AlertTriangle, Check, Download, MessageSquare, RefreshCw } from 'lucide
 import { useState } from 'react';
 import RemotionPreview from '@/components/RemotionPreview';
 import { safeProductionPauseMessage } from '@/lib/user-safe-errors';
-import type { SceneRow, SessionRow } from '@/lib/types';
+import type { RenderProgressPayload, SceneRow, SessionRow } from '@/lib/types';
 
 type RetryUnit = 'image' | 'audio' | 'video' | 'render';
 
 type ProductionProgressProps = {
   session: SessionRow;
   scenes: SceneRow[];
+  renderProgress?: RenderProgressPayload | null;
   pipelineError: string | null;
   onRetry: (unit?: RetryUnit, sceneId?: string) => void;
   onApproveFrames: () => void;
@@ -71,6 +72,20 @@ function retryUnitForScene(scene: SceneRow): { unit: RetryUnit; label: string } 
   return null;
 }
 
+function clampPercent(progress: number) {
+  if (!Number.isFinite(progress)) return 0;
+  return Math.min(100, Math.max(0, Math.round(progress * 100)));
+}
+
+function frameCountLabel(value: number | null) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '-';
+}
+
+function renderStageLabel(progress: RenderProgressPayload) {
+  if (progress.message) return progress.message;
+  return progress.stitchStage ? 'Encoding final video' : 'Rendering frames';
+}
+
 function SceneSubsceneProgress({ scene, aspectRatio, onOpenImage }: { scene: SceneRow; aspectRatio: SessionRow['aspect_ratio']; onOpenImage: (url: string) => void }) {
   const shotPlan = parseSceneShotPlan(scene);
   if (shotPlan.length < 2 && !shotPlan.some((shot) => shot.reference_image_url || shot.url || shot.status)) return null;
@@ -111,7 +126,7 @@ function SceneSubsceneProgress({ scene, aspectRatio, onOpenImage }: { scene: Sce
   );
 }
 
-export default function ProductionProgress({ session, scenes, pipelineError, onRetry, onApproveFrames, onFrameComment, onRenderFinal, onOpenImage }: ProductionProgressProps) {
+export default function ProductionProgress({ session, scenes, renderProgress, pipelineError, onRetry, onApproveFrames, onFrameComment, onRenderFinal, onOpenImage }: ProductionProgressProps) {
   const [frameNotes, setFrameNotes] = useState<Record<string, string>>({});
   const isProductionPhase = ['GENERATING_IMAGES', 'AWAITING_APPROVAL', 'GENERATING_FINAL_ASSETS', 'PREVIEW_READY', 'RENDERING', 'COMPLETED'].includes(session.status);
   if (!isProductionPhase && session.status !== 'FAILED') return null;
@@ -119,6 +134,7 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
   const completedScenes = scenes.filter((scene) => scene.status === 'completed' || scene.video_url).length;
   const imagedScenes = scenes.filter((scene) => scene.reference_image_url).length;
   const totalScenes = Math.max(scenes.length, 1);
+  const renderPercent = renderProgress ? clampPercent(renderProgress.progress) : 0;
 
   const copy = (() => {
     if (session.status === 'GENERATING_IMAGES') return { eyebrow: 'First pass', title: 'Composing scene frames', body: 'The first still images are taking shape. Each scene will fill in as its frame is ready.' };
@@ -187,10 +203,36 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
             </button>
           )}
           {session.status === 'RENDERING' && (
-            <div className="flex flex-col items-center gap-4 font-mono text-sm text-amber-200/70">
-              <div className="h-12 w-12 animate-spin rounded-full border-t-2 border-amber-200" />
-              Preparing the final cut...
-            </div>
+            renderProgress ? (
+              <div className="flex w-full max-w-xl flex-col gap-3 font-mono text-sm text-amber-100/75">
+                <div className="flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.22em]">
+                  <span>{renderStageLabel(renderProgress)}</span>
+                  <span>{renderPercent}%</span>
+                </div>
+                <div
+                  className="h-2 overflow-hidden rounded-full bg-white/10"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={renderPercent}
+                  aria-label="Final render progress"
+                >
+                  <div
+                    className="h-full rounded-full bg-amber-200 shadow-[0_0_18px_rgba(253,230,138,0.35)] transition-all duration-700"
+                    style={{ width: `${renderPercent}%` }}
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-2 text-[10px] uppercase tracking-[0.18em] text-white/40 sm:grid-cols-2">
+                  <span>Rendered frames {frameCountLabel(renderProgress.renderedFrames)} / {frameCountLabel(renderProgress.totalFrames)}</span>
+                  <span>Encoded frames {frameCountLabel(renderProgress.encodedFrames)}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-4 font-mono text-sm text-amber-200/70">
+                <div className="h-12 w-12 animate-spin rounded-full border-t-2 border-amber-200" />
+                Preparing the final cut...
+              </div>
+            )
           )}
           {session.status === 'COMPLETED' && (
             <a href={session.final_video_url || '#'} download className="flex items-center gap-3 rounded-full border border-green-500/50 bg-green-500/20 px-8 py-4 font-bold uppercase tracking-widest text-green-100 transition-colors hover:bg-green-500/30">

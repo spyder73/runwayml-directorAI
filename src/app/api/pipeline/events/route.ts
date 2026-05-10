@@ -3,6 +3,7 @@ import { sseEmitter } from '@/lib/sse';
 import db from '@/lib/db';
 import type { ChatHistoryRow, SceneRow, SessionRow, SessionUpdatePayload } from '@/lib/types';
 import { getActiveReferenceRequest, loadStoryBucket } from '@/lib/story-bucket';
+import { getRenderProgressForSession } from '@/lib/media-tasks';
 
 export const runtime = 'nodejs';
 
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
             chat_history,
             story_bucket: loadStoryBucket(db, sessionId),
             active_reference_request: getActiveReferenceRequest(db, sessionId) || null,
+            render_progress: getRenderProgressForSession(db, sessionId),
           };
           controller.enqueue(`data: ${JSON.stringify(data)}\n\n`);
         }

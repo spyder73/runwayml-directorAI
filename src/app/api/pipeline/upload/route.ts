@@ -18,6 +18,8 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+const MAX_VISION_DESCRIPTION_OUTPUT_TOKENS = 1024;
+
 function nextStatusAfterUpload(session: SessionRow, activeRequest: ReturnType<typeof getActiveReferenceRequest>) {
   if (session.mode === 'life_story' && activeRequest?.target_type === 'protagonist' && activeRequest.reference_scope !== 'scene') {
     return 'INTERVIEW_PSYCH_PROFILE';
@@ -66,6 +68,7 @@ export async function POST(req: NextRequest) {
          
          const { text } = await generateText({
             model: openrouter('google/gemini-3.1-flash-lite'), // using gemini 3.1 flash lite for vision
+            maxOutputTokens: MAX_VISION_DESCRIPTION_OUTPUT_TOKENS,
             messages: [
                {
                  role: 'user',

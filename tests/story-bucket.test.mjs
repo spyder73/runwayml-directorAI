@@ -212,6 +212,42 @@ test('reference subjects can resolve visible prompt tags with @ prefixes', () =>
   assert.equal(linkedAsset?.stable_tag, 'northview_school');
 });
 
+test('entity-scoped upload requests attach uploaded images to the story entity', () => {
+  const db = createDb();
+
+  applyProfileBucketUpdate(db, 'session-1', {
+    entities: [
+      {
+        id: 'kareem-entity',
+        type: 'friend',
+        displayName: 'Kareem',
+        relationship: 'friend from Heidelberg',
+        consentState: 'allowed',
+      },
+    ],
+  });
+
+  createReferenceUploadRequest(db, 'session-1', {
+    targetType: 'friend',
+    targetLabel: 'Kareem',
+    entityId: 'kareem-entity',
+    promptText: 'A photo of Kareem could help keep him visually consistent.',
+    reason: 'Kareem appears in the Heidelberg scene.',
+  });
+
+  const upload = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/kareem.jpg',
+    targetType: 'friend',
+    targetLabel: 'Kareem',
+    usagePermissions: 'allowed',
+  });
+  const entity = db.prepare('SELECT * FROM story_entities WHERE id = ?').get('kareem-entity');
+
+  assert.equal(upload.stable_tag, 'kareem');
+  assert.equal(upload.owner_entity_id, 'kareem-entity');
+  assert.equal(entity.reference_asset_id, upload.id);
+});
+
 test('protagonist reference decision is true after upload request, upload, or description', () => {
   const db = createDb();
 
@@ -351,6 +387,56 @@ test('locking an outline stores selected reference asset ids and generated tags 
 
   assert.deepEqual(JSON.parse(scene.scene_references), [protagonist.id, school.id]);
   assert.deepEqual(JSON.parse(scene.reference_tags), ['self', 'school_01']);
+});
+
+test('locking an outline resolves prompt-only entity tags to usable owned reference images', () => {
+  const db = createDb();
+  addTreatment(db);
+
+  applyProfileBucketUpdate(db, 'session-1', {
+    entities: [
+      {
+        id: 'kareem-entity',
+        type: 'friend',
+        displayName: 'Kareem',
+        relationship: 'friend from Heidelberg',
+        consentState: 'allowed',
+      },
+    ],
+  });
+
+  const upload = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/kareem.jpg',
+    stableTag: 'friend_kareem',
+    targetType: 'friend',
+    targetLabel: 'Kareem',
+    ownerEntityId: 'kareem-entity',
+    usagePermissions: 'allowed',
+  });
+
+  proposeSceneOutline(db, 'session-1', {
+    scenes: [
+      {
+        title: 'The Heidelberg pause',
+        summary: 'Lenos and Kareem laugh in warm light after language class.',
+        narratorText: 'In Heidelberg, Kareem made the pause feel light.',
+        imagePrompt: 'Warm golden-hour Heidelberg street. Use @kareem for visual consistency.',
+        videoPrompt: 'The camera slowly follows two friends as they walk and laugh.',
+        duration: 6,
+        referenceNeeds: [],
+        referenceAssetIds: [],
+        protagonistVisible: false,
+      },
+    ],
+  });
+
+  lockSceneOutlineForProduction(db, 'session-1');
+  const scene = db.prepare('SELECT * FROM scenes WHERE session_id = ?').get('session-1');
+
+  assert.deepEqual(JSON.parse(scene.scene_references), [upload.id]);
+  assert.deepEqual(JSON.parse(scene.reference_tags), ['friend_kareem']);
+  assert.match(scene.image_prompt, /@friend_kareem/);
+  assert.doesNotMatch(scene.image_prompt, /@kareem\b/);
 });
 
 test('locking an outline rejects references owned by denied-consent entities', () => {

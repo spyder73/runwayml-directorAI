@@ -322,6 +322,18 @@ test('final render crf resolution never sends h264-unsupported zero', () => {
   }
 });
 
+test('final render exposes Remotion progress callbacks', () => {
+  const source = fs.readFileSync(new URL('../src/lib/final-render.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /export type FinalRenderProgress/);
+  assert.match(source, /onProgress\?: \(progress: FinalRenderProgress\) => void/);
+  assert.match(source, /plan\.onProgress\?\.\(/);
+  assert.match(source, /renderedFrames/);
+  assert.match(source, /encodedFrames/);
+  assert.match(source, /totalFrames/);
+  assert.match(source, /stitchStage/);
+});
+
 test('final render plan sends readable subtitles into the Remotion composition', () => {
   const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
 

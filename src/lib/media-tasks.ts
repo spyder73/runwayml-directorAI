@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
+import type { RenderProgressPayload } from './types';
 
 type SqliteDatabase = Database.Database;
 
@@ -13,6 +14,19 @@ export type MediaTaskKind =
 
 export type MediaTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type MediaTaskProvider = 'runway' | 'remotion' | 'local';
+
+export type RenderProgressDetail = {
+  renderedFrames?: number | null;
+  encodedFrames?: number | null;
+  totalFrames?: number | null;
+  stitchStage?: string | null;
+};
+
+export type MediaTaskProgressInput = {
+  progress: number;
+  message?: string | null;
+  detail?: RenderProgressDetail;
+};
 
 export type MediaTaskRow = {
   id: string;
@@ -28,10 +42,23 @@ export type MediaTaskRow = {
   attempts: number;
   max_attempts: number;
   last_error: string | null;
+  progress: number;
+  progress_message: string | null;
+  progress_detail_json: string | null;
+  progress_updated_at: string | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
 };
+
+function existingColumns(database: SqliteDatabase, tableName: string) {
+  return new Set((database.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>).map((column) => column.name));
+}
+
+function addColumnIfMissing(database: SqliteDatabase, tableName: string, columnName: string, definition: string) {
+  if (existingColumns(database, tableName).has(columnName)) return;
+  database.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`).run();
+}
 
 export function initializeMediaTaskTables(database: SqliteDatabase) {
   database.exec(`
@@ -49,6 +76,10 @@ export function initializeMediaTaskTables(database: SqliteDatabase) {
       attempts INTEGER NOT NULL DEFAULT 0,
       max_attempts INTEGER NOT NULL DEFAULT 3,
       last_error TEXT,
+      progress REAL NOT NULL DEFAULT 0,
+      progress_message TEXT,
+      progress_detail_json TEXT,
+      progress_updated_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       started_at DATETIME,
       completed_at DATETIME
@@ -57,6 +88,11 @@ export function initializeMediaTaskTables(database: SqliteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_media_tasks_session_status
       ON media_tasks(session_id, status);
   `);
+
+  addColumnIfMissing(database, 'media_tasks', 'progress', 'progress REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing(database, 'media_tasks', 'progress_message', 'progress_message TEXT');
+  addColumnIfMissing(database, 'media_tasks', 'progress_detail_json', 'progress_detail_json TEXT');
+  addColumnIfMissing(database, 'media_tasks', 'progress_updated_at', 'progress_updated_at DATETIME');
 }
 
 function jsonArray(value: string[] | undefined) {
@@ -166,7 +202,13 @@ export function selectRunnableMediaTasks(database: SqliteDatabase, sessionId: st
 export function markMediaTaskRunning(database: SqliteDatabase, taskId: string) {
   database.prepare(`
     UPDATE media_tasks
-    SET status = 'running', started_at = COALESCE(started_at, CURRENT_TIMESTAMP), last_error = NULL
+    SET status = 'running',
+        started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+        last_error = NULL,
+        progress = CASE WHEN kind = 'render_final' THEN 0 ELSE progress END,
+        progress_message = CASE WHEN kind = 'render_final' THEN 'Preparing final render' ELSE progress_message END,
+        progress_detail_json = CASE WHEN kind = 'render_final' THEN NULL ELSE progress_detail_json END,
+        progress_updated_at = CASE WHEN kind = 'render_final' THEN CURRENT_TIMESTAMP ELSE progress_updated_at END
     WHERE id = ?
   `).run(taskId);
 }
@@ -174,7 +216,13 @@ export function markMediaTaskRunning(database: SqliteDatabase, taskId: string) {
 export function completeMediaTask(database: SqliteDatabase, taskId: string, outputAssetId?: string) {
   database.prepare(`
     UPDATE media_tasks
-    SET status = 'succeeded', output_asset_id = COALESCE(?, output_asset_id), completed_at = CURRENT_TIMESTAMP, last_error = NULL
+    SET status = 'succeeded',
+        output_asset_id = COALESCE(?, output_asset_id),
+        completed_at = CURRENT_TIMESTAMP,
+        last_error = NULL,
+        progress = CASE WHEN kind = 'render_final' THEN 1 ELSE progress END,
+        progress_message = CASE WHEN kind = 'render_final' THEN COALESCE(progress_message, 'Final video ready') ELSE progress_message END,
+        progress_updated_at = CASE WHEN kind = 'render_final' THEN CURRENT_TIMESTAMP ELSE progress_updated_at END
     WHERE id = ?
   `).run(outputAssetId || null, taskId);
 }
@@ -216,7 +264,14 @@ export function resetFailedMediaTasks(database: SqliteDatabase, params: {
 
   database.prepare(`
     UPDATE media_tasks
-    SET status = 'queued', last_error = NULL, completed_at = NULL
+    SET status = 'queued',
+        attempts = 0,
+        last_error = NULL,
+        completed_at = NULL,
+        progress = 0,
+        progress_message = NULL,
+        progress_detail_json = NULL,
+        progress_updated_at = NULL
     WHERE ${clauses.join(' AND ')}
   `).run(...values);
 }
@@ -242,11 +297,107 @@ export function requeueMediaTasks(database: SqliteDatabase, params: {
     UPDATE media_tasks
     SET status = 'queued',
         ${params.clearOutput ? 'output_asset_id = NULL,' : ''}
+        attempts = 0,
         last_error = NULL,
         started_at = NULL,
-        completed_at = NULL
+        completed_at = NULL,
+        progress = 0,
+        progress_message = NULL,
+        progress_detail_json = NULL,
+        progress_updated_at = NULL
     WHERE ${clauses.join(' AND ')}
   `).run(...values);
+}
+
+function clampProgress(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, Number(value.toFixed(3))));
+}
+
+function nullableNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function nullableString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function parseProgressDetail(value: string | null): RenderProgressDetail {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    const detail = parsed as Record<string, unknown>;
+    return {
+      renderedFrames: nullableNumber(detail.renderedFrames),
+      encodedFrames: nullableNumber(detail.encodedFrames),
+      totalFrames: nullableNumber(detail.totalFrames),
+      stitchStage: nullableString(detail.stitchStage),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function progressDetailJson(detail: RenderProgressDetail | undefined) {
+  if (!detail) return null;
+  return JSON.stringify({
+    renderedFrames: nullableNumber(detail.renderedFrames),
+    encodedFrames: nullableNumber(detail.encodedFrames),
+    totalFrames: nullableNumber(detail.totalFrames),
+    stitchStage: nullableString(detail.stitchStage),
+  });
+}
+
+export function updateMediaTaskProgress(database: SqliteDatabase, taskId: string, input: MediaTaskProgressInput) {
+  database.prepare(`
+    UPDATE media_tasks
+    SET progress = ?,
+        progress_message = ?,
+        progress_detail_json = ?,
+        progress_updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    clampProgress(input.progress),
+    input.message || null,
+    progressDetailJson(input.detail),
+    taskId,
+  );
+}
+
+export function updateRenderProgressForSession(database: SqliteDatabase, sessionId: string, input: MediaTaskProgressInput) {
+  const task = database.prepare(`
+    SELECT id FROM media_tasks
+    WHERE session_id = ? AND kind = 'render_final'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(sessionId) as { id: string } | undefined;
+  if (!task) return;
+  updateMediaTaskProgress(database, task.id, input);
+}
+
+export function getRenderProgressForSession(database: SqliteDatabase, sessionId: string): RenderProgressPayload | null {
+  const task = database.prepare(`
+    SELECT * FROM media_tasks
+    WHERE session_id = ? AND kind = 'render_final'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(sessionId) as MediaTaskRow | undefined;
+
+  if (!task || (!task.progress_updated_at && !task.progress_message && !task.progress_detail_json && task.progress <= 0)) {
+    return null;
+  }
+
+  const detail = parseProgressDetail(task.progress_detail_json);
+  return {
+    progress: clampProgress(Number(task.progress || 0)),
+    message: task.progress_message || 'Rendering frames',
+    renderedFrames: nullableNumber(detail.renderedFrames),
+    encodedFrames: nullableNumber(detail.encodedFrames),
+    totalFrames: nullableNumber(detail.totalFrames),
+    stitchStage: nullableString(detail.stitchStage),
+    updatedAt: task.progress_updated_at || task.started_at || null,
+  };
 }
 
 export function completeMediaTasksForScenePhase(database: SqliteDatabase, params: {

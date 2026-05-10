@@ -116,6 +116,21 @@ test('prompt moderation caps output tokens before OpenRouter receives the reques
   assert.match(source, /maxOutputTokens:\s*MAX_PROMPT_MODERATION_OUTPUT_TOKENS/);
 });
 
+test('bounded OpenRouter helper calls declare explicit output token caps', () => {
+  const pipelineSource = fs.readFileSync(new URL('../src/lib/pipeline.ts', import.meta.url), 'utf8');
+  const directorRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/director/route.ts', import.meta.url), 'utf8');
+  const uploadRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/upload/route.ts', import.meta.url), 'utf8');
+  const shotPlannerSource = fs.readFileSync(new URL('../src/lib/shot_planner.ts', import.meta.url), 'utf8');
+
+  assert.match(pipelineSource, /MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS/);
+  assert.match(pipelineSource, /MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS/);
+  assert.match(pipelineSource, /MAX_DIRECTOR_TOOL_OUTPUT_TOKENS/);
+  assert.match(directorRouteSource, /MAX_DIRECTOR_REVISION_OUTPUT_TOKENS/);
+  assert.match(uploadRouteSource, /MAX_VISION_DESCRIPTION_OUTPUT_TOKENS/);
+  assert.match(shotPlannerSource, /MAX_SHOT_PLAN_OUTPUT_TOKENS/);
+  assert.match(shotPlannerSource, /MAX_SHOT_PLAN_REPAIR_OUTPUT_TOKENS/);
+});
+
 test('cost estimator uses gpt_image_2 low sketches and high final frames', () => {
   const { estimateProductionCost } = jiti('../src/lib/cost-estimator.ts');
 
@@ -344,6 +359,101 @@ test('media task rows can be requeued for intentional scene revisions', () => {
   assert.equal(task.output_asset_id, null);
   assert.equal(task.last_error, null);
   assert.equal(task.completed_at, null);
+});
+
+test('user-triggered media task resets can revive exhausted render attempts', () => {
+  const {
+    createMediaTask,
+    failMediaTask,
+    initializeMediaTaskTables,
+    requeueMediaTasks,
+    resetFailedMediaTasks,
+    selectRunnableMediaTasks,
+  } = jiti('../src/lib/media-tasks.ts');
+
+  const db = createDb();
+  initializeMediaTaskTables(db);
+  const render = createMediaTask(db, {
+    sessionId: 'session-1',
+    kind: 'render_final',
+    provider: 'local',
+    maxAttempts: 1,
+  });
+
+  failMediaTask(db, render.id, 'h264 crf rejected');
+  resetFailedMediaTasks(db, { sessionId: 'session-1', kind: 'render_final' });
+  assert.deepEqual(selectRunnableMediaTasks(db, 'session-1').map((task) => task.id), [render.id]);
+
+  db.prepare('UPDATE media_tasks SET status = ?, attempts = ?, max_attempts = ? WHERE id = ?')
+    .run('queued', 3, 3, render.id);
+  requeueMediaTasks(db, { sessionId: 'session-1', kind: 'render_final', clearOutput: true });
+  assert.deepEqual(selectRunnableMediaTasks(db, 'session-1').map((task) => task.id), [render.id]);
+});
+
+test('render route requeues the final render task before starting the runner', () => {
+  const routeSource = fs.readFileSync(new URL('../src/app/api/pipeline/render/route.ts', import.meta.url), 'utf8');
+
+  assert.match(routeSource, /requeueMediaTasks/);
+  assert.match(routeSource, /kind: 'render_final'/);
+  assert.match(routeSource, /clearOutput: true/);
+});
+
+test('media task tables persist reconnectable render progress', () => {
+  const {
+    createMediaTask,
+    getRenderProgressForSession,
+    initializeMediaTaskTables,
+    updateMediaTaskProgress,
+  } = jiti('../src/lib/media-tasks.ts');
+
+  const db = createDb();
+  initializeMediaTaskTables(db);
+
+  const columns = db.prepare('PRAGMA table_info(media_tasks)').all().map((column) => column.name);
+  assert.ok(columns.includes('progress'));
+  assert.ok(columns.includes('progress_message'));
+  assert.ok(columns.includes('progress_detail_json'));
+  assert.ok(columns.includes('progress_updated_at'));
+
+  const task = createMediaTask(db, {
+    sessionId: 'session-1',
+    kind: 'render_final',
+    provider: 'local',
+  });
+
+  updateMediaTaskProgress(db, task.id, {
+    progress: 0.42,
+    message: 'Rendering frames',
+    detail: {
+      renderedFrames: 42,
+      encodedFrames: 12,
+      totalFrames: 100,
+      stitchStage: 'encoding',
+    },
+  });
+
+  const progress = getRenderProgressForSession(db, 'session-1');
+  assert.equal(progress.progress, 0.42);
+  assert.equal(progress.message, 'Rendering frames');
+  assert.equal(progress.renderedFrames, 42);
+  assert.equal(progress.encodedFrames, 12);
+  assert.equal(progress.totalFrames, 100);
+  assert.equal(progress.stitchStage, 'encoding');
+  assert.equal(typeof progress.updatedAt, 'string');
+});
+
+test('render progress is included in backend SSE payload sources', () => {
+  const typeSource = fs.readFileSync(new URL('../src/lib/types.ts', import.meta.url), 'utf8');
+  const routeSource = fs.readFileSync(new URL('../src/app/api/pipeline/events/route.ts', import.meta.url), 'utf8');
+  const pipelineSource = fs.readFileSync(new URL('../src/lib/pipeline_media.ts', import.meta.url), 'utf8');
+  const renderJobSource = fs.readFileSync(new URL('../src/lib/render-job.ts', import.meta.url), 'utf8');
+
+  assert.match(typeSource, /export type RenderProgressPayload/);
+  assert.match(typeSource, /render_progress\?: RenderProgressPayload \| null/);
+  assert.match(routeSource, /render_progress: getRenderProgressForSession/);
+  assert.match(pipelineSource, /render_progress: getRenderProgressForSession/);
+  assert.match(pipelineSource, /updateRenderProgressForSession/);
+  assert.match(renderJobSource, /updateRenderProgressForSession/);
 });
 
 test('media task runner executes dependency-ready production tasks and leaves render queued', async () => {

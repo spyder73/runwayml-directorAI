@@ -2,14 +2,16 @@ import type Database from 'better-sqlite3';
 import { getAudioDurationInSeconds } from 'get-audio-duration';
 import path from 'path';
 import db from './db';
-import { renderFinalFilm } from './final-render';
+import { renderFinalFilm, type FinalRenderProgress } from './final-render';
 import {
   completeMediaTask,
   failMediaTask,
+  getRenderProgressForSession,
   markMediaTaskRunning,
   selectRunnableMediaTasks,
   type MediaTaskKind,
   type MediaTaskRow,
+  updateRenderProgressForSession,
 } from './media-tasks';
 import { ensureSafePrompt } from './moderation';
 import { canRenderFinal } from './pipeline-guards';
@@ -28,7 +30,7 @@ import {
 } from './runway';
 import { cleanGeneratorPrompt, planShots, referencePromptFromGeneratorText, type ShotPlan } from './shot_planner';
 import { broadcastSessionUpdate } from './sse';
-import type { ReferenceAssetRow, SceneRow, SessionRow } from './types';
+import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './types';
 
 type SqliteDatabase = Database.Database;
 
@@ -234,6 +236,7 @@ function broadcastProgress(database: SqliteDatabase, sessionId: string, error?: 
   broadcastSessionUpdate(sessionId, {
     session: getSession(database, sessionId),
     scenes: getScenes(database, sessionId),
+    render_progress: getRenderProgressForSession(database, sessionId),
     ...(error ? { error } : {}),
   });
 }
@@ -250,6 +253,36 @@ function setSessionStatus(database: SqliteDatabase, sessionId: string, status: S
 
   database.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
     .run(status, sessionId);
+}
+
+function persistRenderProgress(database: SqliteDatabase, sessionId: string, progress: FinalRenderProgress) {
+  try {
+    updateRenderProgressForSession(database, sessionId, {
+      progress: progress.progress,
+      message: progress.message,
+      detail: {
+        renderedFrames: progress.renderedFrames,
+        encodedFrames: progress.encodedFrames,
+        totalFrames: progress.totalFrames,
+        stitchStage: progress.stitchStage,
+      },
+    });
+    broadcastProgress(database, sessionId);
+  } catch (error) {
+    console.error('Failed to persist render progress', error);
+  }
+}
+
+function completeRenderProgress(database: SqliteDatabase, sessionId: string) {
+  const current = getRenderProgressForSession(database, sessionId);
+  persistRenderProgress(database, sessionId, {
+    progress: 1,
+    message: 'Final video ready',
+    renderedFrames: current?.renderedFrames ?? null,
+    encodedFrames: current?.encodedFrames ?? null,
+    totalFrames: current?.totalFrames ?? null,
+    stitchStage: current?.stitchStage ?? null,
+  });
 }
 
 function runnableKinds(includeRender: boolean, onlyKinds?: MediaTaskKind[]) {
@@ -384,11 +417,14 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
 
   const referenceAssets = database.prepare('SELECT * FROM reference_assets WHERE session_id = ? ORDER BY created_at ASC')
     .all(session.id) as ReferenceAssetRow[];
+  const storyEntities = database.prepare('SELECT * FROM story_entities WHERE session_id = ? ORDER BY created_at ASC')
+    .all(session.id) as StoryEntityRow[];
   const preparedReferences = prepareSceneReferences({
     promptText: scene.image_prompt || scene.visual_prompt,
     sceneReferenceAssetIds: parseReferenceAssetIds(scene.scene_references),
     protagonistVisible: sceneShowsProtagonist(scene),
     assets: referenceAssets,
+    entities: storyEntities,
   });
   const promptText = await ensureSafePrompt(preparedReferences.promptText);
 
@@ -737,8 +773,10 @@ async function executeRenderTask(params: { database: SqliteDatabase; task: Media
     sessionId: session.id,
     aspectRatio: session.aspect_ratio,
     scenes,
+    onProgress: (progress) => persistRenderProgress(database, session.id, progress),
   });
 
+  completeRenderProgress(database, session.id);
   setSessionStatus(database, session.id, 'COMPLETED', rendered.publicUrl);
   broadcastProgress(database, session.id);
 

@@ -221,6 +221,16 @@ export type InterviewMessage = {
   content: string;
 };
 
+export type RenderProgressPayload = {
+  progress: number;
+  message: string;
+  renderedFrames: number | null;
+  encodedFrames: number | null;
+  totalFrames: number | null;
+  stitchStage: string | null;
+  updatedAt: string | null;
+};
+
 export type SessionUpdatePayload = {
   session?: SessionRow;
   status?: SessionStatus;
@@ -228,6 +238,7 @@ export type SessionUpdatePayload = {
   scenes?: SceneRow[];
   story_bucket?: StoryBucket;
   active_reference_request?: ReferenceUploadRequestRow | null;
+  render_progress?: RenderProgressPayload | null;
   chat_chunk?: { id: string, text: string };
   error?: string;
 };

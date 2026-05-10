@@ -47,6 +47,10 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+const MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS = 8192;
+const MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS = 1200;
+const MAX_DIRECTOR_TOOL_OUTPUT_TOKENS = 8192;
+
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -245,6 +249,7 @@ async function draftSceneOutlineAfterTreatmentApproval(sessionId: string) {
     try {
       const { object } = await generateObject({
         model: openrouter('google/gemini-3.1-flash-lite'),
+        maxOutputTokens: MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS,
         system: 'You are a film outline drafter. Create production-ready scenes from an approved treatment. Do not ask more interview questions.',
         prompt,
         schema: proposeSceneOutlineSchema,
@@ -295,6 +300,7 @@ async function generateDirectorContinuation(sessionId: string, messages: Intervi
 
   const { text } = await generateText({
     model: openrouter('google/gemini-3.1-flash-lite'),
+    maxOutputTokens: MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS,
     system: prompt,
     messages,
     toolChoice: 'none',
@@ -352,6 +358,7 @@ export async function processInterviewTurn(sessionId: string) {
 
     const result = await streamText({
       model: openrouter('google/gemini-3.1-flash-lite'),
+      maxOutputTokens: MAX_DIRECTOR_TOOL_OUTPUT_TOKENS,
       system: systemPrompt,
       messages,
       tools: aiTools,

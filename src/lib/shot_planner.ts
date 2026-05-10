@@ -6,6 +6,9 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+const MAX_SHOT_PLAN_OUTPUT_TOKENS = 2048;
+const MAX_SHOT_PLAN_REPAIR_OUTPUT_TOKENS = 2048;
+
 export type ShotPlan = {
   duration: number;
   prompt: string;
@@ -362,6 +365,7 @@ function extractAiResponseText(error: unknown) {
 async function repairShotPlanTextWithAi(text: string) {
   const { text: repairedText } = await generateText({
     model: openrouter('anthropic/claude-3-haiku'),
+    maxOutputTokens: MAX_SHOT_PLAN_REPAIR_OUTPUT_TOKENS,
     system: 'Convert shot-plan text into strict JSON. Return only JSON matching {"shots":[{"duration":number,"prompt":string,"reference_prompt":string,"visual_start_state":string,"visual_end_state":string,"camera_role":string,"angle_change_reason":string}]}. Do not include markdown, commentary, or field labels inside prompt strings.',
     prompt: text,
   });
@@ -382,6 +386,7 @@ export async function planShots(visualPrompt: string, durationSeconds: number) {
   try {
     const { object } = await generateObject({
       model: openrouter('anthropic/claude-3-haiku'),
+      maxOutputTokens: MAX_SHOT_PLAN_OUTPUT_TOKENS,
       system: `You are an AI Video Director. The user will provide a visual description of a scene and its total duration based on the audio voiceover length.
 Your job is to decide if this scene should be one continuous shot or cut into multiple angles.
 Prefer one continuous shot whenever the scene is 10 seconds or shorter and one camera setup can express the whole visual beat.

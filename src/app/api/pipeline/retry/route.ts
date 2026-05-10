@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { runFinalAssetsPhase, runFinalRenderPhase, runFrameGenerationPhase, runMediaGenerationPhase } from '@/lib/pipeline_media';
 import { broadcastSessionUpdate } from '@/lib/sse';
-import { resetFailedMediaTasks, type MediaTaskKind } from '@/lib/media-tasks';
+import { requeueMediaTasks, resetFailedMediaTasks, type MediaTaskKind } from '@/lib/media-tasks';
 import type { SceneRow, SessionRow } from '@/lib/types';
 
 type RetryUnit = 'image' | 'audio' | 'video' | 'render';
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     }
 
     if (unit === 'render') {
-      resetFailedMediaTasks(db, { sessionId, kind: 'render_final' });
+      requeueMediaTasks(db, { sessionId, kind: 'render_final', clearOutput: true });
       runFinalRenderPhase(sessionId).catch((error) => {
         console.error('Final render retry failed:', error);
       });

@@ -51,6 +51,27 @@ test('production progress exposes sub-scene frames while motion is optimized', (
   assert.match(source, /shot\.reference_image_url/);
 });
 
+test('production progress displays final render percentage when available', () => {
+  const source = fs.readFileSync(new URL('../src/components/session/ProductionProgress.tsx', import.meta.url), 'utf8');
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /renderProgress\?: RenderProgressPayload \| null/);
+  assert.match(source, /renderPercent/);
+  assert.match(source, /aria-valuenow/);
+  assert.match(source, /Rendered frames/);
+  assert.match(source, /Preparing the final cut/);
+  assert.match(pageSource, /const \[renderProgress, setRenderProgress\]/);
+  assert.match(pageSource, /data\.render_progress/);
+  assert.match(pageSource, /renderProgress=\{renderProgress\}/);
+});
+
+test('final render action optimistically switches the session into rendering state', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /setSession\(\(current\) => current \? \{ \.\.\.current, status: 'RENDERING'/);
+  assert.match(pageSource, /setRenderProgress\(null\)/);
+});
+
 test('treatment review uses explicit actions and disables free chat decisions', () => {
   const cardSource = fs.readFileSync(new URL('../src/components/session/FilmTreatmentCard.tsx', import.meta.url), 'utf8');
   const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');

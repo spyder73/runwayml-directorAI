@@ -40,6 +40,15 @@ type RemotionRenderScene = {
   duration_in_frames: number;
 };
 
+export type FinalRenderProgress = {
+  progress: number;
+  message: string;
+  renderedFrames: number | null;
+  encodedFrames: number | null;
+  totalFrames: number | null;
+  stitchStage: string | null;
+};
+
 export type FinalRenderPlan = {
   publicUrl: string;
   outputFilePath: string;
@@ -54,6 +63,7 @@ export type FinalRenderPlan = {
     durationInFrames: number;
   };
   entryPoint: string;
+  onProgress?: (progress: FinalRenderProgress) => void;
 };
 
 type RemotionBundleOptions = {
@@ -102,6 +112,7 @@ const MAX_NARRATION_TEMPO = 1.12;
 const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
 const H264_MIN_CRF = 1;
 const H264_MAX_CRF = 51;
+const PROGRESS_REPORT_BUCKETS = 50;
 
 function remotionRenderQuality(env: RemotionRenderEnv = process.env): RenderQuality {
   const configured = env.REMOTION_RENDER_QUALITY?.trim().toLowerCase();
@@ -343,6 +354,28 @@ export function createRemotionBundleResolver(bundleFn: RemotionBundleFn = bundle
 
 const resolveRemotionBundle = createRemotionBundleResolver();
 
+function clampProgress(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, Number(value.toFixed(3))));
+}
+
+function stitchStageLabel(stitchStage: unknown) {
+  if (typeof stitchStage !== 'string') return null;
+  return stitchStage.trim() || null;
+}
+
+function renderProgressMessage(stitchStage: string | null) {
+  return stitchStage ? 'Encoding final video' : 'Rendering frames';
+}
+
+function reportFinalRenderProgress(plan: FinalRenderPlan, progress: FinalRenderProgress) {
+  try {
+    plan.onProgress?.(progress);
+  } catch (error) {
+    console.error('Failed to report final render progress', error);
+  }
+}
+
 async function runRemotionRender(plan: FinalRenderPlan) {
   const serveUrl = await resolveRemotionBundle(plan);
   const browserExecutable = remotionBrowserExecutable() || undefined;
@@ -360,6 +393,8 @@ async function runRemotionRender(plan: FinalRenderPlan) {
   });
 
   let lastLoggedProgress = -1;
+  let lastReportedProgress = -1;
+  let totalFrames = plan.composition.durationInFrames;
   await renderMedia({
     serveUrl,
     composition: {
@@ -380,6 +415,15 @@ async function runRemotionRender(plan: FinalRenderPlan) {
     timeoutInMilliseconds,
     x264Preset,
     onStart: ({ frameCount }) => {
+      totalFrames = frameCount || plan.composition.durationInFrames;
+      reportFinalRenderProgress(plan, {
+        progress: 0,
+        message: 'Starting final render',
+        renderedFrames: 0,
+        encodedFrames: 0,
+        totalFrames,
+        stitchStage: null,
+      });
       console.log(JSON.stringify({
         scope: 'final-render',
         message: 'render-started',
@@ -392,16 +436,30 @@ async function runRemotionRender(plan: FinalRenderPlan) {
     },
     onProgress: ({ renderedFrames, encodedFrames, progress, stitchStage }) => {
       const progressBucket = Math.floor(progress * 10);
-      if (progressBucket === lastLoggedProgress && progress < 1) return;
-      lastLoggedProgress = progressBucket;
-      console.log(JSON.stringify({
-        scope: 'final-render',
-        message: 'render-progress',
-        renderedFrames,
-        encodedFrames: encodedFrames ?? 0,
-        progress: Number(progress.toFixed(3)),
-        stitchStage,
-      }));
+      const reportBucket = Math.floor(progress * PROGRESS_REPORT_BUCKETS);
+      const stage = stitchStageLabel(stitchStage);
+      if (reportBucket !== lastReportedProgress || progress >= 1) {
+        lastReportedProgress = reportBucket;
+        reportFinalRenderProgress(plan, {
+          progress: clampProgress(progress),
+          message: renderProgressMessage(stage),
+          renderedFrames,
+          encodedFrames: encodedFrames ?? 0,
+          totalFrames,
+          stitchStage: stage,
+        });
+      }
+      if (progressBucket !== lastLoggedProgress || progress >= 1) {
+        lastLoggedProgress = progressBucket;
+        console.log(JSON.stringify({
+          scope: 'final-render',
+          message: 'render-progress',
+          renderedFrames,
+          encodedFrames: encodedFrames ?? 0,
+          progress: Number(progress.toFixed(3)),
+          stitchStage,
+        }));
+      }
     },
     logLevel: 'warn',
   });
@@ -411,8 +469,12 @@ export async function renderFinalFilm(params: {
   sessionId: string;
   aspectRatio: AspectRatio;
   scenes: RenderScene[];
+  onProgress?: (progress: FinalRenderProgress) => void;
 }) {
-  const plan = buildFinalRenderPlan(params);
+  const plan = {
+    ...buildFinalRenderPlan(params),
+    onProgress: params.onProgress,
+  };
   await fs.mkdir(path.dirname(plan.outputFilePath), { recursive: true });
   await assertInputsExist([...plan.videoInputs, ...plan.audioInputs]);
   await runRemotionRender(plan);

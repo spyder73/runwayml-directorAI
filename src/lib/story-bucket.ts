@@ -12,6 +12,12 @@ import type {
 } from './types';
 import { canStartProduction } from './pipeline-guards';
 import { createMediaTaskDagForScenes, initializeMediaTaskTables } from './media-tasks';
+import {
+  canUseAsset,
+  extractPromptReferenceTags,
+  resolveReferenceAssetToken,
+  rewritePromptReferenceTags,
+} from './production-references';
 
 type SqliteDatabase = Database.Database;
 
@@ -182,25 +188,76 @@ function boolToInt(value: boolean | undefined, fallback = true) {
   return value ?? fallback ? 1 : 0;
 }
 
+function resolveSceneOutlineReferences(params: {
+  row: SceneOutlineRow;
+  assets: ReferenceAssetRow[];
+  entities: StoryEntityRow[];
+}) {
+  const selectedAssets: ReferenceAssetRow[] = [];
+  const seen = new Set<string>();
+  const promptTagReplacements = new Map<string, string>();
+  const unresolvedPromptTags: string[] = [];
+
+  const addAsset = (asset: ReferenceAssetRow | undefined) => {
+    if (!asset || seen.has(asset.id)) return;
+    selectedAssets.push(asset);
+    seen.add(asset.id);
+  };
+
+  for (const token of parseArray(params.row.reference_asset_ids_json)) {
+    addAsset(resolveReferenceAssetToken(token, params.assets, params.entities) as ReferenceAssetRow | undefined);
+  }
+
+  for (const token of parseArray(params.row.reference_needs_json)) {
+    addAsset(resolveReferenceAssetToken(token, params.assets, params.entities) as ReferenceAssetRow | undefined);
+  }
+
+  for (const tag of extractPromptReferenceTags(params.row.image_prompt)) {
+    const asset = resolveReferenceAssetToken(tag, params.assets, params.entities) as ReferenceAssetRow | undefined;
+    if (!asset) {
+      unresolvedPromptTags.push(tag);
+      continue;
+    }
+    if (normalizeReferenceTag(tag) !== asset.stable_tag) {
+      promptTagReplacements.set(normalizeReferenceTag(tag), asset.stable_tag);
+    }
+    addAsset(asset);
+  }
+
+  return {
+    selectedAssets,
+    imagePrompt: rewritePromptReferenceTags(params.row.image_prompt, promptTagReplacements),
+    unresolvedPromptTags,
+  };
+}
+
 function sceneOutlineConsentIssues(params: {
   outlineRows: SceneOutlineRow[];
   assets: ReferenceAssetRow[];
   entities: StoryEntityRow[];
 }) {
   const issues: string[] = [];
-  const assetById = new Map(params.assets.map((asset) => [asset.id, asset]));
   const entityById = new Map(params.entities.map((entity) => [entity.id, entity]));
 
   params.outlineRows.forEach((row, index) => {
-    for (const assetId of parseArray(row.reference_asset_ids_json)) {
-      const asset = assetById.get(assetId);
-      if (!asset) {
-        issues.push(`scene ${index + 1} references an unavailable asset`);
+    const resolvedReferences = resolveSceneOutlineReferences({
+      row,
+      assets: params.assets,
+      entities: params.entities,
+    });
+
+    for (const tag of resolvedReferences.unresolvedPromptTags) {
+      issues.push(`scene ${index + 1} prompt references @${tag} without an uploaded reference image`);
+    }
+
+    for (const asset of resolvedReferences.selectedAssets) {
+      if (asset.usage_permissions !== 'allowed') {
+        issues.push(`scene ${index + 1} reference @${asset.stable_tag} is not approved for generation`);
         continue;
       }
 
-      if (asset.usage_permissions !== 'allowed') {
-        issues.push(`scene ${index + 1} reference @${asset.stable_tag} is not approved for generation`);
+      if (!canUseAsset(asset)) {
+        issues.push(`scene ${index + 1} reference @${asset.stable_tag} does not have a usable image for generation`);
       }
 
       const owner = asset.owner_entity_id ? entityById.get(asset.owner_entity_id) : undefined;
@@ -833,7 +890,9 @@ export function createReferenceAsset(database: SqliteDatabase, sessionId: string
   const request = getActiveReferenceRequest(database, sessionId);
   const targetType = input.targetType || request?.target_type || 'reference';
   const targetLabel = input.targetLabel || request?.target_label || targetType;
-  const stableTag = uniqueStableTag(database, sessionId, input.stableTag || `${targetType}_${targetLabel}`);
+  const ownerEntityId = input.ownerEntityId || request?.entity_id || null;
+  const stableTagSeed = input.stableTag || (ownerEntityId ? targetLabel : `${targetType}_${targetLabel}`);
+  const stableTag = uniqueStableTag(database, sessionId, stableTagSeed);
   const id = uuidv4();
 
   database.prepare(`
@@ -849,11 +908,20 @@ export function createReferenceAsset(database: SqliteDatabase, sessionId: string
     input.runwayUri || null,
     stableTag,
     input.visionDescription || null,
-    input.ownerEntityId || request?.entity_id || null,
+    ownerEntityId,
     targetType,
     input.usagePermissions || 'allowed',
     input.source || 'upload',
   );
+
+  if (ownerEntityId) {
+    database.prepare(`
+      UPDATE story_entities
+      SET reference_asset_id = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND session_id = ?
+    `).run(id, ownerEntityId, sessionId);
+  }
 
   if (request) {
     database.prepare('UPDATE reference_upload_requests SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
@@ -1149,8 +1217,6 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
   `);
 
-  const assetById = new Map(referenceAssets.map((asset) => [asset.id, asset]));
-
   const trx = database.transaction(() => {
     database.prepare('DELETE FROM scenes WHERE session_id = ?').run(sessionId);
 
@@ -1163,8 +1229,12 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
         throw new Error(`Scene ${index + 1} has an invalid duration.`);
       }
 
-      const referenceAssetIds = parseArray(row.reference_asset_ids_json);
-      const selectedAssets = referenceAssetIds.map((id) => assetById.get(id)).filter(Boolean) as ReferenceAssetRow[];
+      const resolvedReferences = resolveSceneOutlineReferences({
+        row,
+        assets: referenceAssets,
+        entities: storyEntities,
+      });
+      const selectedAssets = resolvedReferences.selectedAssets;
       const blockedAsset = selectedAssets.find((asset) => asset.usage_permissions !== 'allowed');
       if (blockedAsset) {
         throw new Error(`Reference @${blockedAsset.stable_tag} is not approved for generation.`);
@@ -1181,7 +1251,7 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
         row.narrator_text,
         row.video_prompt,
         row.video_prompt,
-        row.image_prompt,
+        resolvedReferences.imagePrompt,
         row.duration,
         jsonArray(sceneReferenceIds),
         jsonArray(referenceTags),

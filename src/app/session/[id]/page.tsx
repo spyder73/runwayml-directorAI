@@ -15,11 +15,18 @@ import type {
   ChatHistoryRow,
   MemoryCandidateRow,
   ReferenceUploadRequestRow,
+  RenderProgressPayload,
   SceneOutlineRow,
   SceneRow,
   SessionRow,
   StoryBucket,
 } from '@/lib/types';
+
+function isRenderProgressPayload(value: unknown): value is RenderProgressPayload {
+  if (!value || typeof value !== 'object') return false;
+  const progress = (value as { progress?: unknown }).progress;
+  return typeof progress === 'number' && Number.isFinite(progress);
+}
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -34,6 +41,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [isUploading, setIsUploading] = useState(false);
   const [isDraftingOutline, setIsDraftingOutline] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [renderProgress, setRenderProgress] = useState<RenderProgressPayload | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -50,8 +58,11 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         if (data.chat_history) setChatHistory(data.chat_history);
         if (data.story_bucket) setStoryBucket(data.story_bucket);
         if ('active_reference_request' in data) setActiveReferenceRequest(data.active_reference_request);
+        if ('render_progress' in data) setRenderProgress(isRenderProgressPayload(data.render_progress) ? data.render_progress : null);
         if (data.error) setPipelineError(data.error);
         if (data.status && data.status !== 'FAILED') setPipelineError(null);
+        const incomingStatus = data.session?.status || data.status;
+        if (incomingStatus && incomingStatus !== 'RENDERING') setRenderProgress(null);
         if (data.chat_chunk) {
           setChatHistory((current) => current.map((row, index) => {
             const isTarget = row.id === data.chat_chunk.id || (index === current.length - 1 && row.role === 'assistant');
@@ -150,11 +161,23 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   };
 
   const handleRenderFinal = async () => {
-    await fetch('/api/pipeline/render', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId }),
-    });
+    const previousSession = session;
+    setPipelineError(null);
+    setRenderProgress(null);
+    setSession((current) => current ? { ...current, status: 'RENDERING', final_video_url: null } : current);
+    try {
+      const response = await fetch('/api/pipeline/render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to start final render.');
+      }
+    } catch (error) {
+      setSession(previousSession);
+      setPipelineError(error instanceof Error ? error.message : 'Failed to start final render.');
+    }
   };
 
   const handleApproveFrames = async () => {
@@ -299,6 +322,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           <ProductionProgress
           session={session}
           scenes={scenes}
+          renderProgress={renderProgress}
           pipelineError={pipelineError}
           onRetry={handleRetryGeneration}
           onApproveFrames={handleApproveFrames}
