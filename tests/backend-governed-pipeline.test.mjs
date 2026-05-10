@@ -522,3 +522,84 @@ test('media task runner records failed task attempts without advancing dependent
   assert.match(tasks[0].last_error, /runway is unavailable/);
   assert.equal(db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1').status, 'FAILED');
 });
+
+test('shot plan progress keeps completed sub-shots and only reports complete when every shot has a url', () => {
+  const {
+    mergeShotPlanProgress,
+    shotPlanVideoUrls,
+  } = jiti('../src/lib/pipeline_media.ts');
+
+  const plannedShots = [
+    { duration: 4, prompt: 'Wide shot as Maya walks through twilight city lights.', referencePrompt: 'Maya walking through twilight city lights.' },
+    { duration: 4, prompt: 'Close-up as Maya pauses by a shop window.', referencePrompt: 'Maya paused by a shop window.' },
+  ];
+  const existing = JSON.stringify([
+    {
+      duration: 4,
+      prompt: 'Wide shot as Maya walks through twilight city lights.',
+      reference_prompt: 'Maya walking through twilight city lights.',
+      reference_image_url: '/generated/image/session-1/shot-1.jpg',
+      url: '/generated/video/session-1/shot-1.mp4',
+      status: 'succeeded',
+    },
+    {
+      duration: 4,
+      prompt: 'Close-up as Maya pauses by a shop window.',
+      reference_prompt: 'Maya paused by a shop window.',
+      reference_image_url: '/generated/image/session-1/shot-2.jpg',
+      status: 'failed',
+      last_error: 'prompt failed validation',
+    },
+  ]);
+
+  const progress = mergeShotPlanProgress(existing, plannedShots);
+
+  assert.equal(progress[0].url, '/generated/video/session-1/shot-1.mp4');
+  assert.equal(progress[0].status, 'succeeded');
+  assert.equal(progress[1].url, undefined);
+  assert.equal(progress[1].status, 'pending');
+  assert.deepEqual(shotPlanVideoUrls(progress), []);
+
+  progress[1].url = '/generated/video/session-1/shot-2.mp4';
+  progress[1].status = 'succeeded';
+  assert.deepEqual(shotPlanVideoUrls(progress), [
+    '/generated/video/session-1/shot-1.mp4',
+    '/generated/video/session-1/shot-2.mp4',
+  ]);
+});
+
+test('shot prompt updates clear only the selected sub-shot media', () => {
+  const { updateShotPlanPromptJson } = jiti('../src/lib/pipeline_media.ts');
+
+  const updated = JSON.parse(updateShotPlanPromptJson(JSON.stringify([
+    {
+      duration: 4,
+      prompt: 'Wide shot as Maya walks through twilight city lights.',
+      reference_prompt: 'Maya walking through twilight city lights.',
+      reference_image_url: '/generated/image/session-1/shot-1.jpg',
+      url: '/generated/video/session-1/shot-1.mp4',
+      status: 'succeeded',
+    },
+    {
+      duration: 4,
+      prompt: 'Close-up as Maya pauses by a shop window.',
+      reference_prompt: 'Maya paused by a shop window.',
+      reference_image_url: '/generated/image/session-1/shot-2.jpg',
+      url: '/generated/video/session-1/shot-2.mp4',
+      status: 'failed',
+      last_error: 'prompt failed validation',
+    },
+  ]), 1, {
+    prompt: 'Close-up as Maya smiles softly at her reflection while city lights shimmer in the glass.',
+    referencePrompt: 'Maya smiling softly at her reflection in a shop window, city lights shimmering in the glass.',
+  }));
+
+  assert.equal(updated[0].url, '/generated/video/session-1/shot-1.mp4');
+  assert.equal(updated[0].status, 'succeeded');
+  assert.equal(updated[1].url, undefined);
+  assert.equal(updated[1].reference_image_url, undefined);
+  assert.equal(updated[1].last_error, undefined);
+  assert.equal(updated[1].status, 'pending');
+  assert.match(updated[1].prompt, /smiles softly/);
+  assert.match(updated[1].reference_prompt, /shop window/);
+});

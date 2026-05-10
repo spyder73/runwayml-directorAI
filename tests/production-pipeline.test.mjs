@@ -45,10 +45,46 @@ test('shot planner adds continuity image prompts for split scenes', () => {
   ]);
 
   assert.equal(shots.length, 2);
-  assert.match(shots[0].referencePrompt, /opening|first/i);
-  assert.match(shots[1].referencePrompt, /continuation|previous/i);
+  assert.match(shots[0].referencePrompt, /train/i);
+  assert.match(shots[1].referencePrompt, /@opening_frame/);
   assert.match(shots[1].referencePrompt, /train/i);
-  assert.match(shots[1].referencePrompt, /already occurred|do not reset/i);
+  assert.doesNotMatch(shots[1].referencePrompt, /sub-scene|previous action|already occurred|do not reset|Base scene|This shot begins/i);
+});
+
+test('shot planner strips orchestration labels from generator prompts', () => {
+  const { parseShotPlanResponseText } = jiti('../src/lib/shot_planner.ts');
+
+  const shots = parseShotPlanResponseText(
+    'Shot 1 (4 seconds):\n' +
+      'prompt: Wide shot following Maya from behind as she walks down a sidewalk at twilight.\n' +
+      'reference_prompt: A woman in a long coat walking down a city sidewalk at dusk, with lit shop windows in the background.\n\n' +
+      'Shot 2 (4 seconds):\n' +
+      'prompt: Close-up on Maya as she pauses near a shop window, her reflection overlaid against the city lights.\n' +
+      'reference_prompt: A woman pauses near a shop window, her face reflected in the glass with city lights behind her.',
+    'Walking shot following Maya from behind down a sidewalk at twilight.',
+    8,
+  );
+
+  assert.equal(shots.length, 2);
+  assert.equal(shots[0].prompt, 'Wide shot following Maya from behind as she walks down a sidewalk at twilight.');
+  assert.equal(shots[1].prompt, 'Close-up on Maya as she pauses near a shop window, her reflection overlaid against the city lights.');
+  assert.equal(shots[1].referencePrompt, 'A woman pauses near a shop window, her face reflected in the glass with city lights behind her.');
+  for (const shot of shots) {
+    assert.doesNotMatch(shot.prompt, /prompt:|reference_prompt:/i);
+    assert.doesNotMatch(shot.referencePrompt, /prompt:|reference_prompt:|sub-scene|previous action|do not reset/i);
+  }
+});
+
+test('continuity reference prompts are isolated generator instructions', () => {
+  const { buildContinuityReferencePrompt } = jiti('../src/lib/pipeline_media.ts');
+
+  const prompt = buildContinuityReferencePrompt({
+    duration: 4,
+    prompt: 'prompt: Close-up on Maya as she pauses near a shop window.\nreference_prompt: Maya paused near a shop window, her reflection visible in the glass.',
+  }, 1);
+
+  assert.equal(prompt, 'Using @opening_frame as the visual reference, Maya paused near a shop window, her reflection visible in the glass.');
+  assert.doesNotMatch(prompt, /sub-scene|previous action|already occurred|do not reset|prompt:|reference_prompt:/i);
 });
 
 test('production references choose consented tagged assets and append prompt tags', () => {

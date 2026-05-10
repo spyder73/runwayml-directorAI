@@ -24,6 +24,34 @@ type ProposedShotPlan = ShotPlan & {
   reference_prompt?: string;
 };
 
+function compactPromptText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function extractLabeledField(text: string, label: 'prompt' | 'reference_prompt') {
+  const labels = ['prompt', 'reference_prompt'];
+  const otherLabels = labels.filter((candidate) => candidate !== label).join('|');
+  const pattern = new RegExp(`(?:^|\\n)\\s*${label}\\s*:\\s*([\\s\\S]*?)(?=\\n\\s*(?:${otherLabels})\\s*:|$)`, 'i');
+  const match = text.match(pattern);
+  return match?.[1] ? compactPromptText(match[1]) : '';
+}
+
+export function cleanGeneratorPrompt(value: string | undefined | null) {
+  const text = compactPromptText(value || '');
+  if (!text) return '';
+
+  const labeledPrompt = extractLabeledField((value || '').trim(), 'prompt');
+  if (labeledPrompt) return labeledPrompt;
+
+  return text
+    .replace(/^(?:prompt|reference_prompt)\s*:\s*/i, '')
+    .trim();
+}
+
+export function referencePromptFromGeneratorText(value: string | undefined | null) {
+  return extractLabeledField((value || '').trim(), 'reference_prompt');
+}
+
 function clampShotDuration(duration: number) {
   return Math.max(2, Math.min(10, Math.round(duration)));
 }
@@ -81,7 +109,7 @@ export function normalizeShotPlan(
     const boundedDurations = splitDurationIntoShots(totalDuration);
     return boundedDurations.map((duration, index) => ({
       duration,
-      prompt: index === 0 ? safePrompt : `${safePrompt} Alternate cinematic angle ${index + 1}.`,
+      prompt: cleanGeneratorPrompt(index === 0 ? safePrompt : `${safePrompt} Alternate cinematic angle ${index + 1}.`),
       referencePrompt: continuityReferencePrompt({
         visualPrompt: safePrompt,
         shotPrompt: index === 0 ? safePrompt : `${safePrompt} Alternate cinematic angle ${index + 1}.`,
@@ -96,16 +124,16 @@ export function normalizeShotPlan(
     usableShots.map((shot) => shot.duration),
     totalDuration,
   ) || splitDurationIntoShots(totalDuration);
-  const fallbackPrompt = usableShots[usableShots.length - 1]?.prompt?.trim() || safePrompt;
+  const fallbackPrompt = cleanGeneratorPrompt(usableShots[usableShots.length - 1]?.prompt) || safePrompt;
 
   return boundedDurations.map((duration, index) => ({
     duration,
-    prompt: usableShots[index]?.prompt?.trim() || fallbackPrompt,
+    prompt: cleanGeneratorPrompt(usableShots[index]?.prompt) || fallbackPrompt,
     referencePrompt: referencePromptForShot({
       visualPrompt: safePrompt,
       shot: usableShots[index],
       fallbackPrompt,
-      previousShotPrompts: usableShots.slice(0, index).map((shot) => shot.prompt.trim()).filter(Boolean),
+      previousShotPrompts: usableShots.slice(0, index).map((shot) => cleanGeneratorPrompt(shot.prompt)).filter(Boolean),
       index,
     }),
   }));
@@ -118,12 +146,13 @@ function referencePromptForShot(params: {
   previousShotPrompts: string[];
   index: number;
 }) {
-  const proposed = params.shot?.referencePrompt || params.shot?.reference_prompt;
-  if (proposed?.trim()) return proposed.trim();
+  const proposed = cleanGeneratorPrompt(params.shot?.referencePrompt || params.shot?.reference_prompt)
+    || referencePromptFromGeneratorText(params.shot?.prompt);
+  if (proposed) return proposed;
 
   return continuityReferencePrompt({
     visualPrompt: params.visualPrompt,
-    shotPrompt: params.shot?.prompt?.trim() || params.fallbackPrompt,
+    shotPrompt: cleanGeneratorPrompt(params.shot?.prompt) || params.fallbackPrompt,
     previousShotPrompts: params.previousShotPrompts,
     index: params.index,
   });
@@ -135,26 +164,12 @@ function continuityReferencePrompt(params: {
   previousShotPrompts: string[];
   index: number;
 }) {
+  const shotPrompt = cleanGeneratorPrompt(params.shotPrompt) || cleanGeneratorPrompt(params.visualPrompt);
   if (params.index === 0) {
-    return [
-      'Opening still reference frame for the first sub-scene.',
-      `Base scene: ${params.visualPrompt}`,
-      `This shot begins with: ${params.shotPrompt}`,
-      'Show the scene before this shot motion begins.',
-    ].join(' ');
+    return shotPrompt;
   }
 
-  const previousAction = params.previousShotPrompts.length
-    ? params.previousShotPrompts.join(' Then ')
-    : params.visualPrompt;
-
-  return [
-    `Continuation still reference frame for sub-scene ${params.index + 1}, after the previous action already occurred.`,
-    `Base scene: ${params.visualPrompt}`,
-    `Previous action/state: ${previousAction}`,
-    `This shot begins with: ${params.shotPrompt}`,
-    'Show what is now present at the start of this sub-scene; do not reset moving objects, vehicles, or characters to their opening positions unless the current shot explicitly says so.',
-  ].join(' ');
+  return compactPromptText(`Using @opening_frame as the visual reference, ${shotPrompt}`);
 }
 
 function parseShotPlanJson(text: string) {
@@ -194,7 +209,11 @@ function parseShotPlanProse(text: string) {
       .replace(/^[-*\s]+/, '')
       .trim();
 
-    return { duration, prompt };
+    return {
+      duration,
+      prompt: cleanGeneratorPrompt(prompt),
+      reference_prompt: referencePromptFromGeneratorText(prompt),
+    };
   }).filter((shot) => Number.isFinite(shot.duration) && shot.prompt.length > 0);
 
   return shots.length ? shots : null;
@@ -223,7 +242,7 @@ function extractAiResponseText(error: unknown) {
 async function repairShotPlanTextWithAi(text: string) {
   const { text: repairedText } = await generateText({
     model: openrouter('anthropic/claude-3-haiku'),
-    system: 'Convert shot-plan text into strict JSON. Return only JSON matching {"shots":[{"duration":number,"prompt":string}]}. Do not include markdown or commentary.',
+    system: 'Convert shot-plan text into strict JSON. Return only JSON matching {"shots":[{"duration":number,"prompt":string,"reference_prompt":string}]}. Do not include markdown, commentary, or field labels inside prompt strings.',
     prompt: text,
   });
 
@@ -249,7 +268,7 @@ Since AI video generators work best between 2 to 10 seconds, you must break down
 Each shot must have a specific duration (between 2 and 10 seconds), and the sum of all shot durations must exactly equal the total duration provided.
 For each shot, provide a slightly adjusted cinematic prompt to reflect the camera angle or action (e.g. "Close up of...", "Wide shot of...").
 For each shot, also provide reference_prompt: a still-image prompt for the exact starting frame of that shot.
-For shot 1, describe the opening state. For later shots, reason about what remains or has changed after previous shots have already happened, and do not reset moving objects or characters to the opening position unless the story explicitly returns there.`,
+Every prompt and reference_prompt must be a fully standalone generator instruction. Do not include labels like "prompt:" or "reference_prompt:" inside the strings. Do not mention sub-scenes, previous actions, resets, or orchestration instructions; include only what the image or video generator needs to render.`,
       prompt: `Visual Description: ${visualPrompt}\nTotal Duration: ${durationSeconds.toFixed(1)} seconds. Break this down into shots.`,
       schema: shotPlanSchema,
     });

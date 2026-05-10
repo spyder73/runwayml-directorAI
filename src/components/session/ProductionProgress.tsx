@@ -20,15 +20,42 @@ type ProductionProgressProps = {
   onOpenImage: (url: string) => void;
 };
 
+type SceneShotPlan = {
+  duration?: number;
+  prompt?: string;
+  url?: string;
+  reference_image_url?: string;
+  status?: string;
+};
+
+function parseSceneShotPlan(scene: SceneRow): SceneShotPlan[] {
+  if (!scene.shot_plan_json) return [];
+  try {
+    const parsed = JSON.parse(scene.shot_plan_json) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((shot): shot is SceneShotPlan => typeof shot === 'object' && shot !== null);
+  } catch {
+    return [];
+  }
+}
+
 function sceneStatusLabel(scene: SceneRow) {
   if (scene.status === 'failed' || scene.status.endsWith('_failed')) return 'Needs another pass';
   if (scene.status === 'completed' || scene.video_url) return 'Complete';
   if (scene.status === 'generating_audio') return 'Recording';
   if (scene.status === 'audio_ready') return 'Narration ready';
-  if (scene.status === 'generating_video') return 'Filming';
+  if (scene.status === 'generating_video') return 'Optimizing scene';
   if (scene.status === 'awaiting_approval' || scene.reference_image_url) return 'Frame ready';
   if (scene.status === 'generating_image') return 'Composing frame';
   return 'Queued';
+}
+
+function shotStatusLabel(shot: SceneShotPlan) {
+  if (shot.url || shot.status === 'succeeded') return 'Complete';
+  if (shot.status === 'failed') return 'Needs another pass';
+  if (shot.status === 'running') return 'Optimizing scene';
+  if (shot.reference_image_url) return 'Optimizing scene';
+  return 'Waiting';
 }
 
 function retryUnitForScene(scene: SceneRow): { unit: RetryUnit; label: string } | null {
@@ -42,6 +69,46 @@ function retryUnitForScene(scene: SceneRow): { unit: RetryUnit; label: string } 
     return { unit: 'video', label: 'Retry motion' };
   }
   return null;
+}
+
+function SceneSubsceneProgress({ scene, aspectRatio, onOpenImage }: { scene: SceneRow; aspectRatio: SessionRow['aspect_ratio']; onOpenImage: (url: string) => void }) {
+  const shotPlan = parseSceneShotPlan(scene);
+  if (shotPlan.length < 2 && !shotPlan.some((shot) => shot.reference_image_url || shot.url || shot.status)) return null;
+
+  const completedShots = shotPlan.filter((shot) => shot.url || shot.status === 'succeeded').length;
+
+  return (
+    <div className="border-t border-white/10 pt-3">
+      <div className="mb-2 flex items-center justify-between gap-3 font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">
+        <span>Sub-scenes</span>
+        <span>{completedShots}/{shotPlan.length}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {shotPlan.map((shot, index) => (
+          <div key={`${scene.id}-shot-${index}`} className="min-w-0">
+            <button
+              type="button"
+              disabled={!shot.reference_image_url}
+              onClick={() => {
+                if (shot.reference_image_url) onOpenImage(shot.reference_image_url);
+              }}
+              className={`relative flex w-full items-center justify-center overflow-hidden border border-white/10 bg-black/40 ${aspectRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video'} ${shot.reference_image_url ? 'cursor-pointer' : 'cursor-default'}`}
+            >
+              {shot.reference_image_url ? (
+                <Image src={shot.reference_image_url} alt={`Sub-scene ${index + 1}`} fill unoptimized sizes="160px" className="object-cover" />
+              ) : (
+                <div className="h-3 w-3 animate-spin rounded-full border-t border-amber-200/50" />
+              )}
+              <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.14em] text-white/65">
+                Sub-scene {index + 1}
+              </span>
+            </button>
+            <p className="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-white/35">{shotStatusLabel(shot)}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function ProductionProgress({ session, scenes, pipelineError, onRetry, onApproveFrames, onFrameComment, onRenderFinal, onOpenImage }: ProductionProgressProps) {
@@ -167,6 +234,7 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
                 )}
               </div>
               <p className="line-clamp-3 font-mono text-xs text-white/50">{scene.narrator_text}</p>
+              <SceneSubsceneProgress scene={scene} aspectRatio={session.aspect_ratio} onOpenImage={onOpenImage} />
               {session.status === 'AWAITING_APPROVAL' && (
                 <div className="flex flex-col gap-2">
                   <input

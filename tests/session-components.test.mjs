@@ -42,6 +42,23 @@ test('production progress exposes unit retry controls for failed scene work', ()
   assert.match(source, /Retry motion/);
 });
 
+test('production progress exposes sub-scene frames while motion is optimized', () => {
+  const source = fs.readFileSync(new URL('../src/components/session/ProductionProgress.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /parseSceneShotPlan/);
+  assert.match(source, /Sub-scene/);
+  assert.match(source, /Optimizing scene/);
+  assert.match(source, /shot\.reference_image_url/);
+});
+
+test('director route can revise a single generated sub-scene prompt', () => {
+  const source = fs.readFileSync(new URL('../src/app/api/pipeline/director/route.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /update_scene_shot_prompt/);
+  assert.match(source, /shot_index/);
+  assert.match(source, /updateShotPlanPromptJson/);
+});
+
 test('home page exposes a rehearsal memory seed entrypoint', () => {
   const source = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
 

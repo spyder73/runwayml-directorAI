@@ -46,7 +46,7 @@ export async function POST(req: Request) {
         resetFailedMediaTasks(db, { sessionId, sceneId, kind: 'generate_video_shot' });
         db.prepare(`
           UPDATE scenes
-          SET video_url = NULL, shot_plan_json = NULL, status = 'video_failed', last_failure = NULL
+          SET video_url = NULL, status = 'video_failed', last_failure = NULL
           WHERE id = ? AND session_id = ?
         `).run(sceneId, sessionId);
       }

@@ -3,7 +3,7 @@ import { generateText, tool } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import db from '@/lib/db';
 import { broadcastSessionUpdate } from '@/lib/sse';
-import { runFrameGenerationPhase, runMediaGenerationPhase } from '@/lib/pipeline_media';
+import { runFrameGenerationPhase, runMediaGenerationPhase, updateShotPlanPromptJson } from '@/lib/pipeline_media';
 import { requeueMediaTasks } from '@/lib/media-tasks';
 import { z } from 'zod';
 import type { SceneRow, SessionRow } from '@/lib/types';
@@ -15,6 +15,13 @@ const openrouter = createOpenRouter({
 const updateScenePromptSchema = z.object({
   scene_index: z.number().int().nonnegative(),
   new_visual_prompt: z.string().min(1),
+});
+
+const updateSceneShotPromptSchema = z.object({
+  scene_index: z.number().int().nonnegative(),
+  shot_index: z.number().int().nonnegative(),
+  new_video_prompt: z.string().min(1),
+  new_reference_prompt: z.string().min(1).optional(),
 });
 
 function getSessionScenes(sessionId: string): SceneRow[] {
@@ -51,7 +58,8 @@ ${JSON.stringify(scenes, null, 2)}
 
 User Request: "${message}"
 
-If you need to change a scene, use the \`update_scene_prompt\` tool to change the visual prompt. ${isFrameReview ? 'We are still reviewing generated still frames, so revise the still-frame direction before motion generation.' : 'Then I will regenerate the video.'}
+If you need to change an entire scene, use the \`update_scene_prompt\` tool to change the visual prompt. ${isFrameReview ? 'We are still reviewing generated still frames, so revise the still-frame direction before motion generation.' : 'Then I will regenerate the video.'}
+If only one generated sub-scene or shot needs a better prompt, use \`update_scene_shot_prompt\` with the 0-indexed scene_index and shot_index. Preserve the other shots.
 If it's just a general chat, reply naturally.
 `,
       tools: {
@@ -62,10 +70,20 @@ If it's just a general chat, reply naturally.
             new_visual_prompt: z.string(),
           }),
         }),
+        update_scene_shot_prompt: tool({
+          description: 'Update one generated sub-scene / shot prompt while preserving the other completed shots',
+          inputSchema: z.object({
+            scene_index: z.number(),
+            shot_index: z.number(),
+            new_video_prompt: z.string(),
+            new_reference_prompt: z.string().optional(),
+          }),
+        }),
       }
     });
 
     let responseText = text || "I've made the requested changes. Regenerating now.";
+    let forceMotionRetry = false;
     
     if (toolCalls && toolCalls.length > 0) {
       for (const call of toolCalls) {
@@ -103,6 +121,33 @@ If it's just a general chat, reply naturally.
               clearOutput: true,
             });
           }
+        } else if (call.toolName === 'update_scene_shot_prompt') {
+          const args = updateSceneShotPromptSchema.parse(getToolCallInput(call));
+          const scene = scenes[args.scene_index];
+          if (!scene) {
+            continue;
+          }
+
+          const nextShotPlanJson = updateShotPlanPromptJson(scene.shot_plan_json, args.shot_index, {
+            prompt: args.new_video_prompt,
+            referencePrompt: args.new_reference_prompt,
+          });
+
+          db.prepare(`
+            UPDATE scenes
+            SET shot_plan_json = ?,
+                video_url = NULL,
+                status = 'video_failed',
+                last_failure = NULL
+            WHERE id = ?
+          `).run(nextShotPlanJson, scene.id);
+          requeueMediaTasks(db, {
+            sessionId,
+            sceneId: scene.id,
+            kind: 'generate_video_shot',
+            clearOutput: true,
+          });
+          forceMotionRetry = true;
         }
       }
       
@@ -110,7 +155,7 @@ If it's just a general chat, reply naturally.
       broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
       // Triggers regeneration for that scene in background
-      const runner = isFrameReview ? runFrameGenerationPhase : runMediaGenerationPhase;
+      const runner = isFrameReview && !forceMotionRetry ? runFrameGenerationPhase : runMediaGenerationPhase;
       runner(sessionId).catch(console.error);
 
       responseText = isFrameReview

@@ -26,7 +26,7 @@ import {
   videoRatio,
   type RunwayReferenceImage,
 } from './runway';
-import { planShots, type ShotPlan } from './shot_planner';
+import { cleanGeneratorPrompt, planShots, referencePromptFromGeneratorText, type ShotPlan } from './shot_planner';
 import { broadcastSessionUpdate } from './sse';
 import type { ReferenceAssetRow, SceneRow, SessionRow } from './types';
 
@@ -98,6 +98,16 @@ function sceneShowsProtagonist(scene: SceneRow) {
 
 const OPENING_FRAME_REFERENCE_TAG = 'opening_frame';
 
+export type ShotPlanProgress = {
+  duration: number;
+  prompt: string;
+  url?: string;
+  reference_image_url?: string;
+  reference_prompt?: string;
+  status?: 'pending' | 'running' | 'succeeded' | 'failed';
+  last_error?: string;
+};
+
 function mediaTaskLogContext(session: SessionRow, task: MediaTaskRow, scene?: SceneRow): MediaGenerationLogDetails {
   return {
     sessionId: session.id,
@@ -106,6 +116,84 @@ function mediaTaskLogContext(session: SessionRow, task: MediaTaskRow, scene?: Sc
     sceneId: scene?.id || task.scene_id,
     sceneIndex: typeof scene?.scene_index === 'number' ? scene.scene_index + 1 : null,
   };
+}
+
+function parseShotPlanProgress(value: string | null | undefined): ShotPlanProgress[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        duration: Number(item.duration) || 2,
+        prompt: typeof item.prompt === 'string' ? item.prompt : '',
+        ...(typeof item.url === 'string' && item.url.trim() ? { url: item.url } : {}),
+        ...(typeof item.reference_image_url === 'string' && item.reference_image_url.trim() ? { reference_image_url: item.reference_image_url } : {}),
+        ...(typeof item.reference_prompt === 'string' && item.reference_prompt.trim() ? { reference_prompt: item.reference_prompt } : {}),
+        ...(item.status === 'running' || item.status === 'succeeded' || item.status === 'failed' ? { status: item.status } : {}),
+        ...(typeof item.last_error === 'string' && item.last_error.trim() ? { last_error: item.last_error } : {}),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export function mergeShotPlanProgress(existingJson: string | null | undefined, plannedShots: ShotPlan[]): ShotPlanProgress[] {
+  const existing = parseShotPlanProgress(existingJson);
+
+  return plannedShots.map((shot, index) => {
+    const previous = existing[index];
+    const prompt = shot.prompt.trim();
+    const referencePrompt = shot.referencePrompt?.trim();
+    const canReuseGeneratedMedia = previous?.prompt === prompt;
+
+    return {
+      duration: shot.duration,
+      prompt,
+      ...(canReuseGeneratedMedia && previous?.url ? { url: previous.url } : {}),
+      ...(canReuseGeneratedMedia && previous?.reference_image_url ? { reference_image_url: previous.reference_image_url } : {}),
+      ...(referencePrompt ? { reference_prompt: referencePrompt } : previous?.reference_prompt ? { reference_prompt: previous.reference_prompt } : {}),
+      status: canReuseGeneratedMedia && previous?.url ? 'succeeded' : 'pending',
+    };
+  });
+}
+
+export function shotPlanVideoUrls(shotPlan: ShotPlanProgress[]) {
+  if (!shotPlan.length || shotPlan.some((shot) => !shot.url)) return [];
+  return shotPlan.map((shot) => shot.url as string);
+}
+
+export function updateShotPlanPromptJson(
+  existingJson: string | null | undefined,
+  shotIndex: number,
+  input: { prompt: string; referencePrompt?: string },
+) {
+  const existing = parseShotPlanProgress(existingJson);
+  if (shotIndex < 0 || shotIndex >= existing.length) {
+    throw new Error(`Sub-scene ${shotIndex + 1} is not available for this scene.`);
+  }
+
+  const nextPrompt = cleanGeneratorPrompt(input.prompt);
+  const nextReferencePrompt = cleanGeneratorPrompt(input.referencePrompt) || nextPrompt;
+
+  const updated = existing.map((shot, index) => {
+    if (index !== shotIndex) return shot;
+    return {
+      duration: shot.duration,
+      prompt: nextPrompt,
+      reference_prompt: nextReferencePrompt,
+      status: 'pending' as const,
+    };
+  });
+
+  return JSON.stringify(updated);
+}
+
+function writeShotPlanProgress(database: SqliteDatabase, sceneId: string, shotPlan: ShotPlanProgress[], sessionId?: string) {
+  database.prepare('UPDATE scenes SET shot_plan_json = ? WHERE id = ?')
+    .run(JSON.stringify(shotPlan), sceneId);
+  if (sessionId) broadcastProgress(database, sessionId);
 }
 
 async function loadReferenceImages(assets: Array<Pick<ReferenceAssetRow, 'runway_uri' | 'local_url' | 'stable_tag'>>) {
@@ -373,13 +461,13 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
 }
 
 export function buildContinuityReferencePrompt(shot: ShotPlan, shotIndex: number) {
-  const basePrompt = shot.referencePrompt || shot.prompt;
-  return [
-    `Use @${OPENING_FRAME_REFERENCE_TAG} as the continuity anchor from the first sub-scene of this scene.`,
-    `Create the still reference frame for sub-scene ${shotIndex + 1}.`,
-    basePrompt,
-    'The earlier motion has already happened, so preserve the logical story state and do not reset moving objects, vehicles, or characters to the opening positions unless the prompt explicitly returns there.',
-  ].join(' ');
+  const basePrompt = cleanGeneratorPrompt(shot.referencePrompt)
+    || referencePromptFromGeneratorText(shot.prompt)
+    || cleanGeneratorPrompt(shot.prompt);
+  if (shotIndex === 0 || basePrompt.includes(`@${OPENING_FRAME_REFERENCE_TAG}`)) {
+    return basePrompt;
+  }
+  return `Using @${OPENING_FRAME_REFERENCE_TAG} as the visual reference, ${basePrompt}`;
 }
 
 async function generateContinuityReferenceImage(params: {
@@ -466,7 +554,15 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
   });
 
   const exactDuration = scene.duration || 5;
-  const shots = await planShots(scene.video_prompt || scene.visual_prompt, exactDuration);
+  const existingShotPlan = parseShotPlanProgress(scene.shot_plan_json);
+  const reusablePlannedShots = existingShotPlan.filter((shot) => shot.prompt.trim()).map((shot) => ({
+    duration: shot.duration,
+    prompt: shot.prompt,
+    ...(shot.reference_prompt ? { referencePrompt: shot.reference_prompt } : {}),
+  }));
+  const shots = reusablePlannedShots.length
+    ? reusablePlannedShots
+    : await planShots(scene.video_prompt || scene.visual_prompt, exactDuration);
   logMediaGeneration('scene_video_shots_planned', {
     ...mediaTaskLogContext(session, task, scene),
     mediaType: 'video',
@@ -474,20 +570,27 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
     shotCount: shots.length,
     promptText: scene.video_prompt || scene.visual_prompt,
   });
-  const videoUrls: string[] = [];
-  const shotPlan: Array<{
-    duration: number;
-    prompt: string;
-    url: string;
-    reference_image_url: string;
-    reference_prompt?: string;
-  }> = [];
+  const shotPlan = mergeShotPlanProgress(scene.shot_plan_json, shots);
+  writeShotPlanProgress(database, scene.id, shotPlan, session.id);
 
   for (const [shotIndex, shot] of shots.entries()) {
-    let promptImageUrl = scene.reference_image_url;
-    let referencePrompt = shot.referencePrompt;
+    const shotProgress = shotPlan[shotIndex];
+    if (shotProgress.url) {
+      logMediaGeneration('scene_video_shot_reused_existing', {
+        ...mediaTaskLogContext(session, task, scene),
+        mediaType: 'video',
+        shotIndex: shotIndex + 1,
+        shotCount: shots.length,
+        duration: shotProgress.duration,
+        localUrl: shotProgress.url,
+      });
+      continue;
+    }
 
-    if (shots.length > 1 && shotIndex > 0) {
+    let promptImageUrl = shotProgress.reference_image_url || scene.reference_image_url;
+    let referencePrompt = shotProgress.reference_prompt || shot.referencePrompt;
+
+    if (shots.length > 1 && shotIndex > 0 && !shotProgress.reference_image_url) {
       const continuityReference = await generateContinuityReferenceImage({
         session,
         task,
@@ -499,6 +602,13 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       });
       promptImageUrl = continuityReference.localUrl;
       referencePrompt = continuityReference.promptText;
+      shotProgress.reference_image_url = promptImageUrl;
+      shotProgress.reference_prompt = referencePrompt;
+      writeShotPlanProgress(database, scene.id, shotPlan, session.id);
+    } else if (!shotProgress.reference_image_url) {
+      shotProgress.reference_image_url = promptImageUrl;
+      if (referencePrompt) shotProgress.reference_prompt = referencePrompt;
+      writeShotPlanProgress(database, scene.id, shotPlan, session.id);
     }
 
     const safePrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt));
@@ -515,36 +625,51 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       promptImageUrl,
       promptText: safePrompt,
     });
-    const videoAsset = await generateVideoAsset({
-      promptImageUrl,
-      promptText: safePrompt,
-      ratio: videoRatio(session.aspect_ratio),
-      duration: shot.duration,
-      sessionId: session.id,
-      logContext: {
+    shotProgress.prompt = safePrompt;
+    shotProgress.duration = shot.duration;
+    shotProgress.status = 'running';
+    delete shotProgress.last_error;
+    writeShotPlanProgress(database, scene.id, shotPlan, session.id);
+
+    try {
+      const videoAsset = await generateVideoAsset({
+        promptImageUrl,
+        promptText: safePrompt,
+        ratio: videoRatio(session.aspect_ratio),
+        duration: shot.duration,
+        sessionId: session.id,
+        logContext: {
+          ...mediaTaskLogContext(session, task, scene),
+          shotIndex: shotIndex + 1,
+          shotCount: shots.length,
+        },
+      });
+      shotProgress.url = videoAsset.localUrl;
+      shotProgress.reference_image_url = promptImageUrl;
+      if (referencePrompt) shotProgress.reference_prompt = referencePrompt;
+      shotProgress.status = 'succeeded';
+      delete shotProgress.last_error;
+      writeShotPlanProgress(database, scene.id, shotPlan, session.id);
+      logMediaGeneration('scene_video_shot_generated', {
         ...mediaTaskLogContext(session, task, scene),
+        mediaType: 'video',
         shotIndex: shotIndex + 1,
         shotCount: shots.length,
-      },
-    });
-    videoUrls.push(videoAsset.localUrl);
-    shotPlan.push({
-      duration: shot.duration,
-      prompt: safePrompt,
-      url: videoAsset.localUrl,
-      reference_image_url: promptImageUrl,
-      ...(referencePrompt ? { reference_prompt: referencePrompt } : {}),
-    });
-    logMediaGeneration('scene_video_shot_generated', {
-      ...mediaTaskLogContext(session, task, scene),
-      mediaType: 'video',
-      shotIndex: shotIndex + 1,
-      shotCount: shots.length,
-      duration: shot.duration,
-      localUrl: videoAsset.localUrl,
-    });
+        duration: shot.duration,
+        localUrl: videoAsset.localUrl,
+      });
+    } catch (error) {
+      shotProgress.status = 'failed';
+      shotProgress.last_error = formatError(error);
+      writeShotPlanProgress(database, scene.id, shotPlan, session.id);
+      throw error;
+    }
   }
 
+  const videoUrls = shotPlanVideoUrls(shotPlan);
+  if (!videoUrls.length) {
+    throw new Error(`Scene ${scene.scene_index + 1} has no complete generated video shots.`);
+  }
   const outputAssetId = JSON.stringify(videoUrls);
 
   database.prepare(`
