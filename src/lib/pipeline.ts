@@ -8,6 +8,7 @@ import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucke
 import { buildDirectorContinuationPrompt } from './director-continuation';
 import {
   aiTools,
+  addReferenceSubjectSchema,
   filmTreatmentSchema,
   getToolCall,
   lockSceneOutlineSchema,
@@ -24,6 +25,7 @@ import { generateImageAsset, imageRatio } from './runway';
 import { SKETCH_IMAGE_QUALITY } from './production-config';
 import { evaluateLifeStoryOutlineReadiness } from './story-readiness';
 import {
+  addReferenceSubject,
   applyProfileBucketUpdate,
   createReferenceAsset,
   createReferenceUploadRequest,
@@ -288,6 +290,10 @@ export async function processInterviewTurn(sessionId: string) {
            finalReply = request
              ? (text || args.promptText)
              : (text || 'I already have the protagonist reference, so I will keep using that unless we need a specific scene-era image later. What should we explore next?');
+        } else if (call.toolName === 'add_reference_subject') {
+           const args = addReferenceSubjectSchema.parse(call.input);
+           const result = addReferenceSubject(db, sessionId, args);
+           finalReply = text || args.directorReply || `I will remember ${args.displayName} as @${result.referenceAsset.stable_tag} for future scenes.`;
         } else if (call.toolName === 'save_reference_description') {
            const args = saveReferenceDescriptionSchema.parse(call.input);
            saveReferenceDescription(db, sessionId, args);

@@ -6,6 +6,7 @@ import { createJiti } from 'jiti';
 const jiti = createJiti(import.meta.url);
 const {
   applyProfileBucketUpdate,
+  addReferenceSubject,
   createReferenceAsset,
   createReferenceUploadRequest,
   getActiveReferenceRequest,
@@ -155,6 +156,60 @@ test('reference asset tags are lowercase runway-safe and capped to sixteen chara
 
   assert.match(asset.stable_tag, /^[a-z][a-z0-9_]{2,15}$/);
   assert.ok(asset.stable_tag.length <= 16);
+});
+
+test('reference subjects attach uploaded assets to named entities and stable tags', () => {
+  const db = createDb();
+  const upload = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/agata.jpg',
+    targetType: 'reference',
+    targetLabel: 'reference',
+    visionDescription: 'A smiling woman in a red coat.',
+    usagePermissions: 'allowed',
+  });
+
+  const result = addReferenceSubject(db, 'session-1', {
+    referenceAssetId: upload.id,
+    subjectType: 'friend',
+    displayName: 'Agata',
+    relationship: 'school friend',
+    description: 'Warm, funny, always wearing bold colors.',
+    consentState: 'allowed',
+  });
+  const bucket = loadStoryBucket(db, 'session-1');
+  const linkedAsset = bucket.referenceAssets.find((asset) => asset.id === upload.id);
+
+  assert.equal(result.entity.display_name, 'Agata');
+  assert.equal(result.entity.reference_asset_id, upload.id);
+  assert.equal(linkedAsset?.owner_entity_id, result.entity.id);
+  assert.equal(linkedAsset?.stable_tag, 'agata');
+  assert.equal(linkedAsset?.target_type, 'friend');
+  assert.equal(linkedAsset?.usage_permissions, 'allowed');
+});
+
+test('reference subjects can resolve visible prompt tags with @ prefixes', () => {
+  const db = createDb();
+  const upload = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/old-school.jpg',
+    targetType: 'reference',
+    targetLabel: 'Old School',
+    visionDescription: 'A brick school building with tall windows.',
+    usagePermissions: 'allowed',
+  });
+
+  const result = addReferenceSubject(db, 'session-1', {
+    referenceTag: `@${upload.stable_tag}`,
+    subjectType: 'school',
+    displayName: 'Northview School',
+    description: 'A brick school building with tall windows.',
+    consentState: 'allowed',
+  });
+
+  const linkedAsset = loadStoryBucket(db, 'session-1').referenceAssets.find((asset) => asset.id === upload.id);
+
+  assert.equal(result.referenceAsset.id, upload.id);
+  assert.equal(linkedAsset?.owner_entity_id, result.entity.id);
+  assert.equal(linkedAsset?.stable_tag, 'northview_school');
 });
 
 test('protagonist reference decision is true after upload request, upload, or description', () => {

@@ -58,6 +58,20 @@ export const requestReferenceUploadSchema = z.object({
   sceneTitle: z.string().optional(),
 });
 
+export const addReferenceSubjectSchema = z.object({
+  directorReply: z.string().min(1).optional(),
+  referenceAssetId: z.string().min(1).optional(),
+  referenceTag: z.string().min(1).optional(),
+  entityId: z.string().min(1).optional(),
+  subjectType: z.enum(['protagonist', 'person', 'family', 'friend', 'place', 'object', 'keepsake', 'school', 'home', 'workplace']).or(z.string().min(1)),
+  displayName: z.string().min(1),
+  description: z.string().optional(),
+  relationship: z.string().optional(),
+  consentState: z.enum(['unknown', 'allowed', 'restricted', 'denied']).optional(),
+  usagePermissions: z.enum(['allowed', 'restricted', 'description_only']).optional(),
+  stableTag: z.string().optional(),
+});
+
 export const saveReferenceDescriptionSchema = z.object({
   directorReply: z.string().min(1).optional(),
   targetType: z.string().min(1),
@@ -144,6 +158,10 @@ export const aiTools = {
   request_reference_upload: tool({
     description: 'Ask for an optional reference image for a concrete protagonist, friend, family member, place, school, home, workplace, object, keepsake, or scene-specific visual reference. Always explain what it is for in user-facing language and include a graceful skip path.',
     inputSchema: requestReferenceUploadSchema,
+  }),
+  add_reference_subject: tool({
+    description: 'When the user identifies an uploaded or described reference, attach that reference to a named person, place, or object. Prefer referenceTag from the current References list, or omit it to label the most recent unassigned reference. Return a warm directorReply.',
+    inputSchema: addReferenceSubjectSchema,
   }),
   save_reference_description: tool({
     description: 'Save visual details when the user skips or describes a reference instead of uploading an image. Include directorReply with the next natural question.',

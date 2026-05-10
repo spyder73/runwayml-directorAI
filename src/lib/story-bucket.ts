@@ -89,6 +89,19 @@ export type ReferenceAssetInput = {
   source?: string;
 };
 
+export type ReferenceSubjectInput = {
+  referenceAssetId?: string;
+  referenceTag?: string;
+  entityId?: string;
+  subjectType: string;
+  displayName: string;
+  description?: string;
+  relationship?: string;
+  consentState?: string;
+  usagePermissions?: string;
+  stableTag?: string;
+};
+
 export type ReferenceUploadRequestInput = {
   targetType: string;
   targetLabel: string;
@@ -215,18 +228,62 @@ export function normalizeReferenceTag(value: string | undefined | null) {
 }
 
 function uniqueStableTag(database: SqliteDatabase, sessionId: string, preferred: string) {
+  return uniqueStableTagExcept(database, sessionId, preferred);
+}
+
+function uniqueStableTagExcept(database: SqliteDatabase, sessionId: string, preferred: string, excludedAssetId?: string) {
   const base = normalizeReferenceTag(preferred);
   let tag = base;
   let suffix = 2;
 
-  const exists = database.prepare('SELECT 1 FROM reference_assets WHERE session_id = ? AND stable_tag = ? LIMIT 1');
-  while (exists.get(sessionId, tag)) {
+  const exists = database.prepare(`
+    SELECT 1 FROM reference_assets
+    WHERE session_id = ? AND stable_tag = ? AND (? IS NULL OR id != ?)
+    LIMIT 1
+  `);
+  while (exists.get(sessionId, tag, excludedAssetId || null, excludedAssetId || null)) {
     const suffixText = `_${suffix}`;
     tag = `${base.slice(0, 16 - suffixText.length).replace(/_+$/g, '')}${suffixText}`;
     suffix += 1;
   }
 
   return tag;
+}
+
+function getReferenceAssetForSubject(database: SqliteDatabase, sessionId: string, input: ReferenceSubjectInput) {
+  if (input.referenceAssetId) {
+    return database.prepare('SELECT * FROM reference_assets WHERE id = ? AND session_id = ?')
+      .get(input.referenceAssetId, sessionId) as ReferenceAssetRow | undefined;
+  }
+
+  if (input.referenceTag) {
+    const referenceTag = normalizeReferenceTag(input.referenceTag);
+    return database.prepare('SELECT * FROM reference_assets WHERE stable_tag = ? AND session_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(referenceTag, sessionId) as ReferenceAssetRow | undefined;
+  }
+
+  return database.prepare(`
+    SELECT * FROM reference_assets
+    WHERE session_id = ? AND owner_entity_id IS NULL
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(sessionId) as ReferenceAssetRow | undefined;
+}
+
+function getEntityForSubject(database: SqliteDatabase, sessionId: string, input: ReferenceSubjectInput) {
+  if (input.entityId) {
+    return database.prepare('SELECT * FROM story_entities WHERE id = ? AND session_id = ?')
+      .get(input.entityId, sessionId) as StoryEntityRow | undefined;
+  }
+
+  return database.prepare(`
+    SELECT * FROM story_entities
+    WHERE session_id = ?
+      AND LOWER(display_name) = LOWER(?)
+      AND type = ?
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `).get(sessionId, input.displayName, input.subjectType) as StoryEntityRow | undefined;
 }
 
 function addColumnIfMissing(database: SqliteDatabase, table: string, definition: string) {
@@ -727,6 +784,92 @@ export function createReferenceAsset(database: SqliteDatabase, sessionId: string
   }
 
   return database.prepare('SELECT * FROM reference_assets WHERE id = ?').get(id) as ReferenceAssetRow;
+}
+
+export function addReferenceSubject(database: SqliteDatabase, sessionId: string, input: ReferenceSubjectInput) {
+  const referenceAsset = getReferenceAssetForSubject(database, sessionId, input);
+  const existingEntity = getEntityForSubject(database, sessionId, input);
+  const entityId = existingEntity?.id || input.entityId || uuidv4();
+  const consentState = input.consentState || existingEntity?.consent_state || 'unknown';
+
+  database.prepare(`
+    INSERT INTO story_entities (
+      id, session_id, type, display_name, description, relationship, consent_state, reference_asset_id, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      type = excluded.type,
+      display_name = excluded.display_name,
+      description = COALESCE(excluded.description, story_entities.description),
+      relationship = COALESCE(excluded.relationship, story_entities.relationship),
+      consent_state = excluded.consent_state,
+      reference_asset_id = COALESCE(excluded.reference_asset_id, story_entities.reference_asset_id),
+      updated_at = CURRENT_TIMESTAMP
+  `).run(
+    entityId,
+    sessionId,
+    input.subjectType,
+    input.displayName,
+    nullable(input.description),
+    nullable(input.relationship),
+    consentState,
+    referenceAsset?.id || null,
+  );
+
+  let linkedAsset = referenceAsset;
+  if (!linkedAsset) {
+    linkedAsset = createReferenceAsset(database, sessionId, {
+      targetType: input.subjectType,
+      targetLabel: input.displayName,
+      visionDescription: input.description || null,
+      ownerEntityId: entityId,
+      usagePermissions: input.usagePermissions || 'description_only',
+      source: 'description',
+      stableTag: input.stableTag || input.displayName,
+    });
+  } else {
+    const stableTag = uniqueStableTagExcept(database, sessionId, input.stableTag || input.displayName, linkedAsset.id);
+    database.prepare(`
+      UPDATE reference_assets
+      SET stable_tag = ?,
+          target_type = ?,
+          owner_entity_id = ?,
+          usage_permissions = ?,
+          vision_description = COALESCE(?, vision_description),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND session_id = ?
+    `).run(
+      stableTag,
+      input.subjectType,
+      entityId,
+      input.usagePermissions || linkedAsset.usage_permissions || 'allowed',
+      nullable(input.description),
+      linkedAsset.id,
+      sessionId,
+    );
+  }
+
+  database.prepare(`
+    UPDATE story_entities
+    SET reference_asset_id = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND session_id = ?
+  `).run(linkedAsset.id, entityId, sessionId);
+
+  if (input.subjectType === 'protagonist') {
+    database.prepare(`
+      INSERT INTO story_profile (session_id, protagonist_reference_asset_id, themes_json, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(session_id) DO UPDATE SET
+        protagonist_reference_asset_id = excluded.protagonist_reference_asset_id,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(sessionId, linkedAsset.id, jsonArray([]));
+  }
+
+  return {
+    entity: database.prepare('SELECT * FROM story_entities WHERE id = ?').get(entityId) as StoryEntityRow,
+    referenceAsset: database.prepare('SELECT * FROM reference_assets WHERE id = ?').get(linkedAsset.id) as ReferenceAssetRow,
+  };
 }
 
 export function saveReferenceDescription(

@@ -11,6 +11,7 @@ test('director exposes story bucket and outline tools', () => {
   assert.deepEqual(toolNames, [
     'update_profile_bucket',
     'request_reference_upload',
+    'add_reference_subject',
     'save_reference_description',
     'generate_memory_sketch',
     'save_sketch_feedback',
@@ -19,6 +20,23 @@ test('director exposes story bucket and outline tools', () => {
     'revise_scene_outline',
     'lock_scene_outline',
   ]);
+});
+
+test('add reference subject schema accepts an uploaded reference tag and subject identity', () => {
+  const { addReferenceSubjectSchema } = jiti('../src/lib/ai/tools.ts');
+
+  const parsed = addReferenceSubjectSchema.parse({
+    referenceTag: 'reference_2',
+    subjectType: 'friend',
+    displayName: 'Agata',
+    relationship: 'school friend',
+    description: 'Warm, funny, always wearing bold colors.',
+    consentState: 'allowed',
+  });
+
+  assert.equal(parsed.referenceTag, 'reference_2');
+  assert.equal(parsed.displayName, 'Agata');
+  assert.equal(parsed.subjectType, 'friend');
 });
 
 test('interview prompt builder includes private story context without implementation language', () => {
