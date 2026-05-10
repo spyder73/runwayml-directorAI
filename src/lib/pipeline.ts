@@ -1,7 +1,6 @@
 import db from './db';
 import { broadcastSessionUpdate } from './sse';
 import { generateObject, generateText, streamText } from 'ai';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { v4 as uuidv4 } from 'uuid';
 import { runFrameGenerationPhase, runMediaGenerationPhase } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
@@ -26,6 +25,12 @@ import { generateImageAsset, imageRatio } from './runway';
 import { SKETCH_IMAGE_QUALITY } from './production-config';
 import { evaluateLifeStoryOutlineReadiness } from './story-readiness';
 import {
+  MISSING_BYOK_MESSAGE,
+  createRunwayClientForSession,
+  isMissingUserCredentialError,
+  openRouterModelForSession,
+} from './providers/user-credentials';
+import {
   addReferenceSubject,
   applyProfileBucketUpdate,
   approveFilmTreatment,
@@ -44,16 +49,13 @@ import {
   saveSketchFeedback,
 } from './story-bucket';
 
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
-
 const MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS = 8192;
 const MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS = 1200;
 const MAX_DIRECTOR_TOOL_OUTPUT_TOKENS = 8192;
 
-function formatError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function safeInterviewErrorMessage(error: unknown) {
+  if (isMissingUserCredentialError(error)) return MISSING_BYOK_MESSAGE;
+  return 'Generation failed. Please try again.';
 }
 
 function getSessionScenes(sessionId: string): SceneRow[] {
@@ -246,19 +248,19 @@ async function draftSceneOutlineAfterTreatmentApproval(sessionId: string) {
     formatStoryBucketForPrompt(bucket),
   ].join('\n\n');
 
-  if (process.env.OPENROUTER_API_KEY) {
-    try {
-      const { object } = await generateObject({
-        model: openrouter('google/gemini-3.1-flash-lite'),
-        maxOutputTokens: MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS,
-        system: 'You are a film outline drafter. Create production-ready scenes from an approved treatment. Do not ask more interview questions.',
-        prompt,
-        schema: proposeSceneOutlineSchema,
-      });
-      proposeSceneOutline(db, sessionId, object);
-      approveFilmTreatment(db, sessionId);
-      return object;
-    } catch (error) {
+  try {
+    const { object } = await generateObject({
+      model: openRouterModelForSession(db, sessionId, 'google/gemini-3.1-flash-lite'),
+      maxOutputTokens: MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS,
+      system: 'You are a film outline drafter. Create production-ready scenes from an approved treatment. Do not ask more interview questions.',
+      prompt,
+      schema: proposeSceneOutlineSchema,
+    });
+    proposeSceneOutline(db, sessionId, object);
+    approveFilmTreatment(db, sessionId);
+    return object;
+  } catch (error) {
+    if (!isMissingUserCredentialError(error)) {
       console.warn('AI outline fallback failed; using deterministic treatment outline.', error);
     }
   }
@@ -300,7 +302,7 @@ async function generateDirectorContinuation(sessionId: string, messages: Intervi
   });
 
   const { text } = await generateText({
-    model: openrouter('google/gemini-3.1-flash-lite'),
+    model: openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite'),
     maxOutputTokens: MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS,
     system: prompt,
     messages,
@@ -316,6 +318,7 @@ export async function processInterviewTurn(sessionId: string) {
     if (!session) {
       throw new Error(`Session not found: ${sessionId}`);
     }
+    const directorModel = openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite');
 
     const historyRows = db.prepare('SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ChatHistoryRow[];
     const messages: InterviewMessage[] = historyRows.map((row) => ({
@@ -358,7 +361,7 @@ export async function processInterviewTurn(sessionId: string) {
     });
 
     const result = await streamText({
-      model: openrouter('google/gemini-3.1-flash-lite'),
+      model: directorModel,
       maxOutputTokens: MAX_DIRECTOR_TOOL_OUTPUT_TOKENS,
       system: systemPrompt,
       messages,
@@ -449,11 +452,13 @@ export async function processInterviewTurn(sessionId: string) {
            });
 
            try {
+             const runwayClient = createRunwayClientForSession(db, session);
              const imageAsset = await generateImageAsset({
                promptText: args.visualPrompt,
                quality: SKETCH_IMAGE_QUALITY,
                ratio: imageRatio(session.aspect_ratio),
                sessionId,
+               runwayClient,
              });
              imageUrl = imageAsset.localUrl;
 
@@ -476,7 +481,7 @@ export async function processInterviewTurn(sessionId: string) {
              }
            } catch (e) {
              console.error("RunwayML Sketch Error:", e);
-             sketchError = formatError(e);
+             sketchError = isMissingUserCredentialError(e) ? MISSING_BYOK_MESSAGE : 'I could not generate that memory sketch yet.';
            }
            
            const sketchText = imageUrl ? `\n\n[Sketch: ${imageUrl}]` : '';
@@ -580,7 +585,9 @@ export async function processInterviewTurn(sessionId: string) {
   } catch (error) {
     console.error('Interview turn failed:', error);
     const assistantMessageId = uuidv4();
-    const finalReply = 'I lost the thread for a moment. Please send that last answer again, and I will pick it up carefully.';
+    const finalReply = isMissingUserCredentialError(error)
+      ? MISSING_BYOK_MESSAGE
+      : 'I lost the thread for a moment. Please send that last answer again, and I will pick it up carefully.';
 
     try {
       db.prepare('INSERT INTO chat_history (id, session_id, role, content, options) VALUES (?, ?, ?, ?, ?)')
@@ -588,7 +595,7 @@ export async function processInterviewTurn(sessionId: string) {
 
       broadcastSessionUpdate(sessionId, {
         ...getFullSessionUpdate(sessionId),
-        error: formatError(error),
+        error: safeInterviewErrorMessage(error),
       });
     } catch (broadcastError) {
       console.error('Failed to persist interview failure message:', broadcastError);

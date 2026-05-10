@@ -26,11 +26,18 @@ import {
   imageRatio,
   loadReferenceImage,
   videoRatio,
+  type RunwayClient,
   type RunwayReferenceImage,
 } from './runway';
 import { cleanGeneratorPrompt, planShots, referencePromptFromGeneratorText, type ShotPlan } from './shot_planner';
 import { broadcastSessionUpdate } from './sse';
 import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './types';
+import {
+  createRunwayClientForSession,
+  getRunwayConcurrencyModeForSession,
+  requireOpenRouterApiKeyForSession,
+  safeCredentialErrorMessage,
+} from './providers/user-credentials';
 
 type SqliteDatabase = Database.Database;
 
@@ -290,9 +297,9 @@ function runnableKinds(includeRender: boolean, onlyKinds?: MediaTaskKind[]) {
   return new Set<MediaTaskKind>(includeRender ? [...PRODUCTION_TASK_KINDS, 'render_final'] : PRODUCTION_TASK_KINDS);
 }
 
-function mediaTaskConcurrencyMode(override?: MediaTaskConcurrencyMode): MediaTaskConcurrencyMode {
+function mediaTaskConcurrencyMode(database: SqliteDatabase, sessionId: string, override?: MediaTaskConcurrencyMode): MediaTaskConcurrencyMode {
   if (override) return override;
-  return process.env.RUNWAY_MEDIA_CONCURRENCY === 'parallel' ? 'parallel' : 'serial';
+  return getRunwayConcurrencyModeForSession(database, sessionId);
 }
 
 function selectTaskBatch(
@@ -414,6 +421,8 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     mediaType: 'image',
     promptText: scene.image_prompt || scene.visual_prompt,
   });
+  const openrouterApiKey = requireOpenRouterApiKeyForSession(database, session);
+  const runwayClient = createRunwayClientForSession(database, session);
 
   const referenceAssets = database.prepare('SELECT * FROM reference_assets WHERE session_id = ? ORDER BY created_at ASC')
     .all(session.id) as ReferenceAssetRow[];
@@ -426,7 +435,7 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     assets: referenceAssets,
     entities: storyEntities,
   });
-  const promptText = await ensureSafePrompt(preparedReferences.promptText);
+  const promptText = await ensureSafePrompt(preparedReferences.promptText, { openrouterApiKey });
 
   assertRunwayImagePrompt({
     promptText,
@@ -440,6 +449,7 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     ratio: imageRatio(session.aspect_ratio),
     referenceImages: referenceImages.length ? referenceImages : undefined,
     sessionId: session.id,
+    runwayClient,
     logContext: mediaTaskLogContext(session, task, scene),
   });
 
@@ -485,10 +495,12 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
     .run('generating_audio', scene.id);
   setSessionStatus(database, session.id, 'GENERATING_FINAL_ASSETS');
   broadcastProgress(database, session.id);
+  const runwayClient = createRunwayClientForSession(database, session);
 
   const audioAsset = await generateSpeechAsset({
     promptText: scene.narrator_text,
     sessionId: session.id,
+    runwayClient,
     logContext: mediaTaskLogContext(session, task, scene),
   });
 
@@ -531,6 +543,8 @@ async function generateContinuityReferenceImage(params: {
   shotIndex: number;
   shotCount: number;
   openingReferenceImageUrl: string;
+  openrouterApiKey: string;
+  runwayClient: RunwayClient;
 }) {
   const logContext = {
     ...mediaTaskLogContext(params.session, params.task, params.scene),
@@ -544,7 +558,9 @@ async function generateContinuityReferenceImage(params: {
     promptText: params.shot.referencePrompt || params.shot.prompt,
   });
   const openingReference = await loadReferenceImage(params.openingReferenceImageUrl, OPENING_FRAME_REFERENCE_TAG);
-  const promptText = await ensureSafePrompt(buildContinuityReferencePrompt(params.shot, params.shotIndex));
+  const promptText = await ensureSafePrompt(buildContinuityReferencePrompt(params.shot, params.shotIndex), {
+    openrouterApiKey: params.openrouterApiKey,
+  });
 
   assertRunwayImagePrompt({
     promptText,
@@ -557,6 +573,7 @@ async function generateContinuityReferenceImage(params: {
     ratio: imageRatio(params.session.aspect_ratio),
     referenceImages: [openingReference],
     sessionId: params.session.id,
+    runwayClient: params.runwayClient,
     logContext,
   });
 
@@ -605,6 +622,8 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
     promptText: scene.video_prompt || scene.visual_prompt,
     promptImageUrl: scene.reference_image_url,
   });
+  const openrouterApiKey = requireOpenRouterApiKeyForSession(database, session);
+  const runwayClient = createRunwayClientForSession(database, session);
 
   const exactDuration = scene.duration || 5;
   const existingShotPlan = parseShotPlanProgress(scene.shot_plan_json);
@@ -619,7 +638,7 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
   }));
   const shots = reusablePlannedShots.length
     ? reusablePlannedShots
-    : await planShots(scene.video_prompt || scene.visual_prompt, exactDuration);
+    : await planShots(scene.video_prompt || scene.visual_prompt, exactDuration, { openrouterApiKey });
   logMediaGeneration('scene_video_shots_planned', {
     ...mediaTaskLogContext(session, task, scene),
     mediaType: 'video',
@@ -656,6 +675,8 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
         shotIndex,
         shotCount: shots.length,
         openingReferenceImageUrl: scene.reference_image_url,
+        openrouterApiKey,
+        runwayClient,
       });
       promptImageUrl = continuityReference.localUrl;
       referencePrompt = continuityReference.promptText;
@@ -668,7 +689,7 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       writeShotPlanProgress(database, scene.id, shotPlan, session.id);
     }
 
-    const safePrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt));
+    const safePrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt, { openrouterApiKey }));
     assertRunwayVideoPrompt({
       promptText: safePrompt,
       durationSeconds: shot.duration,
@@ -695,6 +716,7 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
         ratio: videoRatio(session.aspect_ratio),
         duration: shot.duration,
         sessionId: session.id,
+        runwayClient,
         logContext: {
           ...mediaTaskLogContext(session, task, scene),
           shotIndex: shotIndex + 1,
@@ -829,7 +851,7 @@ async function runOneTask(params: {
     });
     return { ok: true as const };
   } catch (error) {
-    const message = formatError(error);
+    const message = safeCredentialErrorMessage(error, formatError(error));
     failMediaTask(database, task.id, message);
     markSceneFailure(database, task, message);
     setSessionStatus(database, task.session_id, 'FAILED');
@@ -849,7 +871,7 @@ async function runOneTask(params: {
 export async function runMediaTaskRunner(sessionId: string, options: MediaTaskRunnerOptions = {}): Promise<MediaTaskRunnerResult> {
   const database = options.database || db;
   const allowedKinds = runnableKinds(Boolean(options.includeRender), options.onlyKinds);
-  const concurrencyMode = mediaTaskConcurrencyMode(options.concurrencyMode);
+  const concurrencyMode = mediaTaskConcurrencyMode(database, sessionId, options.concurrencyMode);
   const executors = { ...DEFAULT_EXECUTORS, ...(options.executors || {}) };
   const result: MediaTaskRunnerResult = {
     started: 0,

@@ -1,10 +1,6 @@
 import { generateObject, generateText } from 'ai';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { z } from 'zod';
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+import { createOpenRouterModel } from './ai';
 
 const MAX_SHOT_PLAN_OUTPUT_TOKENS = 2048;
 const MAX_SHOT_PLAN_REPAIR_OUTPUT_TOKENS = 2048;
@@ -362,9 +358,9 @@ function extractAiResponseText(error: unknown) {
   return null;
 }
 
-async function repairShotPlanTextWithAi(text: string) {
+async function repairShotPlanTextWithAi(text: string, openrouterApiKey: string) {
   const { text: repairedText } = await generateText({
-    model: openrouter('anthropic/claude-3-haiku'),
+    model: createOpenRouterModel(openrouterApiKey, 'anthropic/claude-3-haiku'),
     maxOutputTokens: MAX_SHOT_PLAN_REPAIR_OUTPUT_TOKENS,
     system: 'Convert shot-plan text into strict JSON. Return only JSON matching {"shots":[{"duration":number,"prompt":string,"reference_prompt":string,"visual_start_state":string,"visual_end_state":string,"camera_role":string,"angle_change_reason":string}]}. Do not include markdown, commentary, or field labels inside prompt strings.',
     prompt: text,
@@ -373,8 +369,8 @@ async function repairShotPlanTextWithAi(text: string) {
   return extractProposedShotsFromText(repairedText);
 }
 
-export async function planShots(visualPrompt: string, durationSeconds: number) {
-  if (!process.env.OPENROUTER_API_KEY) {
+export async function planShots(visualPrompt: string, durationSeconds: number, options: { openrouterApiKey?: string } = {}) {
+  if (!options.openrouterApiKey) {
      return normalizeShotPlan(visualPrompt, durationSeconds);
   }
   
@@ -385,7 +381,7 @@ export async function planShots(visualPrompt: string, durationSeconds: number) {
 
   try {
     const { object } = await generateObject({
-      model: openrouter('anthropic/claude-3-haiku'),
+      model: createOpenRouterModel(options.openrouterApiKey, 'anthropic/claude-3-haiku'),
       maxOutputTokens: MAX_SHOT_PLAN_OUTPUT_TOKENS,
       system: `You are an AI Video Director. The user will provide a visual description of a scene and its total duration based on the audio voiceover length.
 Your job is to decide if this scene should be one continuous shot or cut into multiple angles.
@@ -411,7 +407,7 @@ Every prompt and reference_prompt must be a fully standalone generator instructi
       }
 
       try {
-        const repairedShots = await repairShotPlanTextWithAi(responseText);
+        const repairedShots = await repairShotPlanTextWithAi(responseText, options.openrouterApiKey);
         if (repairedShots?.length) {
           return normalizeShotPlan(visualPrompt, durationSeconds, repairedShots);
         }

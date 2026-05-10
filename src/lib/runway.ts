@@ -19,6 +19,7 @@ type RunwayTaskOutput = { output: string[] };
 type GptImageQuality = 'low' | 'medium' | 'high' | 'auto';
 type RunwayVideoRatio = '720:1280' | '1280:720' | '1080:1920' | '1920:1080';
 type RunwayImageToVideoModel = 'gen4_turbo' | 'gen4.5' | 'seedance2' | 'veo3.1_fast' | string;
+export type RunwayClient = InstanceType<typeof RunwayML>;
 
 export type GeneratedAsset = {
   remoteUrl: string;
@@ -48,13 +49,9 @@ type ImageToVideoCreateParams = {
   duration: number;
 };
 
-const runway = new RunwayML({
-  apiKey: process.env.RUNWAYML_API_SECRET || '',
-});
-
 export const RUNWAY_REFERENCE_DATA_URI_MAX_LENGTH = 5_242_880;
 
-const runwayUploadCache = new Map<string, Promise<string>>();
+const runwayUploadCache = new WeakMap<object, Map<string, Promise<string>>>();
 
 type TextToImageResource = {
   create: (
@@ -72,6 +69,15 @@ type ImageToVideoResource = {
 
 type DataUriReferenceUploader = (uri: string) => Promise<string>;
 
+function uploadCacheFor(runwayClient: RunwayClient) {
+  let cache = runwayUploadCache.get(runwayClient);
+  if (!cache) {
+    cache = new Map<string, Promise<string>>();
+    runwayUploadCache.set(runwayClient, cache);
+  }
+  return cache;
+}
+
 function isOversizedReferenceDataUri(uri: string) {
   return /^data:image\//i.test(uri) && uri.length > RUNWAY_REFERENCE_DATA_URI_MAX_LENGTH;
 }
@@ -82,7 +88,7 @@ function imageExtensionForMimeType(mimeType: string) {
   return 'jpg';
 }
 
-async function uploadDataUriReferenceForRunway(uri: string) {
+async function uploadDataUriReferenceForRunway(uri: string, runwayClient: RunwayClient) {
   const match = uri.match(/^data:([^;,]+);base64,(.*)$/i);
   if (!match) {
     throw new Error('Cannot upload non-base64 image reference data URI to Runway.');
@@ -91,18 +97,21 @@ async function uploadDataUriReferenceForRunway(uri: string) {
   const [, mimeType, base64] = match;
   const buffer = Buffer.from(base64, 'base64');
   const file = await toFile(buffer, `reference-${uuidv4()}.${imageExtensionForMimeType(mimeType)}`, { type: mimeType });
-  const upload = await runway.uploads.createEphemeral({ file }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
+  const upload = await runwayClient.uploads.createEphemeral({ file }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
   return upload.uri;
 }
 
 export async function prepareRunwayReferenceImages(
   referenceImages?: RunwayReferenceImage[],
-  uploadReference: DataUriReferenceUploader = uploadDataUriReferenceForRunway,
+  uploadReference?: DataUriReferenceUploader,
 ) {
   if (!referenceImages?.length) return undefined;
 
   return Promise.all(referenceImages.map(async (image) => {
     if (!isOversizedReferenceDataUri(image.uri)) return image;
+    if (!uploadReference) {
+      throw new Error('Runway reference upload requires a Runway client.');
+    }
     return { ...image, uri: await uploadReference(image.uri) };
   }));
 }
@@ -115,8 +124,9 @@ export async function createTextToImageTask(
     ratio: GptImage2CreateParams['ratio'];
     referenceImages?: RunwayReferenceImage[];
   },
+  uploadReference?: DataUriReferenceUploader,
 ) {
-  const referenceImages = await prepareRunwayReferenceImages(params.referenceImages);
+  const referenceImages = await prepareRunwayReferenceImages(params.referenceImages, uploadReference);
   return resource.create({
     model: IMAGE_MODEL,
     promptText: params.promptText,
@@ -126,15 +136,7 @@ export async function createTextToImageTask(
   }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
 }
 
-const textToImageResource = runway.textToImage as unknown as TextToImageResource;
-
 type RunwayTaskPromise = ReturnType<TextToImageResource['create']>;
-
-function requireRunwayApiKey() {
-  if (!process.env.RUNWAYML_API_SECRET) {
-    throw new Error('Missing RUNWAYML_API_SECRET. Real Runway generation requires API credentials.');
-  }
-}
 
 export function imageRatio(aspectRatio: AspectRatio): GptImage2CreateParams['ratio'] {
   return aspectRatio === '9:16' ? '1088:1920' : '1920:1088';
@@ -210,30 +212,31 @@ function mimeTypeForLocalPath(filePath: string) {
   return 'image/jpeg';
 }
 
-async function uploadLocalAssetForRunway(localOrRemoteUrl: string) {
+async function uploadLocalAssetForRunway(localOrRemoteUrl: string, runwayClient: RunwayClient) {
   if (/^(https?:|runway:)/i.test(localOrRemoteUrl)) {
     return localOrRemoteUrl;
   }
 
   const normalizedPath = localOrRemoteUrl.startsWith('/') ? localOrRemoteUrl.slice(1) : localOrRemoteUrl;
   const absolutePath = path.join(process.cwd(), 'public', normalizedPath);
-  const cached = runwayUploadCache.get(absolutePath);
+  const cache = uploadCacheFor(runwayClient);
+  const cached = cache.get(absolutePath);
   if (cached) return cached;
 
   const uploadPromise = (async () => {
     const buffer = await fs.readFile(absolutePath);
     const fileName = path.basename(normalizedPath);
     const file = await toFile(buffer, fileName, { type: mimeTypeForLocalPath(normalizedPath) });
-    const upload = await runway.uploads.createEphemeral({ file }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
+    const upload = await runwayClient.uploads.createEphemeral({ file }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
     return upload.uri;
   })();
 
-  runwayUploadCache.set(absolutePath, uploadPromise);
+  cache.set(absolutePath, uploadPromise);
 
   try {
     return await uploadPromise;
   } catch (error) {
-    runwayUploadCache.delete(absolutePath);
+    cache.delete(absolutePath);
     throw error;
   }
 }
@@ -276,6 +279,7 @@ function isValidationError(error: unknown) {
 async function waitForOutput(
   taskPromise: Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>,
   label: string,
+  runwayClient: RunwayClient,
   timeoutMs = RUNWAY_TASK_WAIT_TIMEOUT_MS,
   logContext: MediaGenerationLogDetails = {},
 ): Promise<RunwayTaskOutput> {
@@ -290,7 +294,7 @@ async function waitForOutput(
 
   const startTime = Date.now();
   while (Date.now() - startTime < timeoutMs) {
-    const current = await runway.tasks.retrieve(task.id);
+    const current = await runwayClient.tasks.retrieve(task.id);
     if (current.status === 'SUCCEEDED') {
       logMediaGeneration('runway_task_succeeded', { ...logContext, provider: 'runway', runwayTaskId: task.id, outputCount: current.output.length });
       return { output: current.output };
@@ -377,9 +381,9 @@ export async function generateImageAsset(params: {
   ratio: GptImage2CreateParams['ratio'];
   referenceImages?: RunwayReferenceImage[];
   sessionId: string;
+  runwayClient: RunwayClient;
   logContext?: MediaGenerationLogDetails;
 }) {
-  requireRunwayApiKey();
   const logContext = {
     ...params.logContext,
     sessionId: params.sessionId,
@@ -390,14 +394,16 @@ export async function generateImageAsset(params: {
     referenceImageCount: params.referenceImages?.length || 0,
     promptText: params.promptText,
   };
+  const textToImageResource = params.runwayClient.textToImage as unknown as TextToImageResource;
   const task = await waitForOutput(
     retryTaskCreation('Runway image', (): RunwayTaskPromise => createTextToImageTask(textToImageResource, {
       promptText: params.promptText,
       quality: params.quality,
       ratio: params.ratio,
       referenceImages: params.referenceImages?.length ? params.referenceImages : undefined,
-    }), 3, logContext),
+    }, (uri) => uploadDataUriReferenceForRunway(uri, params.runwayClient)), 3, logContext),
     'Runway image generation',
+    params.runwayClient,
     RUNWAY_TASK_WAIT_TIMEOUT_MS,
     logContext,
   );
@@ -408,9 +414,9 @@ export async function generateImageAsset(params: {
 export async function generateSpeechAsset(params: {
   promptText: string;
   sessionId: string;
+  runwayClient: RunwayClient;
   logContext?: MediaGenerationLogDetails;
 }) {
-  requireRunwayApiKey();
   const logContext = {
     ...params.logContext,
     sessionId: params.sessionId,
@@ -419,12 +425,13 @@ export async function generateSpeechAsset(params: {
     promptText: params.promptText,
   };
   const task = await waitForOutput(
-    retryTaskCreation('Runway TTS', () => runway.textToSpeech.create({
+    retryTaskCreation('Runway TTS', () => params.runwayClient.textToSpeech.create({
       model: NARRATION_MODEL,
       promptText: params.promptText,
       voice: { type: 'runway-preset', presetId: 'Bernard' },
     }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS }), 3, logContext),
     'Runway TTS generation',
+    params.runwayClient,
     RUNWAY_TASK_WAIT_TIMEOUT_MS,
     logContext,
   );
@@ -438,10 +445,10 @@ export async function generateVideoAsset(params: {
   ratio: ReturnType<typeof videoRatio>;
   duration: number;
   sessionId: string;
+  runwayClient: RunwayClient;
   logContext?: MediaGenerationLogDetails;
 }) {
-  requireRunwayApiKey();
-  const promptImageUri = await uploadLocalAssetForRunway(params.promptImageUrl);
+  const promptImageUri = await uploadLocalAssetForRunway(params.promptImageUrl, params.runwayClient);
   const model = getRunwayVideoModel();
   const logContext = {
     ...params.logContext,
@@ -454,7 +461,7 @@ export async function generateVideoAsset(params: {
     promptImageUrl: params.promptImageUrl,
     promptText: params.promptText,
   };
-  const imageToVideoResource = runway.imageToVideo as unknown as ImageToVideoResource;
+  const imageToVideoResource = params.runwayClient.imageToVideo as unknown as ImageToVideoResource;
   const task = await waitForOutput(
     retryTaskCreation('Runway video', () => createImageToVideoTask(imageToVideoResource, {
       model,
@@ -464,6 +471,7 @@ export async function generateVideoAsset(params: {
       duration: params.duration,
     }), 3, logContext),
     'Runway video generation',
+    params.runwayClient,
     RUNWAY_TASK_WAIT_TIMEOUT_MS,
     logContext,
   );

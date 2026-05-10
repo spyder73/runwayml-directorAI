@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateText, tool } from 'ai';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import db from '@/lib/db';
 import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { broadcastSessionUpdate } from '@/lib/sse';
@@ -8,10 +7,11 @@ import { runFrameGenerationPhase, runMediaGenerationPhase, updateShotPlanPromptJ
 import { requeueMediaTasks } from '@/lib/media-tasks';
 import { z } from 'zod';
 import type { SceneRow } from '@/lib/types';
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+import {
+  MISSING_BYOK_MESSAGE,
+  isMissingUserCredentialError,
+  openRouterModelForSession,
+} from '@/lib/providers/user-credentials';
 
 const MAX_DIRECTOR_REVISION_OUTPUT_TOKENS = 4096;
 
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
     
     // Vercel AI SDK with Tools for MCP simulation
     const { text, toolCalls } = await generateText({
-      model: openrouter('google/gemini-3.1-flash-lite'),
+      model: openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite'),
       maxOutputTokens: MAX_DIRECTOR_REVISION_OUTPUT_TOKENS,
       prompt: `You are a film director. The user wants to adjust the following timeline of scenes.
 Current Scenes:
@@ -171,7 +171,10 @@ If it's just a general chat, reply naturally.
   } catch (error: unknown) {
     const guardResponse = authGuardResponse(error);
     if (guardResponse) return guardResponse;
+    if (isMissingUserCredentialError(error)) {
+      return NextResponse.json({ error: MISSING_BYOK_MESSAGE }, { status: 400 });
+    }
     console.error('Director chat error:', error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: 'Director generation failed. Please try again.' }, { status: 500 });
   }
 }

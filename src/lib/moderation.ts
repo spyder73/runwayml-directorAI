@@ -1,20 +1,20 @@
 import { generateText } from 'ai';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+import { createOpenRouterModel } from './ai';
+import { MissingUserCredentialError } from './providers/user-credentials';
 
 export const MAX_PROMPT_MODERATION_OUTPUT_TOKENS = 512;
 
-export async function ensureSafePrompt(prompt: string): Promise<string> {
+export async function ensureSafePrompt(prompt: string, options: { openrouterApiKey?: string } = {}): Promise<string> {
   if (!prompt.trim()) {
     throw new Error('Missing prompt text for generation.');
+  }
+  if (!options.openrouterApiKey) {
+    throw new MissingUserCredentialError('openrouter');
   }
   
   try {
     const { text } = await generateText({
-      model: openrouter('google/gemini-3.1-flash-lite'),
+      model: createOpenRouterModel(options.openrouterApiKey, 'google/gemini-3.1-flash-lite'),
       maxOutputTokens: MAX_PROMPT_MODERATION_OUTPUT_TOKENS,
       system: `You are a strict safety and content moderation filter for an AI video generation pipeline.
 Your job is to read the provided prompt. 
@@ -30,6 +30,7 @@ If it is potentially unsafe or might trigger API filters, rewrite it to be cinem
     return trimmed;
   } catch (error) {
     console.error('Error in ensureSafePrompt:', error);
+    if (error instanceof MissingUserCredentialError) throw error;
     throw new Error('Prompt moderation failed before generation.');
   }
 }

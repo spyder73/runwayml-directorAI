@@ -4,6 +4,10 @@ import path from 'path';
 
 type DemoReadinessInput = {
   env?: Record<string, string | undefined>;
+  providerStatus?: {
+    openrouterKeySaved?: boolean;
+    runwayKeySaved?: boolean;
+  };
   ffmpegAvailable?: boolean;
   storageWritable?: boolean;
 };
@@ -28,24 +32,26 @@ function hasSecret(value: string | undefined) {
 
 export function createDemoReadinessReport(input: DemoReadinessInput = {}): DemoReadinessReport {
   const env = input.env || process.env;
+  const hasOpenRouterKey = input.providerStatus?.openrouterKeySaved ?? hasSecret(env.OPENROUTER_API_KEY);
+  const hasRunwayKey = input.providerStatus?.runwayKeySaved ?? hasSecret(env.RUNWAYML_API_SECRET);
   const checks: DemoReadinessCheck[] = [
     {
       id: 'director',
       label: 'Director conversation',
-      ok: hasSecret(env.OPENROUTER_API_KEY),
+      ok: hasOpenRouterKey,
       required: true,
-      message: hasSecret(env.OPENROUTER_API_KEY)
+      message: hasOpenRouterKey
         ? 'The director can hold the interview.'
-        : 'Add the director setup before a live interview.',
+        : 'Add your OpenRouter API key in settings before a live interview.',
     },
     {
       id: 'generation',
       label: 'Live generation',
-      ok: hasSecret(env.RUNWAYML_API_SECRET),
+      ok: hasRunwayKey,
       required: true,
-      message: hasSecret(env.RUNWAYML_API_SECRET)
+      message: hasRunwayKey
         ? 'Live image, narration, and motion passes can run.'
-        : 'Add the generation setup before producing media.',
+        : 'Add your Runway API key in settings before producing media.',
     },
     {
       id: 'render',
@@ -105,12 +111,16 @@ export async function checkGeneratedStorageWritable() {
   }
 }
 
-export async function getDemoReadinessReport(env: Record<string, string | undefined> = process.env) {
+export async function getDemoReadinessReport(
+  env: Record<string, string | undefined> = process.env,
+  providerStatus?: DemoReadinessInput['providerStatus'],
+) {
   const ffmpegAvailable = await runCommand(env.FFMPEG_PATH || 'ffmpeg', ['-version']);
   const storageWritable = await checkGeneratedStorageWritable();
 
   return createDemoReadinessReport({
     env,
+    providerStatus,
     ffmpegAvailable,
     storageWritable,
   });

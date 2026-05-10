@@ -23,10 +23,9 @@ To run this project locally for testing:
 2. **Set up Environment Variables:**
    Create a `.env.local` file in the `runwayml-directorAI` directory with the following keys:
    ```env
-   OPENROUTER_API_KEY=your_openrouter_api_key
-   RUNWAYML_API_SECRET=your_runwayml_api_secret
    CREDENTIAL_ENCRYPTION_KEY=base64-encoded-32-byte-key
    ```
+   Live OpenRouter and Runway keys are user-owned now. Add them from the in-app settings modal after registering and logging in.
    Generated reference frames are persisted locally and uploaded to Runway through temporary SDK uploads before video generation.
    Generate the credential encryption key with `openssl rand -base64 32`.
 
@@ -42,7 +41,7 @@ To run this project locally for testing:
 
 To deploy on a VPS using Docker:
 
-1. Create a `.env` file with the necessary API keys.
+1. Create a `.env` file with `CREDENTIAL_ENCRYPTION_KEY` and any optional reviewer seed values.
 2. Run the following command:
    ```bash
    docker-compose up -d --build

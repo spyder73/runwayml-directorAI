@@ -7,17 +7,17 @@ import { authGuardResponse, requireCurrentUser, requireOwnedSession } from '@/li
 import { processInterviewTurn } from '@/lib/pipeline';
 import type { ChatHistoryRow, SessionRow } from '@/lib/types';
 import { generateText } from 'ai';
-import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import {
   createReferenceAsset,
   getActiveReferenceRequest,
   loadStoryBucket,
 } from '@/lib/story-bucket';
-
-const openrouter = createOpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY,
-});
+import {
+  MISSING_BYOK_MESSAGE,
+  isMissingUserCredentialError,
+  openRouterModelForSession,
+} from '@/lib/providers/user-credentials';
 
 const MAX_VISION_DESCRIPTION_OUTPUT_TOKENS = 1024;
 
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
     }
 
     const session = requireOwnedSession(sessionId, auth.user.id);
+    const visionModel = openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite');
 
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
     await fs.mkdir(uploadDir, { recursive: true });
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
          const dataUri = `data:${mimeType};base64,${base64Data}`;
          
          const { text } = await generateText({
-            model: openrouter('google/gemini-3.1-flash-lite'), // using gemini 3.1 flash lite for vision
+            model: visionModel,
             maxOutputTokens: MAX_VISION_DESCRIPTION_OUTPUT_TOKENS,
             messages: [
                {
@@ -131,7 +132,10 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     const guardResponse = authGuardResponse(error);
     if (guardResponse) return guardResponse;
+    if (isMissingUserCredentialError(error)) {
+      return NextResponse.json({ error: MISSING_BYOK_MESSAGE }, { status: 400 });
+    }
     console.error('Upload Error:', error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: 'Upload processing failed. Please try again.' }, { status: 500 });
   }
 }

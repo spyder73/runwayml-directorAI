@@ -21,13 +21,19 @@ import {
   videoRatio,
   type RunwayReferenceImage,
 } from './runway';
+import {
+  createRunwayClientForSession,
+  getRunwayConcurrencyModeForSession,
+  requireOpenRouterApiKeyForSession,
+  safeCredentialErrorMessage,
+} from './providers/user-credentials';
 
 function getSessionScenes(sessionId: string): SceneRow[] {
   return db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[];
 }
 
 function formatError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return safeCredentialErrorMessage(error, error instanceof Error ? error.message : String(error));
 }
 
 function sceneShowsProtagonist(scene: SceneRow) {
@@ -118,6 +124,8 @@ export async function generateImagesPhase(sessionId: string) {
   try {
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
     if (!session) throw new Error(`Session not found: ${sessionId}`);
+    const openrouterApiKey = requireOpenRouterApiKeyForSession(db, session);
+    const runwayClient = createRunwayClientForSession(db, session);
 
     const scenes = getSessionScenes(sessionId);
     const scenesToGenerate = scenes.filter((scene) => (
@@ -134,7 +142,8 @@ export async function generateImagesPhase(sessionId: string) {
     }
     broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
-    await mapWithConcurrency(scenesToGenerate, 3, async (scene) => {
+    const concurrency = getRunwayConcurrencyModeForSession(db, session) === 'parallel' ? 3 : 1;
+    await mapWithConcurrency(scenesToGenerate, concurrency, async (scene) => {
       try {
         const preparedReferences = prepareSceneReferences({
           promptText: scene.image_prompt || scene.visual_prompt,
@@ -143,7 +152,7 @@ export async function generateImagesPhase(sessionId: string) {
           assets: referenceAssets,
           entities: storyEntities,
         });
-        const promptText = await ensureSafePrompt(preparedReferences.promptText);
+        const promptText = await ensureSafePrompt(preparedReferences.promptText, { openrouterApiKey });
         assertRunwayImagePrompt({
           promptText,
           referenceImages: preparedReferences.referenceImages,
@@ -155,6 +164,7 @@ export async function generateImagesPhase(sessionId: string) {
           ratio: imageRatio(session.aspect_ratio),
           referenceImages: referenceImages.length ? referenceImages : undefined,
           sessionId,
+          runwayClient,
         });
 
         db.prepare('UPDATE scenes SET reference_image_url = ?, reference_tags = ?, status = ?, last_failure = NULL WHERE id = ?')
@@ -188,6 +198,8 @@ export async function generateVideoAudioPhase(sessionId: string) {
   try {
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
     if (!session) throw new Error(`Session not found: ${sessionId}`);
+    const openrouterApiKey = requireOpenRouterApiKeyForSession(db, session);
+    const runwayClient = createRunwayClientForSession(db, session);
 
     const scenes = getSessionScenes(sessionId);
     const scenesToGenerate = scenes.filter((scene) => (
@@ -207,7 +219,8 @@ export async function generateVideoAudioPhase(sessionId: string) {
     }
     broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
-    await mapWithConcurrency(scenesToGenerate, 2, async (scene) => {
+    const concurrency = getRunwayConcurrencyModeForSession(db, session) === 'parallel' ? 2 : 1;
+    await mapWithConcurrency(scenesToGenerate, concurrency, async (scene) => {
       let activePhase: 'audio' | 'video' = scene.audio_url ? 'video' : 'audio';
       try {
         if (!scene.reference_image_url) {
@@ -222,6 +235,7 @@ export async function generateVideoAudioPhase(sessionId: string) {
           const audioAsset = await generateSpeechAsset({
             promptText: scene.narrator_text,
             sessionId,
+            runwayClient,
           });
           audioUrl = audioAsset.localUrl;
 
@@ -247,11 +261,11 @@ export async function generateVideoAudioPhase(sessionId: string) {
           db.prepare('UPDATE scenes SET status = ?, last_failure = NULL WHERE id = ?').run('generating_video', scene.id);
           broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
-          const shots = await planShots(scene.video_prompt || scene.visual_prompt, exactDuration);
+          const shots = await planShots(scene.video_prompt || scene.visual_prompt, exactDuration, { openrouterApiKey });
           const videoUrls: string[] = [];
 
           for (const shot of shots) {
-            const safePrompt = await ensureSafePrompt(shot.prompt);
+            const safePrompt = await ensureSafePrompt(shot.prompt, { openrouterApiKey });
             assertRunwayVideoPrompt({
               promptText: safePrompt,
               durationSeconds: shot.duration,
@@ -262,6 +276,7 @@ export async function generateVideoAudioPhase(sessionId: string) {
               ratio: videoRatio(session.aspect_ratio),
               duration: shot.duration,
               sessionId,
+              runwayClient,
             });
             videoUrls.push(videoAsset.localUrl);
           }
