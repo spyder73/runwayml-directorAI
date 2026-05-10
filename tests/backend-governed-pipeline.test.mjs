@@ -68,6 +68,20 @@ test('prompt linting rejects unsynchronized image reference tags before credits 
   assert.match(result.errors.join('\n'), /station_01/);
 });
 
+test('prompt linting allows image prompts to describe exclusions explicitly', () => {
+  const { lintRunwayImagePrompt } = jiti('../src/lib/prompt-lint.ts');
+
+  const result = lintRunwayImagePrompt({
+    promptText: '@opening_frame rainy train platform after the train has passed; do not reset the train to its opening position.',
+    referenceImages: [
+      { tag: 'opening_frame', uri: 'data:image/jpeg;base64,abc' },
+    ],
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.errors, []);
+});
+
 test('prompt linting rejects video prompts without motion and invalid durations', () => {
   const { lintRunwayVideoPrompt } = jiti('../src/lib/prompt-lint.ts');
 
