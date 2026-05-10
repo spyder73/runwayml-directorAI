@@ -41,10 +41,10 @@ test('Phase 9 Docker image uses Debian runtime packages for Remotion rendering',
 
 test('Phase 9 Docker defaults keep Remotion conservative on VPS hosts', () => {
   const dockerfile = readText('../Dockerfile');
-  const compose = readText('../docker-compose.yml');
   const envExample = readText('../.env.example');
+  const productionEnvExample = readText('../.env.production.example');
 
-  for (const source of [dockerfile, compose, envExample]) {
+  for (const source of [dockerfile, envExample, productionEnvExample]) {
     assert.match(source, /REMOTION_BROWSER_EXECUTABLE[:=].*\/usr\/bin\/chromium/);
     assert.match(source, /REMOTION_RENDER_QUALITY[:=].*fast/);
     assert.match(source, /REMOTION_CONCURRENCY[:=].*50%/);
