@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateText, tool } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import db from '@/lib/db';
+import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import { runFrameGenerationPhase, runMediaGenerationPhase, updateShotPlanPromptJson } from '@/lib/pipeline_media';
 import { requeueMediaTasks } from '@/lib/media-tasks';
 import { z } from 'zod';
-import type { SceneRow, SessionRow } from '@/lib/types';
+import type { SceneRow } from '@/lib/types';
 
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -47,8 +48,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing input' }, { status: 400 });
     }
 
+    const { session } = requireOwnedSessionForRequest(req, sessionId);
     const scenes = getSessionScenes(sessionId);
-    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
     const isFrameReview = session?.mode === 'life_story' && session.status === 'AWAITING_APPROVAL';
     
     // Vercel AI SDK with Tools for MCP simulation
@@ -168,6 +169,8 @@ If it's just a general chat, reply naturally.
 
     return NextResponse.json({ response: responseText });
   } catch (error: unknown) {
+    const guardResponse = authGuardResponse(error);
+    if (guardResponse) return guardResponse;
     console.error('Director chat error:', error);
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }

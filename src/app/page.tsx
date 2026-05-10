@@ -12,6 +12,10 @@ export default function Home() {
   const [readiness, setReadiness] = useState<{ ok: boolean; userMessage: string } | null>(null);
   const router = useRouter();
 
+  const redirectToLogin = () => {
+    router.push(`/login?next=${encodeURIComponent('/')}`);
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -42,6 +46,11 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aspectRatio, mode }),
       });
+
+      if (res.status === 401 || res.status === 403) {
+        redirectToLogin();
+        return;
+      }
       
       const data = await res.json();
       if (res.ok && data.sessionId) {
@@ -65,6 +74,11 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aspectRatio }),
       });
+
+      if (res.status === 401 || res.status === 403) {
+        redirectToLogin();
+        return;
+      }
 
       const data = await res.json();
       if (res.ok && data.sessionId) {

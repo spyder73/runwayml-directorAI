@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
+import { authGuardResponse, requireCurrentUser } from '@/lib/auth/guards';
 import type { AspectRatio, ChatHistoryRow, SessionRow } from '@/lib/types';
 import { createReferenceUploadRequest, getActiveReferenceRequest } from '@/lib/story-bucket';
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = requireCurrentUser(req);
     const body = await req.json() as { aspectRatio?: AspectRatio, mode?: string };
     const aspectRatio = body.aspectRatio === '9:16' ? '9:16' : '16:9';
     const mode = body.mode === 'single_memory' ? 'single_memory' : 'life_story';
@@ -13,8 +15,8 @@ export async function POST(req: NextRequest) {
     const sessionId = uuidv4();
 
     // Initialize session
-    db.prepare('INSERT INTO sessions (id, status, story_text, aspect_ratio, mode) VALUES (?, ?, ?, ?, ?)')
-      .run(sessionId, 'INTERVIEW_ONBOARDING', '', aspectRatio, mode);
+    db.prepare('INSERT INTO sessions (id, user_id, status, story_text, aspect_ratio, mode) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(sessionId, auth.user.id, 'INTERVIEW_ONBOARDING', '', aspectRatio, mode);
 
     // Add first message from Director
     const msgId = uuidv4();
@@ -48,6 +50,8 @@ export async function POST(req: NextRequest) {
       active_reference_request: getActiveReferenceRequest(db, sessionId) || null,
     });
   } catch (error: unknown) {
+    const guardResponse = authGuardResponse(error);
+    if (guardResponse) return guardResponse;
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs/promises';
 import db from '@/lib/db';
+import { authGuardResponse, requireCurrentUser, requireOwnedSession } from '@/lib/auth/guards';
 import { processInterviewTurn } from '@/lib/pipeline';
 import type { ChatHistoryRow, SessionRow } from '@/lib/types';
 import { generateText } from 'ai';
@@ -29,6 +30,7 @@ function nextStatusAfterUpload(session: SessionRow, activeRequest: ReturnType<ty
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = requireCurrentUser(req);
     const formData = await req.formData();
     const sessionId = formData.get('sessionId') as string;
     const files = formData.getAll('files') as File[];
@@ -37,10 +39,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
     }
 
-    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
-    if (!session) {
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
-    }
+    const session = requireOwnedSession(sessionId, auth.user.id);
 
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
     await fs.mkdir(uploadDir, { recursive: true });
@@ -130,6 +129,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
+    const guardResponse = authGuardResponse(error);
+    if (guardResponse) return guardResponse;
     console.error('Upload Error:', error);
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }

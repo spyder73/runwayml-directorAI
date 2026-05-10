@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import { getActiveReferenceRequest, loadStoryBucket, markActiveReferenceRequest } from '@/lib/story-bucket';
 import type { ChatHistoryRow, SceneRow, SessionRow } from '@/lib/types';
@@ -10,6 +11,8 @@ export async function POST(req: NextRequest) {
     if (!body.sessionId || !body.status) {
       return NextResponse.json({ error: 'Missing input' }, { status: 400 });
     }
+
+    requireOwnedSessionForRequest(req, body.sessionId);
 
     markActiveReferenceRequest(db, body.sessionId, body.status);
 
@@ -29,6 +32,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
+    const guardResponse = authGuardResponse(error);
+    if (guardResponse) return guardResponse;
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

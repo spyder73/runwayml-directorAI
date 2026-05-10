@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, use } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Film, Send, Settings, X } from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
@@ -45,6 +46,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [renderProgress, setRenderProgress] = useState<RenderProgressPayload | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,7 +57,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.session) setSession(data.session);
+        if (data.session) {
+          setSession(data.session);
+          setSessionLoadError(null);
+        }
         if (data.scenes) setScenes(data.scenes);
         if (data.chat_history) setChatHistory(data.chat_history);
         if (data.story_bucket) setStoryBucket(data.story_bucket);
@@ -74,6 +79,11 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       } catch (err) {
         console.error('Error parsing session update', err);
       }
+    };
+
+    eventSource.onerror = () => {
+      setSessionLoadError('Unable to open this session. Sign in again or return to the studio.');
+      eventSource.close();
     };
 
     return () => eventSource.close();
@@ -247,10 +257,19 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   if (!session) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#0A0A0F] font-mono text-white">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-t-2 border-amber-200/50" />
-          <p className="animate-pulse text-xs uppercase tracking-widest text-white/50">Entering the Studio...</p>
-        </div>
+        {sessionLoadError ? (
+          <div className="flex max-w-sm flex-col items-center space-y-5 px-6 text-center">
+            <p className="text-sm uppercase tracking-widest text-white/60">{sessionLoadError}</p>
+            <Link href="/" className="rounded-full border border-white/15 px-5 py-3 text-xs uppercase tracking-widest text-white/70 transition-colors hover:border-white/30 hover:text-white">
+              Return to studio
+            </Link>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center space-y-4">
+            <div className="h-8 w-8 animate-spin rounded-full border-t-2 border-amber-200/50" />
+            <p className="animate-pulse text-xs uppercase tracking-widest text-white/50">Entering the Studio...</p>
+          </div>
+        )}
       </main>
     );
   }

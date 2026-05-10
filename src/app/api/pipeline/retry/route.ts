@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { runFinalAssetsPhase, runFinalRenderPhase, runFrameGenerationPhase, runMediaGenerationPhase } from '@/lib/pipeline_media';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import { requeueMediaTasks, resetFailedMediaTasks, type MediaTaskKind } from '@/lib/media-tasks';
-import type { SceneRow, SessionRow } from '@/lib/types';
+import type { SceneRow } from '@/lib/types';
 
 type RetryUnit = 'image' | 'audio' | 'video' | 'render';
 
@@ -13,6 +14,8 @@ export async function POST(req: Request) {
     if (!sessionId) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
     }
+
+    const { session } = requireOwnedSessionForRequest(req, sessionId);
 
     if (unit === 'render') {
       requeueMediaTasks(db, { sessionId, kind: 'render_final', clearOutput: true });
@@ -72,7 +75,6 @@ export async function POST(req: Request) {
     }
 
     const refreshedScenes = db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[];
-    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
     const needsImages = refreshedScenes.some((scene) => !scene.reference_image_url || scene.status === 'generating_image' || scene.status === 'image_failed' || scene.status === 'pending');
     const hasMediaFailures = refreshedScenes.some((scene) => scene.status === 'audio_failed' || scene.status === 'video_failed');
 
@@ -99,6 +101,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
+    const guardResponse = authGuardResponse(error);
+    if (guardResponse) return guardResponse;
     console.error('Retry API Error:', error);
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to retry generation' }, { status: 500 });
   }

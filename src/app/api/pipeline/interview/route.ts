@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
+import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { processInterviewTurn } from '@/lib/pipeline';
 import type { SessionRow } from '@/lib/types';
 import {
@@ -33,13 +34,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
     }
 
+    const { session } = requireOwnedSessionForRequest(req, sessionId);
+
     // Save user message
     if (message) {
         db.prepare('INSERT INTO chat_history (id, session_id, role, content) VALUES (?, ?, ?, ?)')
         .run(uuidv4(), sessionId, 'user', message);
 
         const activeRequest = getActiveReferenceRequest(db, sessionId);
-        const session = db.prepare('SELECT mode, status FROM sessions WHERE id = ?').get(sessionId) as Pick<SessionRow, 'mode' | 'status'> | undefined;
         const shouldLeaveReferenceStatus = session?.status === 'AWAITING_SELFIE' || session?.status === 'AWAITING_REFERENCE';
         if (activeRequest && isSkipReferenceMessage(message)) {
           markActiveReferenceRequest(db, sessionId, 'skipped');
@@ -69,6 +71,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
+    const guardResponse = authGuardResponse(error);
+    if (guardResponse) return guardResponse;
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

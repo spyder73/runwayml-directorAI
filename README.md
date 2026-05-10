@@ -48,6 +48,7 @@ To deploy on a VPS using Docker:
    docker-compose up -d --build
    ```
    This will build the standalone Next.js image, set up the SQLite data volumes, and expose the app on port 3000.
+3. If Nginx or another buffering reverse proxy sits in front of the app, disable buffering for `/api/pipeline/events` so Server-Sent Events stream immediately. The route also sends `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`.
 
 ## Production Reviewer Account
 

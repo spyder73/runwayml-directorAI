@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { runFrameGenerationPhase, runMediaGenerationPhase } from '@/lib/pipeline_media';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import {
@@ -35,10 +36,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing input' }, { status: 400 });
     }
 
+    const { session } = requireOwnedSessionForRequest(req, body.sessionId);
+
     if (body.action === 'lock') {
       lockSceneOutlineForProduction(db, body.sessionId);
       broadcastSessionUpdate(body.sessionId, fullSessionUpdate(body.sessionId));
-      const session = db.prepare('SELECT mode FROM sessions WHERE id = ?').get(body.sessionId) as Pick<SessionRow, 'mode'> | undefined;
       const runner = session?.mode === 'life_story' ? runFrameGenerationPhase : runMediaGenerationPhase;
       runner(body.sessionId).catch(console.error);
       return NextResponse.json({ success: true });
@@ -58,6 +60,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: 'Unsupported action' }, { status: 400 });
   } catch (error: unknown) {
+    const guardResponse = authGuardResponse(error);
+    if (guardResponse) return guardResponse;
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

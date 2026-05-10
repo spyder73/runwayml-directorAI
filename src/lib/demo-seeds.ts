@@ -14,20 +14,34 @@ export type DemoSeedResult = {
   sessionId: string;
 };
 
-export function createDemoMemorySeed(database: SqliteDatabase, params: { aspectRatio?: AspectRatio } = {}): DemoSeedResult {
+export function createDemoMemorySeed(database: SqliteDatabase, params: { aspectRatio?: AspectRatio; userId?: string } = {}): DemoSeedResult {
   const sessionId = uuidv4();
   const aspectRatio = params.aspectRatio || '16:9';
 
-  database.prepare(`
-    INSERT INTO sessions (id, mode, status, story_text, aspect_ratio, user_name, user_age)
-    VALUES (?, 'single_memory', 'INTERVIEW_DYNAMIC', ?, ?, ?, ?)
-  `).run(
-    sessionId,
-    'Maya remembers the night she left home and waited alone on a train platform with one suitcase.',
-    aspectRatio,
-    'Maya',
-    '34',
-  );
+  if (params.userId) {
+    database.prepare(`
+      INSERT INTO sessions (id, user_id, mode, status, story_text, aspect_ratio, user_name, user_age)
+      VALUES (?, ?, 'single_memory', 'INTERVIEW_DYNAMIC', ?, ?, ?, ?)
+    `).run(
+      sessionId,
+      params.userId,
+      'Maya remembers the night she left home and waited alone on a train platform with one suitcase.',
+      aspectRatio,
+      'Maya',
+      '34',
+    );
+  } else {
+    database.prepare(`
+      INSERT INTO sessions (id, mode, status, story_text, aspect_ratio, user_name, user_age)
+      VALUES (?, 'single_memory', 'INTERVIEW_DYNAMIC', ?, ?, ?, ?)
+    `).run(
+      sessionId,
+      'Maya remembers the night she left home and waited alone on a train platform with one suitcase.',
+      aspectRatio,
+      'Maya',
+      '34',
+    );
+  }
 
   applyProfileBucketUpdate(database, sessionId, {
     profile: {

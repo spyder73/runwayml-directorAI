@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { requeueMediaTasks } from '@/lib/media-tasks';
 import { runFinalRenderPhase } from '@/lib/pipeline_media';
 
@@ -11,6 +12,8 @@ export async function POST(req: Request) {
     if (!sessionId) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
     }
+
+    requireOwnedSessionForRequest(req, sessionId);
 
     const renderTask = db.prepare(`
       SELECT status FROM media_tasks
@@ -29,6 +32,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    const guardResponse = authGuardResponse(error);
+    if (guardResponse) return guardResponse;
     console.error('Render API Error:', error);
     return NextResponse.json({ error: 'Failed to start render' }, { status: 500 });
   }
