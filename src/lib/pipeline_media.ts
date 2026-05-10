@@ -104,9 +104,17 @@ export type ShotPlanProgress = {
   url?: string;
   reference_image_url?: string;
   reference_prompt?: string;
+  visual_start_state?: string;
+  visual_end_state?: string;
+  camera_role?: string;
+  angle_change_reason?: string;
   status?: 'pending' | 'running' | 'succeeded' | 'failed';
   last_error?: string;
 };
+
+function nonEmptyString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
 
 function mediaTaskLogContext(session: SessionRow, task: MediaTaskRow, scene?: SceneRow): MediaGenerationLogDetails {
   return {
@@ -131,6 +139,10 @@ function parseShotPlanProgress(value: string | null | undefined): ShotPlanProgre
         ...(typeof item.url === 'string' && item.url.trim() ? { url: item.url } : {}),
         ...(typeof item.reference_image_url === 'string' && item.reference_image_url.trim() ? { reference_image_url: item.reference_image_url } : {}),
         ...(typeof item.reference_prompt === 'string' && item.reference_prompt.trim() ? { reference_prompt: item.reference_prompt } : {}),
+        ...(nonEmptyString(item.visual_start_state) ? { visual_start_state: nonEmptyString(item.visual_start_state) } : {}),
+        ...(nonEmptyString(item.visual_end_state) ? { visual_end_state: nonEmptyString(item.visual_end_state) } : {}),
+        ...(nonEmptyString(item.camera_role) ? { camera_role: nonEmptyString(item.camera_role) } : {}),
+        ...(nonEmptyString(item.angle_change_reason) ? { angle_change_reason: nonEmptyString(item.angle_change_reason) } : {}),
         ...(item.status === 'running' || item.status === 'succeeded' || item.status === 'failed' ? { status: item.status } : {}),
         ...(typeof item.last_error === 'string' && item.last_error.trim() ? { last_error: item.last_error } : {}),
       }));
@@ -154,6 +166,10 @@ export function mergeShotPlanProgress(existingJson: string | null | undefined, p
       ...(canReuseGeneratedMedia && previous?.url ? { url: previous.url } : {}),
       ...(canReuseGeneratedMedia && previous?.reference_image_url ? { reference_image_url: previous.reference_image_url } : {}),
       ...(referencePrompt ? { reference_prompt: referencePrompt } : previous?.reference_prompt ? { reference_prompt: previous.reference_prompt } : {}),
+      ...(shot.visualStartState ? { visual_start_state: shot.visualStartState } : previous?.visual_start_state ? { visual_start_state: previous.visual_start_state } : {}),
+      ...(shot.visualEndState ? { visual_end_state: shot.visualEndState } : previous?.visual_end_state ? { visual_end_state: previous.visual_end_state } : {}),
+      ...(shot.cameraRole ? { camera_role: shot.cameraRole } : previous?.camera_role ? { camera_role: previous.camera_role } : {}),
+      ...(shot.angleChangeReason ? { angle_change_reason: shot.angleChangeReason } : previous?.angle_change_reason ? { angle_change_reason: previous.angle_change_reason } : {}),
       status: canReuseGeneratedMedia && previous?.url ? 'succeeded' : 'pending',
     };
   });
@@ -463,6 +479,7 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
 export function buildContinuityReferencePrompt(shot: ShotPlan, shotIndex: number) {
   const basePrompt = cleanGeneratorPrompt(shot.referencePrompt)
     || referencePromptFromGeneratorText(shot.prompt)
+    || cleanGeneratorPrompt(shot.visualStartState)
     || cleanGeneratorPrompt(shot.prompt);
   if (shotIndex === 0 || basePrompt.includes(`@${OPENING_FRAME_REFERENCE_TAG}`)) {
     return basePrompt;
@@ -559,6 +576,10 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
     duration: shot.duration,
     prompt: shot.prompt,
     ...(shot.reference_prompt ? { referencePrompt: shot.reference_prompt } : {}),
+    ...(shot.visual_start_state ? { visualStartState: shot.visual_start_state } : {}),
+    ...(shot.visual_end_state ? { visualEndState: shot.visual_end_state } : {}),
+    ...(shot.camera_role ? { cameraRole: shot.camera_role } : {}),
+    ...(shot.angle_change_reason ? { angleChangeReason: shot.angle_change_reason } : {}),
   }));
   const shots = reusablePlannedShots.length
     ? reusablePlannedShots

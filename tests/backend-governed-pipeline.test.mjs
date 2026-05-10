@@ -560,12 +560,43 @@ test('shot plan progress keeps completed sub-shots and only reports complete whe
   assert.equal(progress[1].status, 'pending');
   assert.deepEqual(shotPlanVideoUrls(progress), []);
 
+  assert.equal(progress[1].visual_start_state, undefined);
+
   progress[1].url = '/generated/video/session-1/shot-2.mp4';
   progress[1].status = 'succeeded';
   assert.deepEqual(shotPlanVideoUrls(progress), [
     '/generated/video/session-1/shot-1.mp4',
     '/generated/video/session-1/shot-2.mp4',
   ]);
+});
+
+test('shot plan progress persists storyboard metadata for sub-shot retries', () => {
+  const { mergeShotPlanProgress } = jiti('../src/lib/pipeline_media.ts');
+
+  const progress = mergeShotPlanProgress(null, [
+    {
+      duration: 4,
+      prompt: 'Tracking shot from behind as Maya walks down a sidewalk at twilight.',
+      referencePrompt: 'Maya walking down a sidewalk at twilight.',
+      visualStartState: 'Maya begins walking down the sidewalk at twilight.',
+      visualEndState: 'Maya reaches the lit shop window and slows to a stop.',
+      cameraRole: 'rear tracking wide shot',
+    },
+    {
+      duration: 4,
+      prompt: 'Close-up from outside the shop window as Maya studies her reflection in the glass.',
+      referencePrompt: 'Using @opening_frame as the visual reference, Maya stands beside the lit shop window at twilight.',
+      visualStartState: 'Maya stands beside the lit shop window at twilight.',
+      visualEndState: 'Maya smiles faintly at her reflection.',
+      cameraRole: 'exterior reflection close-up',
+      angleChangeReason: 'The camera changes from a rear tracking view to an exterior close-up through the reflective window glass.',
+    },
+  ]);
+
+  assert.equal(progress[0].visual_start_state, 'Maya begins walking down the sidewalk at twilight.');
+  assert.equal(progress[0].visual_end_state, 'Maya reaches the lit shop window and slows to a stop.');
+  assert.equal(progress[1].camera_role, 'exterior reflection close-up');
+  assert.match(progress[1].angle_change_reason, /rear tracking view/);
 });
 
 test('shot prompt updates clear only the selected sub-shot media', () => {

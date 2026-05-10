@@ -51,6 +51,53 @@ test('shot planner adds continuity image prompts for split scenes', () => {
   assert.doesNotMatch(shots[1].referencePrompt, /sub-scene|previous action|already occurred|do not reset|Base scene|This shot begins/i);
 });
 
+test('shot planner collapses weak short splits without a new perspective', () => {
+  const { normalizeShotPlan } = jiti('../src/lib/shot_planner.ts');
+
+  const shots = normalizeShotPlan(
+    'Maya walks down a sidewalk at twilight, pauses beside a shop window, and smiles faintly at her reflection.',
+    8,
+    [
+      { duration: 4, prompt: 'Wide shot following Maya from behind down a sidewalk at twilight.' },
+      { duration: 4, prompt: 'Wide shot following Maya from behind down the same sidewalk at twilight.' },
+    ],
+  );
+
+  assert.equal(shots.length, 1);
+  assert.equal(shots[0].duration, 8);
+  assert.match(shots[0].prompt, /shop window/);
+});
+
+test('shot planner uses visible start state for accepted continuation frames', () => {
+  const { normalizeShotPlan } = jiti('../src/lib/shot_planner.ts');
+
+  const shots = normalizeShotPlan(
+    'Maya walks down a sidewalk at twilight, pauses beside a shop window, and smiles faintly at her reflection.',
+    8,
+    [
+      {
+        duration: 4,
+        prompt: 'Tracking shot from behind as Maya walks down a sidewalk at twilight.',
+        visual_end_state: 'Maya has reached the lit shop window and has slowed to a stop beside the glass.',
+      },
+      {
+        duration: 4,
+        prompt: 'Close-up from outside the shop window as Maya studies her reflection in the glass.',
+        visual_start_state: 'Maya stands beside the lit shop window at twilight, her face and the city lights reflected in the glass.',
+        angle_change_reason: 'The camera changes from a rear tracking view to an exterior close-up through the reflective window glass.',
+      },
+    ],
+  );
+
+  assert.equal(shots.length, 2);
+  assert.equal(shots[1].visualStartState, 'Maya stands beside the lit shop window at twilight, her face and the city lights reflected in the glass.');
+  assert.equal(
+    shots[1].referencePrompt,
+    'Using @opening_frame as the visual reference, Maya stands beside the lit shop window at twilight, her face and the city lights reflected in the glass.',
+  );
+  assert.doesNotMatch(shots[1].referencePrompt, /sub-scene|previous action|already occurred|do not reset|prompt:|reference_prompt:/i);
+});
+
 test('shot planner strips orchestration labels from generator prompts', () => {
   const { parseShotPlanResponseText } = jiti('../src/lib/shot_planner.ts');
 
