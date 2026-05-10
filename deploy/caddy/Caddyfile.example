@@ -1,0 +1,18 @@
+your-new-domain.com, www.your-new-domain.com {
+  request_body {
+    max_size 25MB
+  }
+
+  reverse_proxy /api/pipeline/events* lifestory-web:3000 {
+    flush_interval -1
+    transport http {
+      read_timeout 1h
+    }
+  }
+
+  reverse_proxy lifestory-web:3000 {
+    transport http {
+      read_timeout 15m
+    }
+  }
+}
