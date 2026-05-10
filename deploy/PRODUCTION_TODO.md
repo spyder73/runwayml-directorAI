@@ -47,3 +47,11 @@ Use this as the manual VPS launch checklist. Commands and details live in `deplo
 - [ ] Run one short generation.
 - [ ] Render a final MP4.
 - [ ] Confirm logs do not expose secrets.
+
+## Backups And Recovery
+
+- [ ] Run `deploy/backup-lifestory.sh` after first successful production render.
+- [ ] Copy the newest SQLite backup off the VPS.
+- [ ] Copy the newest media archive off the VPS.
+- [ ] Test recovery by restoring DB and media into `data/`.
+- [ ] Open a completed session after recovery.
