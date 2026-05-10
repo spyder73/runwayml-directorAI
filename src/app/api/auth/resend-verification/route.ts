@@ -1,0 +1,33 @@
+import { NextRequest, NextResponse } from 'next/server';
+import db from '../../../../lib/db';
+import { createEmailVerificationToken } from '../../../../lib/auth/email-verification';
+import { isFormRequest, normalizeEmail } from '../../../../lib/auth/http';
+import { sendVerificationEmail } from '../../../../lib/email/smtp';
+import type { UserRow } from '@/lib/types';
+
+function redirectForForm(req: NextRequest) {
+  return NextResponse.redirect(new URL('/login?verification=resent', req.url), { status: 303 });
+}
+
+export async function POST(req: NextRequest) {
+  const isForm = isFormRequest(req);
+  const contentType = req.headers.get('content-type') || '';
+  const email = contentType.includes('application/json')
+    ? normalizeEmail(((await req.json()) as { email?: string }).email || '')
+    : normalizeEmail(String((await req.formData()).get('email') || ''));
+
+  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
+  if (user && !user.email_confirmed_at) {
+    const verification = createEmailVerificationToken(db, user.id);
+    await sendVerificationEmail({ to: user.email, token: verification.token });
+  }
+
+  if (isForm) {
+    return redirectForForm(req);
+  }
+
+  return NextResponse.json({
+    ok: true,
+    message: 'If that account needs verification, a new confirmation email has been sent.',
+  });
+}
