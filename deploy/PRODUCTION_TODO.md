@@ -39,6 +39,7 @@ Use this as the manual VPS launch checklist. Commands and details live in `deplo
 
 ## Smoke Tests
 
+- [ ] Complete the production acceptance runbook in `deploy/ACCEPTANCE_TESTING.md`.
 - [ ] Verify the new domain over HTTPS.
 - [ ] Verify the existing domain still works.
 - [ ] Register and confirm a test user.
