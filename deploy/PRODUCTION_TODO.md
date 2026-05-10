@@ -1,6 +1,9 @@
 # Production TODO
 
-Use this as the manual VPS launch checklist. Commands and details live in `deploy/VPS_SETUP.md` and `deploy/REVERSE_PROXY.md`.
+Use `deploy/VPS_PRODUCTION_RUNBOOK.md` as the full start-to-finish VPS guide.
+This file remains as the short checklist. Focused command references still live
+in `deploy/VPS_SETUP.md`, `deploy/REVERSE_PROXY.md`,
+`deploy/BACKUP_RECOVERY.md`, and `deploy/ACCEPTANCE_TESTING.md`.
 
 ## VPS Bootstrap
 
