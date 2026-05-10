@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import db from '@/lib/db';
 import { authGuardResponse, requireCurrentUser, requireOwnedSession } from '@/lib/auth/guards';
 import { processInterviewTurn } from '@/lib/pipeline';
+import { UPLOAD_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 import type { ChatHistoryRow, SessionRow } from '@/lib/types';
 import { generateText } from 'ai';
 import { broadcastSessionUpdate } from '@/lib/sse';
@@ -23,6 +24,7 @@ import {
   createPrivateMediaFilePath,
   mediaAssetUrl,
 } from '@/lib/media-assets';
+import { validateUploadFiles } from '@/lib/upload-limits';
 
 const MAX_VISION_DESCRIPTION_OUTPUT_TOKENS = 1024;
 
@@ -45,14 +47,24 @@ export async function POST(req: NextRequest) {
     }
 
     const session = requireOwnedSession(sessionId, auth.user.id);
-    const visionModel = openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite');
+    const uploadValidation = validateUploadFiles(files);
+    if (uploadValidation) {
+      return NextResponse.json({ error: uploadValidation.message }, { status: 400 });
+    }
+
+    if (files.length > 0) {
+      const uploadLimit = checkRateLimit(rateLimitKey(['upload', auth.user.id]), UPLOAD_RATE_LIMIT);
+      if (!uploadLimit.allowed) {
+        return rateLimitResponse(uploadLimit);
+      }
+    }
 
     const uploadedPaths: string[] = [];
     const activeRequest = getActiveReferenceRequest(db, sessionId);
+    const visionModel = files.length > 0 ? openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite') : null;
 
     // Save files locally
     for (const file of files) {
-      if (file.size === 0) continue;
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       const mimeType = file.type || 'image/jpeg';
@@ -80,6 +92,7 @@ export async function POST(req: NextRequest) {
       // Vision inference
       let visionDescription = null;
       try {
+         if (!visionModel) throw new Error('Vision model is not available.');
          const base64Data = buffer.toString('base64');
          const dataUri = `data:${mimeType};base64,${base64Data}`;
          

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { runFrameGenerationPhase, runMediaGenerationPhase } from '@/lib/pipeline_media';
+import { GENERATION_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import {
   getActiveReferenceRequest,
@@ -36,9 +37,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing input' }, { status: 400 });
     }
 
-    const { session } = requireOwnedSessionForRequest(req, body.sessionId);
+    const { auth, session } = requireOwnedSessionForRequest(req, body.sessionId);
 
     if (body.action === 'lock') {
+      const generationLimit = checkRateLimit(rateLimitKey(['generation', 'outline-lock', auth.user.id]), GENERATION_RATE_LIMIT);
+      if (!generationLimit.allowed) {
+        return rateLimitResponse(generationLimit);
+      }
+
       lockSceneOutlineForProduction(db, body.sessionId);
       broadcastSessionUpdate(body.sessionId, fullSessionUpdate(body.sessionId));
       const runner = session?.mode === 'life_story' ? runFrameGenerationPhase : runMediaGenerationPhase;

@@ -1,12 +1,39 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
+import { startFinalRenderWithLock } from '@/lib/locks';
 import { runFinalAssetsPhase, runFinalRenderPhase, runFrameGenerationPhase, runMediaGenerationPhase } from '@/lib/pipeline_media';
+import { GENERATION_RATE_LIMIT, RENDER_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import { requeueMediaTasks, resetFailedMediaTasks, type MediaTaskKind } from '@/lib/media-tasks';
 import type { SceneRow } from '@/lib/types';
 
 type RetryUnit = 'image' | 'audio' | 'video' | 'render';
+
+function currentRenderTaskStatus(sessionId: string) {
+  return db.prepare(`
+    SELECT status FROM media_tasks
+    WHERE session_id = ? AND kind = 'render_final'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(sessionId) as { status: string } | undefined;
+}
+
+function startRenderRetry(sessionId: string) {
+  const renderTask = currentRenderTaskStatus(sessionId);
+  if (renderTask?.status === 'running') {
+    return { started: false, alreadyRunning: true };
+  }
+
+  const started = startFinalRenderWithLock(sessionId, () => {
+    requeueMediaTasks(db, { sessionId, kind: 'render_final', clearOutput: true });
+    return runFinalRenderPhase(sessionId);
+  }, (error) => {
+    console.error('Final render retry failed:', error);
+  });
+
+  return { started, alreadyRunning: !started };
+}
 
 export async function POST(req: Request) {
   try {
@@ -15,14 +42,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
     }
 
-    const { session } = requireOwnedSessionForRequest(req, sessionId);
+    const { auth, session } = requireOwnedSessionForRequest(req, sessionId);
+    const retryLimit = checkRateLimit(
+      rateLimitKey([unit === 'render' ? 'render' : 'generation', 'retry', auth.user.id]),
+      unit === 'render' ? RENDER_RATE_LIMIT : GENERATION_RATE_LIMIT,
+    );
+    if (!retryLimit.allowed) {
+      return rateLimitResponse(retryLimit);
+    }
 
     if (unit === 'render') {
-      requeueMediaTasks(db, { sessionId, kind: 'render_final', clearOutput: true });
-      runFinalRenderPhase(sessionId).catch((error) => {
-        console.error('Final render retry failed:', error);
-      });
-      return NextResponse.json({ success: true });
+      const { alreadyRunning } = startRenderRetry(sessionId);
+      return NextResponse.json({ success: true, alreadyRunning });
     }
 
     const scenes = db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[];
@@ -79,10 +110,8 @@ export async function POST(req: Request) {
     const hasMediaFailures = refreshedScenes.some((scene) => scene.status === 'audio_failed' || scene.status === 'video_failed');
 
     if (!unit && !needsImages && !hasMediaFailures && refreshedScenes.every((scene) => scene.video_url)) {
-      runFinalRenderPhase(sessionId).catch((error) => {
-        console.error('Final render retry failed:', error);
-      });
-      return NextResponse.json({ success: true });
+      const { alreadyRunning } = startRenderRetry(sessionId);
+      return NextResponse.json({ success: true, alreadyRunning });
     }
 
     const nextStatus = needsImages ? 'GENERATING_IMAGES' : 'GENERATING_FINAL_ASSETS';

@@ -3,6 +3,12 @@ import db from '../../../../lib/db';
 import { createEmailVerificationToken } from '../../../../lib/auth/email-verification';
 import { isFormRequest, normalizeEmail } from '../../../../lib/auth/http';
 import { sendVerificationEmail } from '../../../../lib/email/smtp';
+import {
+  RESEND_EMAIL_RATE_LIMIT,
+  checkRateLimit,
+  rateLimitKey,
+  rateLimitResponse,
+} from '../../../../lib/rate-limit';
 import type { UserRow } from '@/lib/types';
 
 function redirectForForm(req: NextRequest) {
@@ -15,6 +21,10 @@ export async function POST(req: NextRequest) {
   const email = contentType.includes('application/json')
     ? normalizeEmail(((await req.json()) as { email?: string }).email || '')
     : normalizeEmail(String((await req.formData()).get('email') || ''));
+  const emailLimit = checkRateLimit(rateLimitKey(['resend-verification', 'email', email || 'missing']), RESEND_EMAIL_RATE_LIMIT);
+  if (!emailLimit.allowed) {
+    return rateLimitResponse(emailLimit);
+  }
 
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
   if (user && !user.email_confirmed_at) {

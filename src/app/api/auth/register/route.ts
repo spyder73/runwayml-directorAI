@@ -5,6 +5,13 @@ import { createEmailVerificationToken } from '../../../../lib/auth/email-verific
 import { hashPassword } from '../../../../lib/auth/password';
 import { isFormRequest, jsonError, normalizeEmail, readAuthPayload } from '../../../../lib/auth/http';
 import { sendVerificationEmail } from '../../../../lib/email/smtp';
+import {
+  REGISTER_IP_RATE_LIMIT,
+  checkRateLimit,
+  rateLimitKey,
+  rateLimitResponse,
+  requestIp,
+} from '../../../../lib/rate-limit';
 
 function redirectForForm(req: NextRequest, path: string) {
   return NextResponse.redirect(new URL(path, req.url), { status: 303 });
@@ -12,6 +19,10 @@ function redirectForForm(req: NextRequest, path: string) {
 
 export async function POST(req: NextRequest) {
   const isForm = isFormRequest(req);
+  const ipLimit = checkRateLimit(rateLimitKey(['register', 'ip', requestIp(req)]), REGISTER_IP_RATE_LIMIT);
+  if (!ipLimit.allowed) {
+    return rateLimitResponse(ipLimit);
+  }
 
   try {
     const payload = await readAuthPayload(req);

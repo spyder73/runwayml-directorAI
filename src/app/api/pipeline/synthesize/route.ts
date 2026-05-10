@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { runFinalAssetsPhase } from '@/lib/pipeline_media';
+import { GENERATION_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 
 export async function POST(req: Request) {
   try {
@@ -9,7 +10,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
     }
 
-    requireOwnedSessionForRequest(req, sessionId);
+    const { auth } = requireOwnedSessionForRequest(req, sessionId);
+    const generationLimit = checkRateLimit(rateLimitKey(['generation', 'synthesize', auth.user.id]), GENERATION_RATE_LIMIT);
+    if (!generationLimit.allowed) {
+      return rateLimitResponse(generationLimit);
+    }
 
     runFinalAssetsPhase(sessionId).catch(console.error);
 

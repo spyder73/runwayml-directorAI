@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import db from '@/lib/db';
 import { authGuardResponse, requireCurrentUser } from '@/lib/auth/guards';
+import { GENERATION_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 import type { AspectRatio, ChatHistoryRow, SessionRow } from '@/lib/types';
 import { createReferenceUploadRequest, getActiveReferenceRequest } from '@/lib/story-bucket';
 
 export async function POST(req: NextRequest) {
   try {
     const auth = requireCurrentUser(req);
+    const generationLimit = checkRateLimit(rateLimitKey(['generation', 'start', auth.user.id]), GENERATION_RATE_LIMIT);
+    if (!generationLimit.allowed) {
+      return rateLimitResponse(generationLimit);
+    }
+
     const body = await req.json() as { aspectRatio?: AspectRatio, mode?: string };
     const aspectRatio = body.aspectRatio === '9:16' ? '9:16' : '16:9';
     const mode = body.mode === 'single_memory' ? 'single_memory' : 'life_story';

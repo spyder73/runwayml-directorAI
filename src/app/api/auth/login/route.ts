@@ -3,6 +3,14 @@ import db from '../../../../lib/db';
 import { createAuthSession, getSessionCookieOptions } from '../../../../lib/auth/session';
 import { isFormRequest, jsonError, normalizeEmail, readAuthPayload } from '../../../../lib/auth/http';
 import { verifyPassword } from '../../../../lib/auth/password';
+import {
+  LOGIN_EMAIL_RATE_LIMIT,
+  LOGIN_IP_RATE_LIMIT,
+  checkRateLimit,
+  rateLimitKey,
+  rateLimitResponse,
+  requestIp,
+} from '../../../../lib/rate-limit';
 import type { UserRow } from '@/lib/types';
 
 const INVALID_LOGIN_MESSAGE = 'Invalid email or password.';
@@ -15,6 +23,16 @@ export async function POST(req: NextRequest) {
   const isForm = isFormRequest(req);
   const payload = await readAuthPayload(req);
   const email = normalizeEmail(payload.email);
+  const ipLimit = checkRateLimit(rateLimitKey(['login', 'ip', requestIp(req)]), LOGIN_IP_RATE_LIMIT);
+  if (!ipLimit.allowed) {
+    return rateLimitResponse(ipLimit);
+  }
+
+  const emailLimit = checkRateLimit(rateLimitKey(['login', 'email', email || 'missing']), LOGIN_EMAIL_RATE_LIMIT);
+  if (!emailLimit.allowed) {
+    return rateLimitResponse(emailLimit);
+  }
+
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
 
   if (!user || !(await verifyPassword(payload.password, user.password_hash))) {
