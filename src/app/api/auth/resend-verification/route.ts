@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '../../../../lib/db';
 import { createEmailVerificationToken } from '../../../../lib/auth/email-verification';
-import { isFormRequest, normalizeEmail } from '../../../../lib/auth/http';
+import { isFormRequest, normalizeEmail, redirectToApp } from '../../../../lib/auth/http';
 import { sendVerificationEmail } from '../../../../lib/email/smtp';
 import {
   RESEND_EMAIL_RATE_LIMIT,
@@ -10,10 +10,6 @@ import {
   rateLimitResponse,
 } from '../../../../lib/rate-limit';
 import type { UserRow } from '@/lib/types';
-
-function redirectForForm(req: NextRequest) {
-  return NextResponse.redirect(new URL('/login?verification=resent', req.url), { status: 303 });
-}
 
 export async function POST(req: NextRequest) {
   const isForm = isFormRequest(req);
@@ -33,7 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (isForm) {
-    return redirectForForm(req);
+    return redirectToApp(req, '/login?verification=resent', { status: 303 });
   }
 
   return NextResponse.json({

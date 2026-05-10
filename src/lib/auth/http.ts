@@ -1,4 +1,4 @@
-import type { NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 
 export type AuthPayload = {
   email: string;
@@ -34,4 +34,33 @@ export function isFormRequest(req: Request | NextRequest) {
 
 export function jsonError(message: string, status: number) {
   return Response.json({ ok: false, error: message }, { status });
+}
+
+function configuredAppUrl() {
+  const raw = process.env.APP_URL?.trim();
+  if (!raw) return null;
+
+  try {
+    return new URL(raw.replace(/\/+$/, '')).toString().replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+export function appOrigin(req: Request | NextRequest) {
+  const configured = configuredAppUrl();
+  if (configured) return configured;
+
+  const forwardedHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  if (forwardedHost) {
+    const host = forwardedHost.split(',')[0]?.trim();
+    const proto = (req.headers.get('x-forwarded-proto') || 'https').split(',')[0]?.trim() || 'https';
+    if (host) return `${proto}://${host}`;
+  }
+
+  return new URL(req.url).origin;
+}
+
+export function redirectToApp(req: Request | NextRequest, path: string, init?: ResponseInit) {
+  return NextResponse.redirect(new URL(path, appOrigin(req)), init);
 }

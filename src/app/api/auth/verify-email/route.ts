@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import db from '../../../../lib/db';
 import { verifyEmailToken } from '../../../../lib/auth/email-verification';
 import { createAuthSession, getSessionCookieOptions } from '../../../../lib/auth/session';
+import { redirectToApp } from '../../../../lib/auth/http';
 
 export async function GET(req: NextRequest) {
   const requestUrl = new URL(req.url);
@@ -9,11 +10,11 @@ export async function GET(req: NextRequest) {
   const user = verifyEmailToken(db, token);
 
   if (!user) {
-    return NextResponse.redirect(new URL('/login?verified=invalid', req.url));
+    return redirectToApp(req, '/login?verified=invalid');
   }
 
   const session = createAuthSession(db, user.id);
-  const response = NextResponse.redirect(new URL('/', req.url));
+  const response = redirectToApp(req, '/');
   response.cookies.set(session.cookieName, session.token, getSessionCookieOptions(session.expiresAt));
   return response;
 }

@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db from '../../../../lib/db';
 import { createEmailVerificationToken } from '../../../../lib/auth/email-verification';
 import { hashPassword } from '../../../../lib/auth/password';
-import { isFormRequest, jsonError, normalizeEmail, readAuthPayload } from '../../../../lib/auth/http';
+import { isFormRequest, jsonError, normalizeEmail, readAuthPayload, redirectToApp } from '../../../../lib/auth/http';
 import { sendVerificationEmail } from '../../../../lib/email/smtp';
 import {
   REGISTER_IP_RATE_LIMIT,
@@ -12,10 +12,6 @@ import {
   rateLimitResponse,
   requestIp,
 } from '../../../../lib/rate-limit';
-
-function redirectForForm(req: NextRequest, path: string) {
-  return NextResponse.redirect(new URL(path, req.url), { status: 303 });
-}
 
 export async function POST(req: NextRequest) {
   const isForm = isFormRequest(req);
@@ -29,11 +25,11 @@ export async function POST(req: NextRequest) {
     const email = normalizeEmail(payload.email);
 
     if (!email || !email.includes('@')) {
-      return isForm ? redirectForForm(req, '/register?error=invalid-email') : jsonError('Enter a valid email address.', 400);
+      return isForm ? redirectToApp(req, '/register?error=invalid-email', { status: 303 }) : jsonError('Enter a valid email address.', 400);
     }
 
     if (payload.password.length < 8) {
-      return isForm ? redirectForForm(req, '/register?error=password') : jsonError('Password must be at least 8 characters.', 400);
+      return isForm ? redirectToApp(req, '/register?error=password', { status: 303 }) : jsonError('Password must be at least 8 characters.', 400);
     }
 
     const passwordHash = await hashPassword(payload.password);
@@ -51,7 +47,7 @@ export async function POST(req: NextRequest) {
     const emailResult = await sendVerificationEmail({ to: email, token: verification.token });
 
     if (isForm) {
-      return redirectForForm(req, '/login?registered=1');
+      return redirectToApp(req, '/login?registered=1', { status: 303 });
     }
 
     return NextResponse.json({
@@ -62,9 +58,9 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes('UNIQUE') || message.includes('constraint')) {
-      return isForm ? redirectForForm(req, '/register?error=exists') : jsonError('An account with that email already exists.', 409);
+      return isForm ? redirectToApp(req, '/register?error=exists', { status: 303 }) : jsonError('An account with that email already exists.', 409);
     }
 
-    return isForm ? redirectForForm(req, '/register?error=server') : jsonError('Unable to register right now.', 500);
+    return isForm ? redirectToApp(req, '/register?error=server', { status: 303 }) : jsonError('Unable to register right now.', 500);
   }
 }

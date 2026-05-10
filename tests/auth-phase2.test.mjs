@@ -177,6 +177,22 @@ test('auth routes register, require confirmation for login, verify email, login,
   assert.ok(cookieMatch);
   assert.equal(db.prepare('SELECT 1 FROM auth_sessions WHERE token_hash = ?').get(hashSessionToken(cookieMatch[1]))?.['1'], 1);
 
+  const formLoginResponse = await loginRoute.POST(new Request('http://0.0.0.0:3000/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'new.user@example.com', password: 'supersecret' }).toString(),
+  }));
+  assert.equal(formLoginResponse.status, 303);
+  assert.equal(formLoginResponse.headers.get('location'), 'https://lifestory.example/');
+
+  const formRegisterResponse = await registerRoute.POST(new Request('http://0.0.0.0:3000/api/auth/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ email: 'form.user@example.com', password: 'supersecret' }).toString(),
+  }));
+  assert.equal(formRegisterResponse.status, 303);
+  assert.equal(formRegisterResponse.headers.get('location'), 'https://lifestory.example/login?registered=1');
+
   const logoutResponse = await logoutRoute.POST(new Request('https://lifestory.example/api/auth/logout', {
     method: 'POST',
     headers: { cookie: `${AUTH_SESSION_COOKIE}=${cookieMatch[1]}` },
