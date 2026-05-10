@@ -1,8 +1,10 @@
 import RunwayML, { toFile } from '@runwayml/sdk';
 import type { TaskRetrieveResponse } from '@runwayml/sdk/resources/tasks';
+import type Database from 'better-sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import db from './db';
 import {
   IMAGE_MODEL,
   NARRATION_MODEL,
@@ -12,9 +14,16 @@ import {
   getRunwayVideoModel,
 } from './production-config';
 import { logMediaGeneration, type MediaGenerationLogDetails } from './media-logging';
+import {
+  createMediaAssetForSession,
+  createPrivateMediaFilePath,
+  mediaAssetUrl,
+  resolveMediaUrlToFilePath,
+} from './media-assets';
 
 type AspectRatio = '16:9' | '9:16';
 type MediaType = 'image' | 'audio' | 'video';
+type SqliteDatabase = Database.Database;
 type RunwayTaskOutput = { output: string[] };
 type GptImageQuality = 'low' | 'medium' | 'high' | 'auto';
 type RunwayVideoRatio = '720:1280' | '1280:720' | '1080:1920' | '1920:1080';
@@ -26,6 +35,7 @@ export type GeneratedAsset = {
   localUrl: string;
   filePath: string;
   mediaType: MediaType;
+  mediaAssetId: string;
 };
 
 export type RunwayReferenceImage = {
@@ -189,11 +199,12 @@ export function createImageToVideoTask(
   }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
 }
 
-export async function loadReferenceImage(filePath: string, tag?: string): Promise<RunwayReferenceImage> {
+export async function loadReferenceImage(filePath: string, tag?: string, database: SqliteDatabase = db): Promise<RunwayReferenceImage> {
+  const mediaFile = resolveMediaUrlToFilePath(database, filePath);
   const normalizedPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
-  const absolutePath = path.join(process.cwd(), 'public', normalizedPath);
+  const absolutePath = mediaFile?.filePath || path.join(process.cwd(), 'public', normalizedPath);
   const buffer = await fs.readFile(absolutePath);
-  const ext = path.extname(normalizedPath).replace('.', '').toLowerCase();
+  const ext = path.extname(absolutePath).replace('.', '').toLowerCase();
   const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
   return {
     uri: `data:${mimeType};base64,${buffer.toString('base64')}`,
@@ -212,13 +223,14 @@ function mimeTypeForLocalPath(filePath: string) {
   return 'image/jpeg';
 }
 
-async function uploadLocalAssetForRunway(localOrRemoteUrl: string, runwayClient: RunwayClient) {
+async function uploadLocalAssetForRunway(localOrRemoteUrl: string, runwayClient: RunwayClient, database: SqliteDatabase = db) {
   if (/^(https?:|runway:)/i.test(localOrRemoteUrl)) {
     return localOrRemoteUrl;
   }
 
+  const mediaFile = resolveMediaUrlToFilePath(database, localOrRemoteUrl);
   const normalizedPath = localOrRemoteUrl.startsWith('/') ? localOrRemoteUrl.slice(1) : localOrRemoteUrl;
-  const absolutePath = path.join(process.cwd(), 'public', normalizedPath);
+  const absolutePath = mediaFile?.filePath || path.join(process.cwd(), 'public', normalizedPath);
   const cache = uploadCacheFor(runwayClient);
   const cached = cache.get(absolutePath);
   if (cached) return cached;
@@ -337,11 +349,19 @@ function extensionFor(contentType: string | null, remoteUrl: string, mediaType: 
   return 'mp4';
 }
 
+function mimeTypeForGeneratedAsset(contentType: string | null, mediaType: MediaType) {
+  if (contentType?.trim()) return contentType;
+  if (mediaType === 'image') return 'image/jpeg';
+  if (mediaType === 'audio') return 'audio/mpeg';
+  return 'video/mp4';
+}
+
 export async function persistGeneratedAsset(
   remoteUrl: string,
   mediaType: MediaType,
   sessionId: string,
   logContext: MediaGenerationLogDetails = {},
+  database: SqliteDatabase = db,
 ): Promise<GeneratedAsset> {
   logMediaGeneration('asset_download_start', { ...logContext, sessionId, mediaType, remoteUrl });
   const response = await fetch(remoteUrl);
@@ -349,29 +369,46 @@ export async function persistGeneratedAsset(
     throw new Error(`Failed to download generated ${mediaType}: ${response.status} ${response.statusText}`);
   }
 
-  const ext = extensionFor(response.headers.get('content-type'), remoteUrl, mediaType);
-  const directory = path.join('generated', mediaType, sessionId);
-  const filename = `${uuidv4()}.${ext}`;
-  const filePath = path.join(directory, filename);
-  const absolutePath = path.join(process.cwd(), 'public', filePath);
+  const contentType = response.headers.get('content-type');
+  const ext = extensionFor(contentType, remoteUrl, mediaType);
+  const id = uuidv4();
+  const privateFile = createPrivateMediaFilePath({
+    scope: 'generated',
+    kind: mediaType,
+    sessionId,
+    id,
+    extension: ext,
+  });
+  const buffer = Buffer.from(await response.arrayBuffer());
 
-  await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-  await fs.writeFile(absolutePath, Buffer.from(await response.arrayBuffer()));
+  await fs.mkdir(path.dirname(privateFile.absolutePath), { recursive: true });
+  await fs.writeFile(privateFile.absolutePath, buffer);
+  const mediaAsset = createMediaAssetForSession(database, {
+    id,
+    sessionId,
+    kind: mediaType,
+    filePath: privateFile.relativePath,
+    mimeType: mimeTypeForGeneratedAsset(contentType, mediaType),
+    byteSize: buffer.byteLength,
+    originalName: null,
+  });
+  const localUrl = mediaAssetUrl(mediaAsset.id);
 
   logMediaGeneration('asset_persisted', {
     ...logContext,
     sessionId,
     mediaType,
     remoteUrl,
-    localUrl: `/${filePath}`,
-    filePath,
+    localUrl,
+    filePath: privateFile.relativePath,
   });
 
   return {
     remoteUrl,
-    localUrl: `/${filePath}`,
-    filePath,
+    localUrl,
+    filePath: privateFile.relativePath,
     mediaType,
+    mediaAssetId: mediaAsset.id,
   };
 }
 
@@ -382,6 +419,7 @@ export async function generateImageAsset(params: {
   referenceImages?: RunwayReferenceImage[];
   sessionId: string;
   runwayClient: RunwayClient;
+  database?: SqliteDatabase;
   logContext?: MediaGenerationLogDetails;
 }) {
   const logContext = {
@@ -408,13 +446,14 @@ export async function generateImageAsset(params: {
     logContext,
   );
 
-  return persistGeneratedAsset(firstOutputUrl(task, 'Runway image generation'), 'image', params.sessionId, logContext);
+  return persistGeneratedAsset(firstOutputUrl(task, 'Runway image generation'), 'image', params.sessionId, logContext, params.database);
 }
 
 export async function generateSpeechAsset(params: {
   promptText: string;
   sessionId: string;
   runwayClient: RunwayClient;
+  database?: SqliteDatabase;
   logContext?: MediaGenerationLogDetails;
 }) {
   const logContext = {
@@ -436,7 +475,7 @@ export async function generateSpeechAsset(params: {
     logContext,
   );
 
-  return persistGeneratedAsset(firstOutputUrl(task, 'Runway TTS generation'), 'audio', params.sessionId, logContext);
+  return persistGeneratedAsset(firstOutputUrl(task, 'Runway TTS generation'), 'audio', params.sessionId, logContext, params.database);
 }
 
 export async function generateVideoAsset(params: {
@@ -446,9 +485,10 @@ export async function generateVideoAsset(params: {
   duration: number;
   sessionId: string;
   runwayClient: RunwayClient;
+  database?: SqliteDatabase;
   logContext?: MediaGenerationLogDetails;
 }) {
-  const promptImageUri = await uploadLocalAssetForRunway(params.promptImageUrl, params.runwayClient);
+  const promptImageUri = await uploadLocalAssetForRunway(params.promptImageUrl, params.runwayClient, params.database);
   const model = getRunwayVideoModel();
   const logContext = {
     ...params.logContext,
@@ -476,5 +516,5 @@ export async function generateVideoAsset(params: {
     logContext,
   );
 
-  return persistGeneratedAsset(firstOutputUrl(task, 'Runway video generation'), 'video', params.sessionId, logContext);
+  return persistGeneratedAsset(firstOutputUrl(task, 'Runway video generation'), 'video', params.sessionId, logContext, params.database);
 }

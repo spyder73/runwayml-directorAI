@@ -18,6 +18,11 @@ import {
   isMissingUserCredentialError,
   openRouterModelForSession,
 } from '@/lib/providers/user-credentials';
+import {
+  createMediaAssetForSession,
+  createPrivateMediaFilePath,
+  mediaAssetUrl,
+} from '@/lib/media-assets';
 
 const MAX_VISION_DESCRIPTION_OUTPUT_TOKENS = 1024;
 
@@ -42,9 +47,6 @@ export async function POST(req: NextRequest) {
     const session = requireOwnedSession(sessionId, auth.user.id);
     const visionModel = openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite');
 
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    await fs.mkdir(uploadDir, { recursive: true });
-
     const uploadedPaths: string[] = [];
     const activeRequest = getActiveReferenceRequest(db, sessionId);
 
@@ -53,16 +55,31 @@ export async function POST(req: NextRequest) {
       if (file.size === 0) continue;
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      const ext = file.name.split('.').pop() || 'jpg';
-      const fileName = `${uuidv4()}.${ext}`;
-      const filePath = `/uploads/${fileName}`;
+      const mimeType = file.type || 'image/jpeg';
+      const ext = file.name.split('.').pop() || (mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg');
+      const privateFile = createPrivateMediaFilePath({
+        scope: 'uploads',
+        sessionId,
+        id: uuidv4(),
+        extension: ext,
+      });
 
-      await fs.writeFile(path.join(process.cwd(), 'public', filePath), buffer);
+      await fs.mkdir(path.dirname(privateFile.absolutePath), { recursive: true });
+      await fs.writeFile(privateFile.absolutePath, buffer);
+      const mediaAsset = createMediaAssetForSession(db, {
+        id: privateFile.id,
+        sessionId,
+        kind: 'upload',
+        filePath: privateFile.relativePath,
+        mimeType,
+        byteSize: buffer.byteLength,
+        originalName: file.name || null,
+      });
+      const filePath = mediaAssetUrl(mediaAsset.id);
 
       // Vision inference
       let visionDescription = null;
       try {
-         const mimeType = file.type || 'image/jpeg';
          const base64Data = buffer.toString('base64');
          const dataUri = `data:${mimeType};base64,${base64Data}`;
          

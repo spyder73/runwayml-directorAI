@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import fs from 'fs/promises';
-import path from 'path';
+import { mediaStorageBaseDir } from './media-assets';
 
 type DemoReadinessInput = {
   env?: Record<string, string | undefined>;
@@ -69,7 +69,7 @@ export function createDemoReadinessReport(input: DemoReadinessInput = {}): DemoR
       required: true,
       message: input.storageWritable !== false
         ? 'Generated media can be saved locally.'
-        : 'Make public/generated writable before production.',
+        : 'Make data/media writable before production.',
     },
   ];
   const ok = checks.every((check) => check.ok || !check.required);
@@ -101,7 +101,7 @@ function runCommand(command: string, args: string[]) {
 }
 
 export async function checkGeneratedStorageWritable() {
-  const generatedDir = path.join(process.cwd(), 'public', 'generated');
+  const generatedDir = mediaStorageBaseDir();
   try {
     await fs.mkdir(generatedDir, { recursive: true });
     await fs.access(generatedDir);

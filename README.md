@@ -26,7 +26,7 @@ To run this project locally for testing:
    CREDENTIAL_ENCRYPTION_KEY=base64-encoded-32-byte-key
    ```
    Live OpenRouter and Runway keys are user-owned now. Add them from the in-app settings modal after registering and logging in.
-   Generated reference frames are persisted locally and uploaded to Runway through temporary SDK uploads before video generation.
+   Runtime uploads, generated assets, and final renders are stored privately under `data/media` and served through authenticated `/api/media/:id` URLs. Generated reference frames are uploaded to Runway through temporary SDK uploads before video generation.
    Generate the credential encryption key with `openssl rand -base64 32`.
 
 3. **Run the Development Server:**
@@ -47,6 +47,7 @@ To deploy on a VPS using Docker:
    docker-compose up -d --build
    ```
    This will build the standalone Next.js image, set up the SQLite data volumes, and expose the app on port 3000.
+   Persist `data/` between deploys; it now contains both SQLite and private media files.
 3. If Nginx or another buffering reverse proxy sits in front of the app, disable buffering for `/api/pipeline/events` so Server-Sent Events stream immediately. The route also sends `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`.
 
 ## Production Reviewer Account

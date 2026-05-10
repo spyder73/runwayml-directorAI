@@ -221,7 +221,7 @@ function writeShotPlanProgress(database: SqliteDatabase, sceneId: string, shotPl
   if (sessionId) broadcastProgress(database, sessionId);
 }
 
-async function loadReferenceImages(assets: Array<Pick<ReferenceAssetRow, 'runway_uri' | 'local_url' | 'stable_tag'>>) {
+async function loadReferenceImages(database: SqliteDatabase, assets: Array<Pick<ReferenceAssetRow, 'runway_uri' | 'local_url' | 'stable_tag'>>) {
   const referenceImages: RunwayReferenceImage[] = [];
 
   for (const asset of assets.slice(0, 16)) {
@@ -229,7 +229,7 @@ async function loadReferenceImages(assets: Array<Pick<ReferenceAssetRow, 'runway
       if (asset.runway_uri) {
         referenceImages.push({ uri: asset.runway_uri, tag: asset.stable_tag });
       } else if (asset.local_url) {
-        referenceImages.push(await loadReferenceImage(asset.local_url, asset.stable_tag));
+        referenceImages.push(await loadReferenceImage(asset.local_url, asset.stable_tag, database));
       }
     } catch (error) {
       console.error(`Failed to load reference image ${asset.local_url || asset.runway_uri}:`, error);
@@ -442,7 +442,7 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     referenceImages: preparedReferences.referenceImages,
   });
 
-  const referenceImages = await loadReferenceImages(preparedReferences.selectedAssets);
+  const referenceImages = await loadReferenceImages(database, preparedReferences.selectedAssets);
   const imageAsset = await generateImageAsset({
     promptText,
     quality: FINAL_IMAGE_QUALITY,
@@ -450,6 +450,7 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     referenceImages: referenceImages.length ? referenceImages : undefined,
     sessionId: session.id,
     runwayClient,
+    database,
     logContext: mediaTaskLogContext(session, task, scene),
   });
 
@@ -501,6 +502,7 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
     promptText: scene.narrator_text,
     sessionId: session.id,
     runwayClient,
+    database,
     logContext: mediaTaskLogContext(session, task, scene),
   });
 
@@ -545,6 +547,7 @@ async function generateContinuityReferenceImage(params: {
   openingReferenceImageUrl: string;
   openrouterApiKey: string;
   runwayClient: RunwayClient;
+  database: SqliteDatabase;
 }) {
   const logContext = {
     ...mediaTaskLogContext(params.session, params.task, params.scene),
@@ -557,7 +560,7 @@ async function generateContinuityReferenceImage(params: {
     promptImageUrl: params.openingReferenceImageUrl,
     promptText: params.shot.referencePrompt || params.shot.prompt,
   });
-  const openingReference = await loadReferenceImage(params.openingReferenceImageUrl, OPENING_FRAME_REFERENCE_TAG);
+  const openingReference = await loadReferenceImage(params.openingReferenceImageUrl, OPENING_FRAME_REFERENCE_TAG, params.database);
   const promptText = await ensureSafePrompt(buildContinuityReferencePrompt(params.shot, params.shotIndex), {
     openrouterApiKey: params.openrouterApiKey,
   });
@@ -574,6 +577,7 @@ async function generateContinuityReferenceImage(params: {
     referenceImages: [openingReference],
     sessionId: params.session.id,
     runwayClient: params.runwayClient,
+    database: params.database,
     logContext,
   });
 
@@ -677,6 +681,7 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
         openingReferenceImageUrl: scene.reference_image_url,
         openrouterApiKey,
         runwayClient,
+        database,
       });
       promptImageUrl = continuityReference.localUrl;
       referencePrompt = continuityReference.promptText;
@@ -717,6 +722,7 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
         duration: shot.duration,
         sessionId: session.id,
         runwayClient,
+        database,
         logContext: {
           ...mediaTaskLogContext(session, task, scene),
           shotIndex: shotIndex + 1,

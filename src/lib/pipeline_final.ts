@@ -78,7 +78,7 @@ async function loadReferenceImages(assets: Array<Pick<ReferenceAssetRow, 'runway
       if (asset.runway_uri) {
         referenceImages.push({ uri: asset.runway_uri, tag: asset.stable_tag });
       } else if (asset.local_url) {
-        referenceImages.push(await loadReferenceImage(asset.local_url, asset.stable_tag));
+        referenceImages.push(await loadReferenceImage(asset.local_url, asset.stable_tag, db));
       }
     } catch (error) {
       console.error(`Failed to load reference image ${asset.local_url || asset.runway_uri}:`, error);
@@ -165,6 +165,7 @@ export async function generateImagesPhase(sessionId: string) {
           referenceImages: referenceImages.length ? referenceImages : undefined,
           sessionId,
           runwayClient,
+          database: db,
         });
 
         db.prepare('UPDATE scenes SET reference_image_url = ?, reference_tags = ?, status = ?, last_failure = NULL WHERE id = ?')
@@ -236,6 +237,7 @@ export async function generateVideoAudioPhase(sessionId: string) {
             promptText: scene.narrator_text,
             sessionId,
             runwayClient,
+            database: db,
           });
           audioUrl = audioAsset.localUrl;
 
@@ -277,6 +279,7 @@ export async function generateVideoAudioPhase(sessionId: string) {
               duration: shot.duration,
               sessionId,
               runwayClient,
+              database: db,
             });
             videoUrls.push(videoAsset.localUrl);
           }

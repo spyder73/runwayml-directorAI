@@ -1,11 +1,21 @@
 import { bundle } from '@remotion/bundler';
 import { type Concurrency, type X264Preset, renderMedia, selectComposition } from '@remotion/renderer';
+import type Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
+import { pathToFileURL } from 'url';
+import db from './db';
+import {
+  createMediaAssetForSession,
+  createPrivateMediaFilePath,
+  mediaAssetUrl,
+  resolveMediaUrlToFilePath,
+} from './media-assets';
 
 type AspectRatio = '16:9' | '9:16';
 type RenderQuality = 'fast' | 'standard' | 'ultra';
+type SqliteDatabase = Database.Database;
 
 type RenderScene = {
   id: string;
@@ -20,6 +30,7 @@ type RenderScene = {
 type RenderInput = {
   publicUrl: string;
   filePath: string;
+  remotionUrl: string;
   sceneId: string;
   duration?: number;
   targetDuration?: number;
@@ -52,6 +63,8 @@ export type FinalRenderProgress = {
 export type FinalRenderPlan = {
   publicUrl: string;
   outputFilePath: string;
+  outputMediaAssetId?: string;
+  outputFilePathRelative?: string;
   videoInputs: RenderInput[];
   audioInputs: RenderInput[];
   remotionInputProps: { scenes: RemotionRenderScene[] };
@@ -94,6 +107,24 @@ function publicUrlToFilePath(publicUrl: string) {
 function remotionAssetUrl(publicUrl: string) {
   if (!publicUrl.startsWith('/')) return publicUrl;
   return `/public${publicUrl}`;
+}
+
+function resolveRenderInputUrl(url: string, database: SqliteDatabase | undefined, sessionId: string) {
+  const publicUrl = normalizePublicUrl(url);
+  const mediaFile = database ? resolveMediaUrlToFilePath(database, publicUrl, sessionId) : null;
+  if (mediaFile) {
+    return {
+      publicUrl,
+      filePath: mediaFile.filePath,
+      remotionUrl: pathToFileURL(mediaFile.filePath).href,
+    };
+  }
+
+  return {
+    publicUrl,
+    filePath: publicUrlToFilePath(publicUrl),
+    remotionUrl: remotionAssetUrl(publicUrl),
+  };
 }
 
 export function parseSceneVideoUrls(value: string | null) {
@@ -180,19 +211,29 @@ export function buildFinalRenderPlan(params: {
   sessionId: string;
   aspectRatio: AspectRatio;
   scenes: RenderScene[];
+  database?: SqliteDatabase;
 }): FinalRenderPlan {
   const orderedScenes = [...params.scenes].sort((a, b) => a.scene_index - b.scene_index);
-  const filename = `${randomUUID()}.mp4`;
-  const publicUrl = `/generated/final/${params.sessionId}/${filename}`;
-  const outputFilePath = publicUrlToFilePath(publicUrl);
+  const outputMediaAssetId = randomUUID();
+  const privateOutput = params.database
+    ? createPrivateMediaFilePath({
+      scope: 'generated',
+      kind: 'final',
+      sessionId: params.sessionId,
+      id: outputMediaAssetId,
+      extension: 'mp4',
+    })
+    : null;
+  const filename = `${outputMediaAssetId}.mp4`;
+  const publicUrl = privateOutput ? mediaAssetUrl(outputMediaAssetId) : `/generated/final/${params.sessionId}/${filename}`;
+  const outputFilePath = privateOutput?.absolutePath || publicUrlToFilePath(publicUrl);
   const scenePlans = orderedScenes.map((scene) => {
     const urls = parseSceneVideoUrls(scene.video_url);
     const durations = videoDurationsForScene(scene, urls.length);
     const videoInputs = urls.map((url, index) => {
-      const publicUrl = normalizePublicUrl(url);
+      const resolved = resolveRenderInputUrl(url, params.database, params.sessionId);
       return {
-        publicUrl,
-        filePath: publicUrlToFilePath(publicUrl),
+        ...resolved,
         sceneId: scene.id,
         duration: durations[index],
       };
@@ -210,12 +251,11 @@ export function buildFinalRenderPlan(params: {
   const audioInputs = scenePlans
     .filter((scenePlan) => scenePlan.scene.audio_url)
     .map((scenePlan) => {
-      const publicUrl = normalizePublicUrl(scenePlan.scene.audio_url || '');
+      const resolved = resolveRenderInputUrl(scenePlan.scene.audio_url || '', params.database, params.sessionId);
       const audioDuration = scenePlan.scene.duration || scenePlan.videoDuration || 2;
       const targetDuration = scenePlan.videoDuration || audioDuration;
       return {
-        publicUrl,
-        filePath: publicUrlToFilePath(publicUrl),
+        ...resolved,
         sceneId: scenePlan.scene.id,
         duration: audioDuration,
         targetDuration,
@@ -231,10 +271,10 @@ export function buildFinalRenderPlan(params: {
     return {
       id: scenePlan.scene.id,
       clips: scenePlan.videoInputs.map((input) => ({
-        url: remotionAssetUrl(input.publicUrl),
+        url: input.remotionUrl,
         duration_in_frames: Math.max(1, Math.ceil((input.duration || fallbackClipDuration) * FPS)),
       })),
-      audio_url: scenePlan.scene.audio_url ? remotionAssetUrl(scenePlan.scene.audio_url) : '',
+      audio_url: audioInput?.remotionUrl || '',
       ...(audioInput?.tempo ? { audio_playback_rate: audioInput.tempo } : {}),
       narrator_text: scenePlan.scene.narrator_text,
       duration_in_frames: Math.max(1, Math.ceil(sceneDuration * FPS)),
@@ -245,6 +285,7 @@ export function buildFinalRenderPlan(params: {
   return {
     publicUrl,
     outputFilePath,
+    ...(privateOutput ? { outputMediaAssetId, outputFilePathRelative: privateOutput.relativePath } : {}),
     videoInputs,
     audioInputs,
     remotionInputProps: { scenes: remotionScenes },
@@ -469,18 +510,32 @@ export async function renderFinalFilm(params: {
   sessionId: string;
   aspectRatio: AspectRatio;
   scenes: RenderScene[];
+  database?: SqliteDatabase;
   onProgress?: (progress: FinalRenderProgress) => void;
 }) {
+  const database = params.database || db;
   const plan = {
-    ...buildFinalRenderPlan(params),
+    ...buildFinalRenderPlan({ ...params, database }),
     onProgress: params.onProgress,
   };
   await fs.mkdir(path.dirname(plan.outputFilePath), { recursive: true });
   await assertInputsExist([...plan.videoInputs, ...plan.audioInputs]);
   await runRemotionRender(plan);
-  await fs.access(plan.outputFilePath);
+  const outputStats = await fs.stat(plan.outputFilePath);
+  if (plan.outputMediaAssetId && plan.outputFilePathRelative) {
+    createMediaAssetForSession(database, {
+      id: plan.outputMediaAssetId,
+      sessionId: params.sessionId,
+      kind: 'final',
+      filePath: plan.outputFilePathRelative,
+      mimeType: 'video/mp4',
+      byteSize: outputStats.size,
+      originalName: null,
+    });
+  }
   return {
     publicUrl: plan.publicUrl,
     filePath: plan.outputFilePath,
+    ...(plan.outputMediaAssetId ? { mediaAssetId: plan.outputMediaAssetId } : {}),
   };
 }
