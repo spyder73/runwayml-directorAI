@@ -26,8 +26,10 @@ function smtpHostConfigured() {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_FROM);
 }
 
-function encodeAddress(address: string) {
-  return address.includes('<') ? address : `<${address}>`;
+export function smtpEnvelopeAddress(address: string) {
+  const bracketed = address.match(/<([^<>]+)>/);
+  const mailbox = (bracketed?.[1] || address).trim();
+  return `<${mailbox}>`;
 }
 
 function dotStuff(message: string) {
@@ -148,8 +150,8 @@ async function sendSmtpMail({ to, message }: { to: string; message: string }) {
       await writeCommand(socket, Buffer.from(process.env.SMTP_PASS).toString('base64'), 235);
     }
 
-    await writeCommand(socket, `MAIL FROM:${encodeAddress(from)}`, 250);
-    await writeCommand(socket, `RCPT TO:${encodeAddress(to)}`, [250, 251]);
+    await writeCommand(socket, `MAIL FROM:${smtpEnvelopeAddress(from)}`, 250);
+    await writeCommand(socket, `RCPT TO:${smtpEnvelopeAddress(to)}`, [250, 251]);
     await writeCommand(socket, 'DATA', 354);
     await writeCommand(socket, `${dotStuff(message)}\r\n.`, 250);
     await writeCommand(socket, 'QUIT', 221);

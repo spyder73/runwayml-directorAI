@@ -109,6 +109,14 @@ test('email verification tokens confirm users once and reject expired or reused 
   assert.equal(verifyEmailToken(db, expired.token, { now: new Date('2026-05-12T12:00:00.000Z') }), null);
 });
 
+test('SMTP envelope addresses use bare mailboxes for friendly From headers', () => {
+  const { smtpEnvelopeAddress } = jiti('../src/lib/email/smtp.ts');
+
+  assert.equal(smtpEnvelopeAddress('no-reply@example.com'), '<no-reply@example.com>');
+  assert.equal(smtpEnvelopeAddress('<no-reply@example.com>'), '<no-reply@example.com>');
+  assert.equal(smtpEnvelopeAddress('Lifestory <no-reply@example.com>'), '<no-reply@example.com>');
+});
+
 test('auth routes register, require confirmation for login, verify email, login, and logout', async () => {
   const dbModule = jiti('../src/lib/db.ts');
   const db = dbModule.default;
