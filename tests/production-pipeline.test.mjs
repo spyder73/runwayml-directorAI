@@ -290,6 +290,38 @@ test('final render ultra quality preset renders full HD dimensions', () => {
   }
 });
 
+test('final render crf resolution never sends h264-unsupported zero', () => {
+  const { resolveRemotionCrf } = jiti('../src/lib/final-render.ts');
+  const originalCrf = process.env.REMOTION_CRF;
+  const originalQuality = process.env.REMOTION_RENDER_QUALITY;
+
+  try {
+    delete process.env.REMOTION_CRF;
+    delete process.env.REMOTION_RENDER_QUALITY;
+    assert.equal(resolveRemotionCrf(), 20);
+
+    process.env.REMOTION_RENDER_QUALITY = 'fast';
+    assert.equal(resolveRemotionCrf(), 28);
+
+    process.env.REMOTION_CRF = '0';
+    assert.equal(resolveRemotionCrf(), 1);
+
+    process.env.REMOTION_CRF = '17';
+    assert.equal(resolveRemotionCrf(), 17);
+  } finally {
+    if (originalCrf === undefined) {
+      delete process.env.REMOTION_CRF;
+    } else {
+      process.env.REMOTION_CRF = originalCrf;
+    }
+    if (originalQuality === undefined) {
+      delete process.env.REMOTION_RENDER_QUALITY;
+    } else {
+      process.env.REMOTION_RENDER_QUALITY = originalQuality;
+    }
+  }
+});
+
 test('final render plan sends readable subtitles into the Remotion composition', () => {
   const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
 

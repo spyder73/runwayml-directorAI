@@ -63,6 +63,11 @@ type RemotionBundleOptions = {
 };
 
 type RemotionBundleFn = (options: RemotionBundleOptions) => Promise<string>;
+type RemotionRenderEnv = {
+  [key: string]: string | undefined;
+  REMOTION_CRF?: string;
+  REMOTION_RENDER_QUALITY?: string;
+};
 
 function normalizePublicUrl(url: string) {
   const trimmed = url.trim();
@@ -95,9 +100,11 @@ export function parseSceneVideoUrls(value: string | null) {
 const FPS = 30;
 const MAX_NARRATION_TEMPO = 1.12;
 const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
+const H264_MIN_CRF = 1;
+const H264_MAX_CRF = 51;
 
-function remotionRenderQuality(): RenderQuality {
-  const configured = process.env.REMOTION_RENDER_QUALITY?.trim().toLowerCase();
+function remotionRenderQuality(env: RemotionRenderEnv = process.env): RenderQuality {
+  const configured = env.REMOTION_RENDER_QUALITY?.trim().toLowerCase();
   return configured === 'fast' || configured === 'ultra' ? configured : 'standard';
 }
 
@@ -295,13 +302,18 @@ function remotionX264Preset(): X264Preset {
   return remotionRenderQuality() === 'fast' ? 'superfast' : 'veryfast';
 }
 
-function remotionCrf() {
-  const configured = Number(process.env.REMOTION_CRF || '');
-  if (Number.isFinite(configured) && configured >= 0 && configured <= 51) {
-    return configured;
+export function resolveRemotionCrf(env: RemotionRenderEnv = process.env) {
+  const configured = env.REMOTION_CRF?.trim();
+  if (configured) {
+    const numeric = Number(configured);
+    if (Number.isFinite(numeric)) {
+      if (numeric === 0) return H264_MIN_CRF;
+      if (numeric > 0 && numeric < H264_MIN_CRF) return H264_MIN_CRF;
+      if (numeric >= H264_MIN_CRF && numeric <= H264_MAX_CRF) return numeric;
+    }
   }
 
-  const quality = remotionRenderQuality();
+  const quality = remotionRenderQuality(env);
   if (quality === 'fast') return 28;
   if (quality === 'ultra') return 18;
   return 20;
@@ -337,7 +349,7 @@ async function runRemotionRender(plan: FinalRenderPlan) {
   const concurrency = remotionRenderConcurrency();
   const timeoutInMilliseconds = remotionRenderTimeout();
   const x264Preset = remotionX264Preset();
-  const crf = remotionCrf();
+  const crf = resolveRemotionCrf();
   const selectedComposition = await selectComposition({
     serveUrl,
     id: plan.composition.id,
