@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import Database from 'better-sqlite3';
 import { createJiti } from 'jiti';
@@ -106,6 +107,13 @@ test('video prompt repair adds camera motion before runway validation', () => {
 
   assert.equal(result.ok, true);
   assert.match(promptText, /camera/i);
+});
+
+test('prompt moderation caps output tokens before OpenRouter receives the request', () => {
+  const source = fs.readFileSync(new URL('../src/lib/moderation.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /MAX_PROMPT_MODERATION_OUTPUT_TOKENS/);
+  assert.match(source, /maxOutputTokens:\s*MAX_PROMPT_MODERATION_OUTPUT_TOKENS/);
 });
 
 test('cost estimator uses gpt_image_2 low sketches and high final frames', () => {
