@@ -1,7 +1,10 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { UploadCloud } from 'lucide-react';
 import type { ReferenceUploadRequestRow } from '@/lib/types';
+
+const SELFIE_SAVED_VISIBLE_MS = 3000;
 
 type ReferenceUploadRequestProps = {
   request: ReferenceUploadRequestRow | null;
@@ -14,6 +17,26 @@ type ReferenceUploadRequestProps = {
   onDrop: (event: React.DragEvent) => void;
   onDragOver: (event: React.DragEvent) => void;
 };
+
+function SelfieSavedBadge() {
+  const [showSelfieSaved, setShowSelfieSaved] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowSelfieSaved(false), SELFIE_SAVED_VISIBLE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!showSelfieSaved) return null;
+
+  return (
+    <div className="mb-4 flex w-full max-w-3xl justify-center">
+      <span className="rounded-full border border-emerald-200/15 bg-emerald-500/10 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-emerald-100/60">
+        Selfie saved
+      </span>
+    </div>
+  );
+}
 
 export default function ReferenceUploadRequest({
   request,
@@ -28,13 +51,7 @@ export default function ReferenceUploadRequest({
 }: ReferenceUploadRequestProps) {
   if (!request && !isSelfieRequest) {
     if (!hasSelfie) return null;
-    return (
-      <div className="mb-4 flex w-full max-w-3xl justify-center">
-        <span className="rounded-full border border-emerald-200/15 bg-emerald-500/10 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.22em] text-emerald-100/60">
-          Selfie saved
-        </span>
-      </div>
-    );
+    return <SelfieSavedBadge />;
   }
 
   const title = request?.scene_title

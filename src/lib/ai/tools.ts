@@ -176,7 +176,7 @@ export const aiTools = {
     inputSchema: saveSketchFeedbackSchema,
   }),
   propose_film_treatment: tool({
-    description: 'Create the short film treatment before scene outline: title, emotional thesis, narrative arc, visual motif, narrator style, ending feeling, and things to avoid. Include directorReply with the user-facing treatment summary and ask whether it feels right.',
+    description: 'Create the short film treatment before scene outline: title, emotional thesis, narrative arc, visual motif, narrator style, ending feeling, and things to avoid. The treatment card renders the full structure, so keep directorReply to a short handoff asking the user to review it below.',
     inputSchema: filmTreatmentSchema,
   }),
   propose_scene_outline: tool({

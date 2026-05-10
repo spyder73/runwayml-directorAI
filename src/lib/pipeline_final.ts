@@ -1,6 +1,6 @@
 import db from './db';
 import { broadcastSessionUpdate } from './sse';
-import type { ReferenceAssetRow, SceneRow, SessionRow } from './types';
+import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './types';
 import { ensureSafePrompt } from './moderation';
 import { getAudioDurationInSeconds } from 'get-audio-duration';
 import path from 'path';
@@ -127,6 +127,7 @@ export async function generateImagesPhase(sessionId: string) {
       || scene.status === 'image_failed'
     ));
     const referenceAssets = db.prepare('SELECT * FROM reference_assets WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ReferenceAssetRow[];
+    const storyEntities = db.prepare('SELECT * FROM story_entities WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as StoryEntityRow[];
 
     for (const scene of scenesToGenerate) {
       db.prepare('UPDATE scenes SET status = ?, last_failure = NULL WHERE id = ?').run('generating_image', scene.id);
@@ -140,6 +141,7 @@ export async function generateImagesPhase(sessionId: string) {
           sceneReferenceAssetIds: parseReferenceAssetIds(scene.scene_references),
           protagonistVisible: sceneShowsProtagonist(scene),
           assets: referenceAssets,
+          entities: storyEntities,
         });
         const promptText = await ensureSafePrompt(preparedReferences.promptText);
         assertRunwayImagePrompt({

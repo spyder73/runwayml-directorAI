@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { runFrameGenerationPhase, runMediaGenerationPhase } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
 import { buildDirectorContinuationPrompt } from './director-continuation';
+import { filmTreatmentReviewHandoff } from './treatment-reply';
 import {
   aiTools,
   addReferenceSubjectSchema,
@@ -495,7 +496,7 @@ export async function processInterviewTurn(sessionId: string) {
         } else if (call.toolName === 'propose_film_treatment') {
            const args = filmTreatmentSchema.parse(call.input);
            proposeFilmTreatment(db, sessionId, args);
-           finalReply = text || args.directorReply || finalReply;
+           finalReply = filmTreatmentReviewHandoff();
         } else if (call.toolName === 'propose_scene_outline') {
            const args = proposeSceneOutlineSchema.parse(call.input);
            const bucketBeforeOutline = loadStoryBucket(db, sessionId);

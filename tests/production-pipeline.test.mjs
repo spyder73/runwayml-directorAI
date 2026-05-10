@@ -156,6 +156,28 @@ test('production references choose consented tagged assets and append prompt tag
   assert.doesNotMatch(references.promptText, /@denied_01/);
 });
 
+test('production references rewrite prompt entity aliases to usable owned image assets', () => {
+  const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
+
+  const references = prepareSceneReferences({
+    promptText: 'Warm Heidelberg light with Lenos and @kareem walking after class.',
+    sceneReferenceAssetIds: [],
+    protagonistVisible: false,
+    assets: [
+      { id: 'kareem-description', local_url: null, runway_uri: null, stable_tag: 'kareem', usage_permissions: 'description_only', target_type: 'friend', owner_entity_id: 'kareem-entity', vision_description: 'Kareem from Heidelberg.' },
+      { id: 'kareem-upload', local_url: '/uploads/kareem.jpg', runway_uri: null, stable_tag: 'friend_kareem', usage_permissions: 'allowed', target_type: 'friend', owner_entity_id: 'kareem-entity', vision_description: 'Kareem laughing in warm light.' },
+    ],
+    entities: [
+      { id: 'kareem-entity', display_name: 'Kareem', reference_asset_id: 'kareem-description' },
+    ],
+  });
+
+  assert.deepEqual(references.selectedAssets.map((asset) => asset.id), ['kareem-upload']);
+  assert.deepEqual(references.referenceImages.map((image) => image.tag), ['friend_kareem']);
+  assert.match(references.promptText, /@friend_kareem/);
+  assert.doesNotMatch(references.promptText, /@kareem\b/);
+});
+
 test('final render plan produces a real output path and Remotion inputs', () => {
   const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
 

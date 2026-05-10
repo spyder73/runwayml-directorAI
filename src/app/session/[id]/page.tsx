@@ -254,6 +254,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   }
 
   const showReferenceRequest = Boolean(activeReferenceRequest) || (session.status === 'AWAITING_SELFIE' && !session.user_selfie_url);
+  const isReferenceDescribeDraft = showReferenceRequest && message.trim().length > 0;
+  const showComposer = !showReferenceRequest || isReferenceDescribeDraft;
   const productionStarted = [
     'GENERATING_IMAGES',
     'AWAITING_APPROVAL',
@@ -289,7 +291,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       </header>
 
-      <div className="relative z-[1] flex flex-1 flex-col overflow-y-auto px-4 pb-36 pt-24 md:px-20">
+      <div className={`relative z-[1] flex flex-1 flex-col overflow-y-auto px-4 pt-24 md:px-20 ${showReferenceRequest && !isReferenceDescribeDraft ? 'pb-80 md:pb-72' : 'pb-36'}`}>
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
           <InterviewChat
             chatHistory={chatHistory}
@@ -336,61 +338,66 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 z-10 flex flex-col items-center bg-gradient-to-t from-[#0A0A0F] via-[#0A0A0F] to-transparent p-6">
-        <ReferenceUploadRequest
-          request={activeReferenceRequest}
-          isSelfieRequest={session.status === 'AWAITING_SELFIE' && !session.user_selfie_url}
-          hasSelfie={Boolean(session.user_selfie_url)}
-          isUploading={isUploading}
-          onChooseFiles={() => fileInputRef.current?.click()}
-          onSkip={async () => {
-            await resolveActiveReferenceRequest('skipped');
-            await handleSendMessage(undefined, "I'd like to skip that image for now. Please ask me for visual details instead.");
-          }}
-          onDescribeInstead={async () => {
-            const label = activeReferenceRequest?.target_label || 'this reference';
-            setMessage(`Here is how ${label} looks: `);
-          }}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          ref={fileInputRef}
+          onChange={(event) => uploadFiles(event.target.files)}
         />
 
-        <form onSubmit={handleSendMessage} className="group relative w-full max-w-3xl">
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            ref={fileInputRef}
-            onChange={(event) => uploadFiles(event.target.files)}
+        {!isReferenceDescribeDraft && (
+          <ReferenceUploadRequest
+            request={activeReferenceRequest}
+            isSelfieRequest={session.status === 'AWAITING_SELFIE' && !session.user_selfie_url}
+            hasSelfie={Boolean(session.user_selfie_url)}
+            isUploading={isUploading}
+            onChooseFiles={() => fileInputRef.current?.click()}
+            onSkip={async () => {
+              await resolveActiveReferenceRequest('skipped');
+              await handleSendMessage(undefined, "I'd like to skip that image for now. Please ask me for visual details instead.");
+            }}
+            onDescribeInstead={async () => {
+              const label = activeReferenceRequest?.target_label || 'this reference';
+              setMessage(`Here is how ${label} looks: `);
+            }}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
           />
-          <div className="absolute inset-y-0 left-4 z-20 flex items-center">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
+        )}
+
+        {showComposer && (
+          <form onSubmit={handleSendMessage} className="group relative w-full max-w-3xl">
+            <div className="absolute inset-y-0 left-4 z-20 flex items-center">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={freeChatDisabled}
+                className="rounded-full bg-white/5 p-2 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
+                aria-label="Add image"
+              >
+                <Camera size={20} />
+              </button>
+            </div>
+            <input
+              autoFocus
+              type="text"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder={inputPlaceholder}
+              className="w-full rounded-full border border-white/10 bg-[#111116]/90 py-4 pl-14 pr-16 font-serif text-lg text-white shadow-2xl outline-none backdrop-blur-xl transition-all placeholder:text-white/30 hover:border-white/20 focus:border-amber-200/50 focus:ring-1 focus:ring-amber-200/20"
               disabled={freeChatDisabled}
-              className="rounded-full bg-white/5 p-2 text-white/40 transition-colors hover:bg-white/10 hover:text-white"
-              aria-label="Add image"
+            />
+            <button
+              type="submit"
+              disabled={freeChatDisabled || !message.trim()}
+              className="absolute inset-y-2 right-2 flex items-center justify-center rounded-full bg-white px-5 text-black transition-all hover:scale-105 hover:bg-amber-200 active:scale-95 disabled:bg-white/20 disabled:text-white disabled:opacity-20"
             >
-              <Camera size={20} />
+              <Send size={18} className="ml-0.5" />
             </button>
-          </div>
-          <input
-            autoFocus
-            type="text"
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            placeholder={inputPlaceholder}
-            className="w-full rounded-full border border-white/10 bg-[#111116]/90 py-4 pl-14 pr-16 font-serif text-lg text-white shadow-2xl outline-none backdrop-blur-xl transition-all placeholder:text-white/30 hover:border-white/20 focus:border-amber-200/50 focus:ring-1 focus:ring-amber-200/20"
-            disabled={freeChatDisabled}
-          />
-          <button
-            type="submit"
-            disabled={freeChatDisabled || !message.trim()}
-            className="absolute inset-y-2 right-2 flex items-center justify-center rounded-full bg-white px-5 text-black transition-all hover:scale-105 hover:bg-amber-200 active:scale-95 disabled:bg-white/20 disabled:text-white disabled:opacity-20"
-          >
-            <Send size={18} className="ml-0.5" />
-          </button>
-        </form>
+          </form>
+        )}
       </div>
 
       <AnimatePresence>

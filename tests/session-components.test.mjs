@@ -24,6 +24,27 @@ test('reference upload checkpoint clearly supports selfie drag and drop', () => 
   assert.match(source, /Selfie saved/i);
 });
 
+test('selfie saved confirmation dismisses itself after a short delay', () => {
+  const source = fs.readFileSync(new URL('../src/components/session/ReferenceUploadRequest.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const SELFIE_SAVED_VISIBLE_MS = 3000;/);
+  assert.match(source, /function SelfieSavedBadge\(\)/);
+  assert.match(source, /const \[showSelfieSaved, setShowSelfieSaved\] = useState\(true\);/);
+  assert.match(source, /window\.setTimeout\(\(\) => setShowSelfieSaved\(false\), SELFIE_SAVED_VISIBLE_MS\)/);
+  assert.match(source, /window\.clearTimeout\(timer\)/);
+  assert.match(source, /if \(!showSelfieSaved\) return null;/);
+  assert.match(source, /if \(!hasSelfie\) return null;/);
+});
+
+test('reference upload checkpoint hides the composer until describing or resolved', () => {
+  const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const isReferenceDescribeDraft = showReferenceRequest && message\.trim\(\)\.length > 0;/);
+  assert.match(source, /const showComposer = !showReferenceRequest \|\| isReferenceDescribeDraft;/);
+  assert.match(source, /\{!isReferenceDescribeDraft && \(\s*<ReferenceUploadRequest/);
+  assert.match(source, /\{showComposer && \(\s*<form/);
+});
+
 test('production progress exposes frame approval before motion generation', () => {
   const source = fs.readFileSync(new URL('../src/components/session/ProductionProgress.tsx', import.meta.url), 'utf8');
   const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
