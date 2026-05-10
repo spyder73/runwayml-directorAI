@@ -13,6 +13,14 @@ import {
   requestIp,
 } from '../../../../lib/rate-limit';
 
+function errorReason(error: unknown) {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+
+  return String(error);
+}
+
 export async function POST(req: NextRequest) {
   const isForm = isFormRequest(req);
   const ipLimit = checkRateLimit(rateLimitKey(['register', 'ip', requestIp(req)]), REGISTER_IP_RATE_LIMIT);
@@ -61,6 +69,7 @@ export async function POST(req: NextRequest) {
       return isForm ? redirectToApp(req, '/register?error=exists', { status: 303 }) : jsonError('An account with that email already exists.', 409);
     }
 
+    console.error('Registration failed.', { reason: errorReason(error) });
     return isForm ? redirectToApp(req, '/register?error=server', { status: 303 }) : jsonError('Unable to register right now.', 500);
   }
 }

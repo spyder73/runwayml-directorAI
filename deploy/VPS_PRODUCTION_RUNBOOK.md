@@ -286,7 +286,8 @@ Create the persistent data directory:
 
 ```bash
 mkdir -p data
-chmod 700 data
+sudo chown -R 1001:1001 data
+sudo chmod -R u+rwX,go-rwx data
 ```
 
 The app stores SQLite and private media here:
@@ -295,6 +296,11 @@ The app stores SQLite and private media here:
 /opt/lifestory/data/lifestory.sqlite
 /opt/lifestory/data/media/
 ```
+
+The production container runs as UID `1001`, so the bind-mounted `data/`
+directory must be writable by UID `1001`. If auth routes return `Internal Server
+Error` and logs show `SQLITE_CANTOPEN`, re-run the `chown` and `chmod` commands
+above, then restart the `web` container.
 
 Back up this directory. Do not delete it during redeploys.
 
