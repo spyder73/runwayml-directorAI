@@ -14,9 +14,14 @@ function statusMessage(params: Awaited<LoginSearchParams>) {
   return null;
 }
 
+function shouldShowResendConfirmation(params: Awaited<LoginSearchParams>) {
+  return params.registered === '1' || params.verified === 'invalid' || params.error === 'confirm-email';
+}
+
 export default async function LoginPage({ searchParams }: { searchParams: LoginSearchParams }) {
   const params = await searchParams;
   const message = statusMessage(params);
+  const showResendConfirmation = shouldShowResendConfirmation(params);
 
   return (
     <main className="min-h-screen bg-[#0A0A0F] text-white flex items-center justify-center px-6">
@@ -64,24 +69,26 @@ export default async function LoginPage({ searchParams }: { searchParams: LoginS
           </button>
         </form>
 
-        <form action="/api/auth/resend-verification" method="post" className="space-y-3 border-t border-white/10 pt-6">
-          <label className="block space-y-2">
-            <span className="font-mono text-xs uppercase tracking-widest text-white/45">Resend confirmation</span>
-            <input
-              required
-              type="email"
-              name="email"
-              autoComplete="email"
-              className="w-full border border-white/15 bg-white/5 px-4 py-3 text-white outline-none transition-colors focus:border-white/40"
-            />
-          </label>
-          <button
-            type="submit"
-            className="w-full border border-white/15 px-4 py-3 font-mono text-xs uppercase tracking-widest text-white/70 transition-colors hover:border-white/35 hover:text-white"
-          >
-            Send link
-          </button>
-        </form>
+        {showResendConfirmation && (
+          <form action="/api/auth/resend-verification" method="post" className="space-y-3 border-t border-white/10 pt-6">
+            <label className="block space-y-2">
+              <span className="font-mono text-xs uppercase tracking-widest text-white/45">Resend confirmation</span>
+              <input
+                required
+                type="email"
+                name="email"
+                autoComplete="email"
+                className="w-full border border-white/15 bg-white/5 px-4 py-3 text-white outline-none transition-colors focus:border-white/40"
+              />
+            </label>
+            <button
+              type="submit"
+              className="w-full border border-white/15 px-4 py-3 font-mono text-xs uppercase tracking-widest text-white/70 transition-colors hover:border-white/35 hover:text-white"
+            >
+              Send link
+            </button>
+          </form>
+        )}
 
         <p className="text-center text-sm text-white/45">
           New here? <Link href="/register" className="text-white/80 hover:text-white">Create an account</Link>

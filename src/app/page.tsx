@@ -3,13 +3,15 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Clapperboard, Film, Smartphone } from 'lucide-react';
+import { Clapperboard, Film, Settings, Smartphone } from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
+import SettingsModal from '@/components/session/SettingsModal';
 
 export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
   const [readiness, setReadiness] = useState<{ ok: boolean; userMessage: string } | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const router = useRouter();
 
   const redirectToLogin = () => {
@@ -96,6 +98,16 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#0A0A0F] text-white overflow-hidden relative flex items-center justify-center">
       <AmbientFractalBackground intensity="landing" />
+
+      <button
+        type="button"
+        onClick={() => setIsSettingsOpen(true)}
+        className="fixed right-6 top-6 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+        aria-label="Open settings"
+        title="Generation settings"
+      >
+        <Settings size={18} />
+      </button>
 
       <div className="z-10 w-full max-w-3xl px-6 flex flex-col items-center">
         <motion.div
@@ -213,6 +225,7 @@ export default function Home() {
         </AnimatePresence>
       </div>
 
+      <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </main>
   );
 }

@@ -124,3 +124,14 @@ test('session UI exposes a settings cog and never hydrates raw saved keys into f
   assert.doesNotMatch(modalSource, /value=\{summary\.openrouter/i);
   assert.doesNotMatch(modalSource, /value=\{summary\.runway/i);
 });
+
+test('home page exposes a top-right settings cog after login', () => {
+  const source = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /Settings/);
+  assert.match(source, /SettingsModal/);
+  assert.match(source, /isSettingsOpen/);
+  assert.match(source, /setIsSettingsOpen\(true\)/);
+  assert.match(source, /fixed right-6 top-6/);
+  assert.match(source, /aria-label="Open settings"/);
+});
