@@ -10,7 +10,14 @@ services:
       - ./public/generated:/app/public/generated
       - ./data:/app/data
     environment:
-      - NODE_ENV=production
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - RUNWAYML_API_SECRET=${RUNWAYML_API_SECRET}
+      NODE_ENV: production
+      MEDIA_STORAGE_DIR: /app/data/media
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      RUNWAYML_API_SECRET: ${RUNWAYML_API_SECRET}
+      REMOTION_BROWSER_EXECUTABLE: ${REMOTION_BROWSER_EXECUTABLE:-/usr/bin/chromium}
+      REMOTION_RENDER_QUALITY: ${REMOTION_RENDER_QUALITY:-fast}
+      REMOTION_CONCURRENCY: ${REMOTION_CONCURRENCY:-50%}
+      REMOTION_TIMEOUT_MS: ${REMOTION_TIMEOUT_MS:-900000}
+      REMOTION_X264_PRESET: ${REMOTION_X264_PRESET:-veryfast}
+      REMOTION_BUNDLE_CACHE: ${REMOTION_BUNDLE_CACHE:-true}
     restart: always
