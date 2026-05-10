@@ -16,6 +16,7 @@ import { canRenderFinal } from './pipeline-guards';
 import { FINAL_IMAGE_QUALITY } from './production-config';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
 import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
+import { logMediaGeneration, type MediaGenerationLogDetails } from './media-logging';
 import {
   generateImageAsset,
   generateSpeechAsset,
@@ -96,6 +97,16 @@ function sceneShowsProtagonist(scene: SceneRow) {
 }
 
 const OPENING_FRAME_REFERENCE_TAG = 'opening_frame';
+
+function mediaTaskLogContext(session: SessionRow, task: MediaTaskRow, scene?: SceneRow): MediaGenerationLogDetails {
+  return {
+    sessionId: session.id,
+    taskId: task.id,
+    kind: task.kind,
+    sceneId: scene?.id || task.scene_id,
+    sceneIndex: typeof scene?.scene_index === 'number' ? scene.scene_index + 1 : null,
+  };
+}
 
 async function loadReferenceImages(assets: Array<Pick<ReferenceAssetRow, 'runway_uri' | 'local_url' | 'stable_tag'>>) {
   const referenceImages: RunwayReferenceImage[] = [];
@@ -246,6 +257,11 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
   }
 
   if (scene.reference_image_url && scene.status !== 'image_failed') {
+    logMediaGeneration('scene_frame_reused_existing', {
+      ...mediaTaskLogContext(session, task, scene),
+      mediaType: 'image',
+      localUrl: scene.reference_image_url,
+    });
     database.prepare('UPDATE scenes SET status = ?, last_failure = NULL WHERE id = ?')
       .run('awaiting_approval', scene.id);
     broadcastProgress(database, session.id);
@@ -256,6 +272,11 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     .run('generating_image', scene.id);
   setSessionStatus(database, session.id, 'GENERATING_IMAGES');
   broadcastProgress(database, session.id);
+  logMediaGeneration('scene_frame_generation_start', {
+    ...mediaTaskLogContext(session, task, scene),
+    mediaType: 'image',
+    promptText: scene.image_prompt || scene.visual_prompt,
+  });
 
   const referenceAssets = database.prepare('SELECT * FROM reference_assets WHERE session_id = ? ORDER BY created_at ASC')
     .all(session.id) as ReferenceAssetRow[];
@@ -279,6 +300,7 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     ratio: imageRatio(session.aspect_ratio),
     referenceImages: referenceImages.length ? referenceImages : undefined,
     sessionId: session.id,
+    logContext: mediaTaskLogContext(session, task, scene),
   });
 
   database.prepare(`
@@ -294,6 +316,12 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     'awaiting_approval',
     scene.id,
   );
+  logMediaGeneration('scene_frame_db_updated', {
+    ...mediaTaskLogContext(session, task, scene),
+    mediaType: 'image',
+    localUrl: imageAsset.localUrl,
+    referenceImageCount: preparedReferences.selectedAssets.length,
+  });
   broadcastProgress(database, session.id);
 
   return imageAsset.localUrl;
@@ -321,6 +349,7 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
   const audioAsset = await generateSpeechAsset({
     promptText: scene.narrator_text,
     sessionId: session.id,
+    logContext: mediaTaskLogContext(session, task, scene),
   });
 
   let exactDuration = scene.duration || 5;
@@ -355,10 +384,24 @@ export function buildContinuityReferencePrompt(shot: ShotPlan, shotIndex: number
 
 async function generateContinuityReferenceImage(params: {
   session: SessionRow;
+  task: MediaTaskRow;
+  scene: SceneRow;
   shot: ShotPlan;
   shotIndex: number;
+  shotCount: number;
   openingReferenceImageUrl: string;
 }) {
+  const logContext = {
+    ...mediaTaskLogContext(params.session, params.task, params.scene),
+    mediaType: 'image' as const,
+    shotIndex: params.shotIndex + 1,
+    shotCount: params.shotCount,
+  };
+  logMediaGeneration('continuity_frame_generation_start', {
+    ...logContext,
+    promptImageUrl: params.openingReferenceImageUrl,
+    promptText: params.shot.referencePrompt || params.shot.prompt,
+  });
   const openingReference = await loadReferenceImage(params.openingReferenceImageUrl, OPENING_FRAME_REFERENCE_TAG);
   const promptText = await ensureSafePrompt(buildContinuityReferencePrompt(params.shot, params.shotIndex));
 
@@ -373,6 +416,13 @@ async function generateContinuityReferenceImage(params: {
     ratio: imageRatio(params.session.aspect_ratio),
     referenceImages: [openingReference],
     sessionId: params.session.id,
+    logContext,
+  });
+
+  logMediaGeneration('continuity_frame_generated', {
+    ...logContext,
+    localUrl: imageAsset.localUrl,
+    promptText,
   });
 
   return {
@@ -389,6 +439,11 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
   }
 
   if (scene.video_url && scene.status !== 'video_failed') {
+    logMediaGeneration('scene_video_reused_existing', {
+      ...mediaTaskLogContext(session, task, scene),
+      mediaType: 'video',
+      localUrl: scene.video_url,
+    });
     database.prepare('UPDATE scenes SET status = ?, last_failure = NULL WHERE id = ?')
       .run('completed', scene.id);
     broadcastProgress(database, session.id);
@@ -403,9 +458,22 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
     .run('generating_video', scene.id);
   setSessionStatus(database, session.id, 'GENERATING_FINAL_ASSETS');
   broadcastProgress(database, session.id);
+  logMediaGeneration('scene_video_generation_start', {
+    ...mediaTaskLogContext(session, task, scene),
+    mediaType: 'video',
+    promptText: scene.video_prompt || scene.visual_prompt,
+    promptImageUrl: scene.reference_image_url,
+  });
 
   const exactDuration = scene.duration || 5;
   const shots = await planShots(scene.video_prompt || scene.visual_prompt, exactDuration);
+  logMediaGeneration('scene_video_shots_planned', {
+    ...mediaTaskLogContext(session, task, scene),
+    mediaType: 'video',
+    duration: exactDuration,
+    shotCount: shots.length,
+    promptText: scene.video_prompt || scene.visual_prompt,
+  });
   const videoUrls: string[] = [];
   const shotPlan: Array<{
     duration: number;
@@ -422,8 +490,11 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
     if (shots.length > 1 && shotIndex > 0) {
       const continuityReference = await generateContinuityReferenceImage({
         session,
+        task,
+        scene,
         shot,
         shotIndex,
+        shotCount: shots.length,
         openingReferenceImageUrl: scene.reference_image_url,
       });
       promptImageUrl = continuityReference.localUrl;
@@ -435,12 +506,26 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       promptText: safePrompt,
       durationSeconds: shot.duration,
     });
+    logMediaGeneration('scene_video_shot_generation_start', {
+      ...mediaTaskLogContext(session, task, scene),
+      mediaType: 'video',
+      shotIndex: shotIndex + 1,
+      shotCount: shots.length,
+      duration: shot.duration,
+      promptImageUrl,
+      promptText: safePrompt,
+    });
     const videoAsset = await generateVideoAsset({
       promptImageUrl,
       promptText: safePrompt,
       ratio: videoRatio(session.aspect_ratio),
       duration: shot.duration,
       sessionId: session.id,
+      logContext: {
+        ...mediaTaskLogContext(session, task, scene),
+        shotIndex: shotIndex + 1,
+        shotCount: shots.length,
+      },
     });
     videoUrls.push(videoAsset.localUrl);
     shotPlan.push({
@@ -449,6 +534,14 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       url: videoAsset.localUrl,
       reference_image_url: promptImageUrl,
       ...(referencePrompt ? { reference_prompt: referencePrompt } : {}),
+    });
+    logMediaGeneration('scene_video_shot_generated', {
+      ...mediaTaskLogContext(session, task, scene),
+      mediaType: 'video',
+      shotIndex: shotIndex + 1,
+      shotCount: shots.length,
+      duration: shot.duration,
+      localUrl: videoAsset.localUrl,
     });
   }
 
@@ -463,6 +556,12 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
         last_failure = NULL
     WHERE id = ?
   `).run(outputAssetId, JSON.stringify(shotPlan), Math.ceil(exactDuration), 'completed', scene.id);
+  logMediaGeneration('scene_video_db_updated', {
+    ...mediaTaskLogContext(session, task, scene),
+    mediaType: 'video',
+    shotCount: shotPlan.length,
+    localUrl: outputAssetId,
+  });
   broadcastProgress(database, session.id);
 
   return outputAssetId;
@@ -524,10 +623,26 @@ async function runOneTask(params: {
   }
 
   markMediaTaskRunning(database, task.id);
+  logMediaGeneration('media_task_running', {
+    sessionId: task.session_id,
+    taskId: task.id,
+    kind: task.kind,
+    sceneId: task.scene_id,
+    provider: task.provider,
+    attempt: task.attempts + 1,
+    maxAttempts: task.max_attempts,
+  });
 
   try {
     const outputAssetId = await executor({ database, task, session });
     completeMediaTask(database, task.id, typeof outputAssetId === 'string' ? outputAssetId : undefined);
+    logMediaGeneration('media_task_succeeded', {
+      sessionId: task.session_id,
+      taskId: task.id,
+      kind: task.kind,
+      sceneId: task.scene_id,
+      provider: task.provider,
+    });
     return { ok: true as const };
   } catch (error) {
     const message = formatError(error);
@@ -535,6 +650,14 @@ async function runOneTask(params: {
     markSceneFailure(database, task, message);
     setSessionStatus(database, task.session_id, 'FAILED');
     broadcastProgress(database, task.session_id, message);
+    logMediaGeneration('media_task_failed', {
+      sessionId: task.session_id,
+      taskId: task.id,
+      kind: task.kind,
+      sceneId: task.scene_id,
+      provider: task.provider,
+      error,
+    }, 'error');
     return { ok: false as const, error };
   }
 }
