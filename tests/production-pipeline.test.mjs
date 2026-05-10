@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { createJiti } from 'jiti';
 
@@ -189,6 +190,106 @@ test('final render plan produces a real output path and Remotion inputs', () => 
   assert.equal(plan.remotionInputProps.scenes[0].duration_in_frames, 240);
 });
 
+test('final render quality preset can lower output dimensions for faster local renders', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+  const originalQuality = process.env.REMOTION_RENDER_QUALITY;
+  process.env.REMOTION_RENDER_QUALITY = 'fast';
+
+  try {
+    const landscapePlan = buildFinalRenderPlan({
+      sessionId: 'session-1',
+      aspectRatio: '16:9',
+      scenes: [
+        {
+          id: 'scene-1',
+          scene_index: 0,
+          narrator_text: 'First line.',
+          video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4']),
+          shot_plan_json: JSON.stringify([{ duration: 3 }]),
+          audio_url: '/generated/audio/session-1/scene-1.mp3',
+          duration: 3,
+        },
+      ],
+    });
+    const portraitPlan = buildFinalRenderPlan({
+      sessionId: 'session-1',
+      aspectRatio: '9:16',
+      scenes: [
+        {
+          id: 'scene-1',
+          scene_index: 0,
+          narrator_text: 'First line.',
+          video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4']),
+          shot_plan_json: JSON.stringify([{ duration: 3 }]),
+          audio_url: '/generated/audio/session-1/scene-1.mp3',
+          duration: 3,
+        },
+      ],
+    });
+
+    assert.equal(landscapePlan.composition.width, 960);
+    assert.equal(landscapePlan.composition.height, 540);
+    assert.equal(portraitPlan.composition.width, 540);
+    assert.equal(portraitPlan.composition.height, 960);
+  } finally {
+    if (originalQuality === undefined) {
+      delete process.env.REMOTION_RENDER_QUALITY;
+    } else {
+      process.env.REMOTION_RENDER_QUALITY = originalQuality;
+    }
+  }
+});
+
+test('final render ultra quality preset renders full HD dimensions', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+  const originalQuality = process.env.REMOTION_RENDER_QUALITY;
+  process.env.REMOTION_RENDER_QUALITY = 'ultra';
+
+  try {
+    const landscapePlan = buildFinalRenderPlan({
+      sessionId: 'session-1',
+      aspectRatio: '16:9',
+      scenes: [
+        {
+          id: 'scene-1',
+          scene_index: 0,
+          narrator_text: 'First line.',
+          video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4']),
+          shot_plan_json: JSON.stringify([{ duration: 3 }]),
+          audio_url: '/generated/audio/session-1/scene-1.mp3',
+          duration: 3,
+        },
+      ],
+    });
+    const portraitPlan = buildFinalRenderPlan({
+      sessionId: 'session-1',
+      aspectRatio: '9:16',
+      scenes: [
+        {
+          id: 'scene-1',
+          scene_index: 0,
+          narrator_text: 'First line.',
+          video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4']),
+          shot_plan_json: JSON.stringify([{ duration: 3 }]),
+          audio_url: '/generated/audio/session-1/scene-1.mp3',
+          duration: 3,
+        },
+      ],
+    });
+
+    assert.equal(landscapePlan.composition.width, 1920);
+    assert.equal(landscapePlan.composition.height, 1080);
+    assert.equal(portraitPlan.composition.width, 1080);
+    assert.equal(portraitPlan.composition.height, 1920);
+  } finally {
+    if (originalQuality === undefined) {
+      delete process.env.REMOTION_RENDER_QUALITY;
+    } else {
+      process.env.REMOTION_RENDER_QUALITY = originalQuality;
+    }
+  }
+});
+
 test('final render plan sends readable subtitles into the Remotion composition', () => {
   const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
 
@@ -237,6 +338,41 @@ test('final render plan gently speeds narration when it is longer than planned c
   assert.ok(plan.audioInputs[0].tempo && plan.audioInputs[0].tempo > 1);
   assert.equal(Number(plan.audioInputs[0].tempo.toFixed(3)), 1.067);
   assert.equal(Number(plan.remotionInputProps.scenes[0].audio_playback_rate?.toFixed(3)), 1.067);
+});
+
+test('final render bundle resolver reuses one in-flight bundle', async () => {
+  const { createRemotionBundleResolver } = jiti('../src/lib/final-render.ts');
+  let bundleCalls = 0;
+  let resolveBundle;
+  const bundleStarted = new Promise((resolve) => {
+    resolveBundle = resolve;
+  });
+  const resolveBundlePath = createRemotionBundleResolver(async () => {
+    bundleCalls += 1;
+    return bundleStarted;
+  });
+
+  const first = resolveBundlePath({ entryPoint: '/tmp/remotion-entry.tsx' });
+  const second = resolveBundlePath({ entryPoint: '/tmp/remotion-entry.tsx' });
+  resolveBundle('/tmp/remotion-bundle');
+
+  assert.equal(await first, '/tmp/remotion-bundle');
+  assert.equal(await second, '/tmp/remotion-bundle');
+  assert.equal(bundleCalls, 1);
+});
+
+test('final render uses media extraction components and fast x264 settings', () => {
+  const compositionSource = fs.readFileSync(new URL('../src/remotion/MainComposition.tsx', import.meta.url), 'utf8');
+  const renderSource = fs.readFileSync(new URL('../src/lib/final-render.ts', import.meta.url), 'utf8');
+
+  assert.match(compositionSource, /from ['"]@remotion\/media['"]/);
+  assert.match(compositionSource, /<Video[^>]+muted/);
+  assert.match(compositionSource, /objectFit=["']cover["']/);
+  assert.match(renderSource, /'veryfast'/);
+  assert.match(renderSource, /'superfast'/);
+  assert.match(renderSource, /REMOTION_RENDER_QUALITY/);
+  assert.match(renderSource, /x264Preset/);
+  assert.match(renderSource, /onProgress:/);
 });
 
 test('Runway video model can be configured from the environment', () => {

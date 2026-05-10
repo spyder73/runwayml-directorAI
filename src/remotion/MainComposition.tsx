@@ -1,5 +1,6 @@
 import React from 'react';
-import { AbsoluteFill, Sequence, Video, Audio } from 'remotion';
+import { AbsoluteFill, Sequence } from 'remotion';
+import { Audio, Video } from '@remotion/media';
 import { TransitionSeries, linearTiming } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { AnimatedSubtitles } from './components/AnimatedSubtitles';
@@ -30,7 +31,12 @@ export const MainComposition = ({ scenes }: { scenes: RemotionScene[] }) => {
 
             return (
               <Sequence key={`${scene.id}-${j}`} from={fromFrame} durationInFrames={finalShotDuration}>
-                <Video src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <Video
+                  src={clip.url}
+                  muted
+                  objectFit="cover"
+                  style={{ width: '100%', height: '100%' }}
+                />
               </Sequence>
             );
           })}

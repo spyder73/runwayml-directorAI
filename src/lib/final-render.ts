@@ -1,10 +1,11 @@
 import { bundle } from '@remotion/bundler';
-import { renderMedia, selectComposition } from '@remotion/renderer';
+import { type Concurrency, type X264Preset, renderMedia, selectComposition } from '@remotion/renderer';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 
 type AspectRatio = '16:9' | '9:16';
+type RenderQuality = 'fast' | 'standard' | 'ultra';
 
 type RenderScene = {
   id: string;
@@ -55,6 +56,14 @@ export type FinalRenderPlan = {
   entryPoint: string;
 };
 
+type RemotionBundleOptions = {
+  entryPoint: string;
+  publicDir: string;
+  enableCaching: boolean;
+};
+
+type RemotionBundleFn = (options: RemotionBundleOptions) => Promise<string>;
+
 function normalizePublicUrl(url: string) {
   const trimmed = url.trim();
   if (!trimmed.startsWith('/')) {
@@ -83,15 +92,31 @@ export function parseSceneVideoUrls(value: string | null) {
   return [value].filter((url) => url.trim().length > 0);
 }
 
+const FPS = 30;
+const MAX_NARRATION_TEMPO = 1.12;
+const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
+
+function remotionRenderQuality(): RenderQuality {
+  const configured = process.env.REMOTION_RENDER_QUALITY?.trim().toLowerCase();
+  return configured === 'fast' || configured === 'ultra' ? configured : 'standard';
+}
+
 function dimensionsForAspectRatio(aspectRatio: AspectRatio) {
+  const quality = remotionRenderQuality();
+  if (quality === 'fast') {
+    return aspectRatio === '9:16'
+      ? { width: 540, height: 960 }
+      : { width: 960, height: 540 };
+  }
+  if (quality === 'ultra') {
+    return aspectRatio === '9:16'
+      ? { width: 1080, height: 1920 }
+      : { width: 1920, height: 1080 };
+  }
   return aspectRatio === '9:16'
     ? { width: 720, height: 1280 }
     : { width: 1280, height: 720 };
 }
-
-const FPS = 30;
-const MAX_NARRATION_TEMPO = 1.12;
-const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
 
 function distributeDuration(totalDuration: number, count: number) {
   if (!Number.isFinite(totalDuration) || totalDuration <= 0 || count <= 0) return [];
@@ -234,21 +259,95 @@ function remotionEntryPoint() {
   return process.env.REMOTION_ENTRY_POINT || path.join(process.cwd(), 'src', 'remotion', 'Root.tsx');
 }
 
+function shouldEnableRemotionBundleCache() {
+  return process.env.REMOTION_BUNDLE_CACHE === 'true';
+}
+
+function remotionRenderConcurrency(): Concurrency {
+  const configured = process.env.REMOTION_CONCURRENCY?.trim() || '';
+  if (!configured) return null;
+  const numeric = Number(configured);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : configured;
+}
+
+function remotionRenderTimeout() {
+  const configured = Number(process.env.REMOTION_TIMEOUT_MS || '');
+  return Number.isFinite(configured) && configured > 0 ? configured : undefined;
+}
+
+function remotionX264Preset(): X264Preset {
+  const configured = process.env.REMOTION_X264_PRESET;
+  if (
+    configured === 'ultrafast' ||
+    configured === 'superfast' ||
+    configured === 'veryfast' ||
+    configured === 'faster' ||
+    configured === 'fast' ||
+    configured === 'medium' ||
+    configured === 'slow' ||
+    configured === 'slower' ||
+    configured === 'veryslow' ||
+    configured === 'placebo'
+  ) {
+    return configured;
+  }
+
+  return remotionRenderQuality() === 'fast' ? 'superfast' : 'veryfast';
+}
+
+function remotionCrf() {
+  const configured = Number(process.env.REMOTION_CRF || '');
+  if (Number.isFinite(configured) && configured >= 0 && configured <= 51) {
+    return configured;
+  }
+
+  const quality = remotionRenderQuality();
+  if (quality === 'fast') return 28;
+  if (quality === 'ultra') return 18;
+  return 20;
+}
+
+export function createRemotionBundleResolver(bundleFn: RemotionBundleFn = bundle) {
+  let bundlePromise: Promise<string> | null = null;
+  let bundledEntryPoint: string | null = null;
+
+  return function resolveRemotionBundle(plan: Pick<FinalRenderPlan, 'entryPoint'>) {
+    if (!bundlePromise || bundledEntryPoint !== plan.entryPoint) {
+      bundledEntryPoint = plan.entryPoint;
+      bundlePromise = bundleFn({
+        entryPoint: plan.entryPoint,
+        publicDir: path.join(process.cwd(), 'public'),
+        enableCaching: shouldEnableRemotionBundleCache(),
+      }).catch((error) => {
+        bundlePromise = null;
+        bundledEntryPoint = null;
+        throw error;
+      });
+    }
+
+    return bundlePromise;
+  };
+}
+
+const resolveRemotionBundle = createRemotionBundleResolver();
+
 async function runRemotionRender(plan: FinalRenderPlan) {
-  const serveUrl = await bundle({
-    entryPoint: plan.entryPoint,
-    publicDir: path.join(process.cwd(), 'public'),
-    enableCaching: true,
-  });
+  const serveUrl = await resolveRemotionBundle(plan);
   const browserExecutable = remotionBrowserExecutable() || undefined;
+  const concurrency = remotionRenderConcurrency();
+  const timeoutInMilliseconds = remotionRenderTimeout();
+  const x264Preset = remotionX264Preset();
+  const crf = remotionCrf();
   const selectedComposition = await selectComposition({
     serveUrl,
     id: plan.composition.id,
     inputProps: plan.remotionInputProps,
     ...(browserExecutable ? { browserExecutable } : {}),
+    timeoutInMilliseconds,
     logLevel: 'warn',
   });
 
+  let lastLoggedProgress = -1;
   await renderMedia({
     serveUrl,
     composition: {
@@ -262,9 +361,36 @@ async function runRemotionRender(plan: FinalRenderPlan) {
     codec: 'h264',
     outputLocation: plan.outputFilePath,
     overwrite: true,
-    crf: 20,
+    crf,
     pixelFormat: 'yuv420p',
     ...(browserExecutable ? { browserExecutable } : {}),
+    concurrency,
+    timeoutInMilliseconds,
+    x264Preset,
+    onStart: ({ frameCount }) => {
+      console.log(JSON.stringify({
+        scope: 'final-render',
+        message: 'render-started',
+        frames: frameCount,
+        concurrency,
+        x264Preset,
+        crf,
+        quality: remotionRenderQuality(),
+      }));
+    },
+    onProgress: ({ renderedFrames, encodedFrames, progress, stitchStage }) => {
+      const progressBucket = Math.floor(progress * 10);
+      if (progressBucket === lastLoggedProgress && progress < 1) return;
+      lastLoggedProgress = progressBucket;
+      console.log(JSON.stringify({
+        scope: 'final-render',
+        message: 'render-progress',
+        renderedFrames,
+        encodedFrames: encodedFrames ?? 0,
+        progress: Number(progress.toFixed(3)),
+        stitchStage,
+      }));
+    },
     logLevel: 'warn',
   });
 }
