@@ -81,6 +81,19 @@ test('prompt linting rejects video prompts without motion and invalid durations'
   assert.match(result.errors.join('\n'), /2 and 10/);
 });
 
+test('video prompt repair adds camera motion before runway validation', () => {
+  const {
+    ensureRunwayVideoPromptMotion,
+    lintRunwayVideoPrompt,
+  } = jiti('../src/lib/prompt-lint.ts');
+
+  const promptText = ensureRunwayVideoPromptMotion('A quiet cinematic portrait of Maya in warm kitchen light.');
+  const result = lintRunwayVideoPrompt({ promptText, durationSeconds: 6 });
+
+  assert.equal(result.ok, true);
+  assert.match(promptText, /camera/i);
+});
+
 test('cost estimator uses gpt_image_2 low sketches and high final frames', () => {
   const { estimateProductionCost } = jiti('../src/lib/cost-estimator.ts');
 
@@ -291,6 +304,92 @@ test('media task runner executes dependency-ready production tasks and leaves re
     ['render_final', 'queued', null],
   ]);
   assert.equal(db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1').status, 'PREVIEW_READY');
+});
+
+test('media task runner defaults to serial runway task execution', async () => {
+  const {
+    createMediaTask,
+    initializeMediaTaskTables,
+  } = jiti('../src/lib/media-tasks.ts');
+  const { runMediaTaskRunner } = jiti('../src/lib/pipeline_media.ts');
+
+  const db = createDb();
+  initializeMediaTaskTables(db);
+
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_scene_frame',
+    provider: 'runway',
+  });
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-2',
+    kind: 'generate_scene_frame',
+    provider: 'runway',
+  });
+
+  let active = 0;
+  let maxActive = 0;
+  const result = await runMediaTaskRunner('session-1', {
+    database: db,
+    onlyKinds: ['generate_scene_frame'],
+    executors: {
+      generate_scene_frame: async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+        return `frame-${Date.now()}`;
+      },
+    },
+  });
+
+  assert.equal(result.succeeded, 2);
+  assert.equal(maxActive, 1);
+});
+
+test('media task runner can opt into parallel runway task execution', async () => {
+  const {
+    createMediaTask,
+    initializeMediaTaskTables,
+  } = jiti('../src/lib/media-tasks.ts');
+  const { runMediaTaskRunner } = jiti('../src/lib/pipeline_media.ts');
+
+  const db = createDb();
+  initializeMediaTaskTables(db);
+
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_scene_frame',
+    provider: 'runway',
+  });
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-2',
+    kind: 'generate_scene_frame',
+    provider: 'runway',
+  });
+
+  let active = 0;
+  let maxActive = 0;
+  await runMediaTaskRunner('session-1', {
+    database: db,
+    onlyKinds: ['generate_scene_frame'],
+    concurrencyMode: 'parallel',
+    executors: {
+      generate_scene_frame: async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        active -= 1;
+        return `frame-${Date.now()}`;
+      },
+    },
+  });
+
+  assert.equal(maxActive, 2);
 });
 
 test('LifeStory frame approval separates stills from final motion generation', async () => {

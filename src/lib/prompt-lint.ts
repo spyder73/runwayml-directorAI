@@ -92,6 +92,14 @@ export function lintRunwayVideoPrompt(params: {
   return { ok: errors.length === 0, errors, promptTags };
 }
 
+export function ensureRunwayVideoPromptMotion(promptText: string) {
+  const trimmed = promptText.trim();
+  const basePrompt = trimmed || 'Cinematic emotional memory scene.';
+  if (MOTION_PATTERN.test(basePrompt)) return basePrompt;
+
+  return `${basePrompt} The camera slowly drifts through the scene while light and atmosphere shift across the frame.`;
+}
+
 export function assertRunwayVideoPrompt(params: Parameters<typeof lintRunwayVideoPrompt>[0]) {
   const result = lintRunwayVideoPrompt(params);
   if (!result.ok) {

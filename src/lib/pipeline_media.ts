@@ -15,7 +15,7 @@ import { ensureSafePrompt } from './moderation';
 import { canRenderFinal } from './pipeline-guards';
 import { FINAL_IMAGE_QUALITY } from './production-config';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
-import { assertRunwayImagePrompt, assertRunwayVideoPrompt } from './prompt-lint';
+import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
 import {
   generateImageAsset,
   generateSpeechAsset,
@@ -46,11 +46,14 @@ export type MediaTaskRunnerResult = {
   remainingQueued: number;
 };
 
+export type MediaTaskConcurrencyMode = 'serial' | 'parallel';
+
 export type MediaTaskRunnerOptions = {
   database?: SqliteDatabase;
   includeRender?: boolean;
   onlyKinds?: MediaTaskKind[];
   completionMode?: 'all' | 'frames' | 'final_assets';
+  concurrencyMode?: MediaTaskConcurrencyMode;
   executors?: MediaTaskExecutors;
   maxCycles?: number;
   batchLimit?: number;
@@ -137,7 +140,21 @@ function runnableKinds(includeRender: boolean, onlyKinds?: MediaTaskKind[]) {
   return new Set<MediaTaskKind>(includeRender ? [...PRODUCTION_TASK_KINDS, 'render_final'] : PRODUCTION_TASK_KINDS);
 }
 
-function selectTaskBatch(tasks: MediaTaskRow[], allowedKinds: Set<MediaTaskKind>) {
+function mediaTaskConcurrencyMode(override?: MediaTaskConcurrencyMode): MediaTaskConcurrencyMode {
+  if (override) return override;
+  return process.env.RUNWAY_MEDIA_CONCURRENCY === 'parallel' ? 'parallel' : 'serial';
+}
+
+function selectTaskBatch(
+  tasks: MediaTaskRow[],
+  allowedKinds: Set<MediaTaskKind>,
+  concurrencyMode: MediaTaskConcurrencyMode,
+) {
+  if (concurrencyMode === 'serial') {
+    const task = tasks.find((candidate) => allowedKinds.has(candidate.kind));
+    return task ? [task] : [];
+  }
+
   const counts = new Map<MediaTaskKind, number>();
   const batch: MediaTaskRow[] = [];
 
@@ -350,9 +367,10 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
   const exactDuration = scene.duration || 5;
   const shots = await planShots(scene.video_prompt || scene.visual_prompt, exactDuration);
   const videoUrls: string[] = [];
+  const shotPlan: Array<{ duration: number; prompt: string; url: string }> = [];
 
   for (const shot of shots) {
-    const safePrompt = await ensureSafePrompt(shot.prompt);
+    const safePrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt));
     assertRunwayVideoPrompt({
       promptText: safePrompt,
       durationSeconds: shot.duration,
@@ -365,12 +383,13 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       sessionId: session.id,
     });
     videoUrls.push(videoAsset.localUrl);
+    shotPlan.push({
+      duration: shot.duration,
+      prompt: safePrompt,
+      url: videoAsset.localUrl,
+    });
   }
 
-  const shotPlan = shots.map((shot, index) => ({
-    ...shot,
-    url: videoUrls[index],
-  }));
   const outputAssetId = JSON.stringify(videoUrls);
 
   database.prepare(`
@@ -461,6 +480,7 @@ async function runOneTask(params: {
 export async function runMediaTaskRunner(sessionId: string, options: MediaTaskRunnerOptions = {}): Promise<MediaTaskRunnerResult> {
   const database = options.database || db;
   const allowedKinds = runnableKinds(Boolean(options.includeRender), options.onlyKinds);
+  const concurrencyMode = mediaTaskConcurrencyMode(options.concurrencyMode);
   const executors = { ...DEFAULT_EXECUTORS, ...(options.executors || {}) };
   const result: MediaTaskRunnerResult = {
     started: 0,
@@ -473,7 +493,7 @@ export async function runMediaTaskRunner(sessionId: string, options: MediaTaskRu
 
   for (let cycle = 0; cycle < maxCycles; cycle += 1) {
     const runnable = selectRunnableMediaTasks(database, sessionId, batchLimit);
-    const batch = selectTaskBatch(runnable, allowedKinds);
+    const batch = selectTaskBatch(runnable, allowedKinds, concurrencyMode);
 
     if (!batch.length) {
       syncSessionProgress(database, sessionId, Boolean(options.includeRender), options.completionMode);

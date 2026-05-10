@@ -18,6 +18,24 @@ test('shot planner fallback splits long narration into bounded shots', () => {
   }
 });
 
+test('shot planner parses prose shot breakdowns when structured JSON generation fails', () => {
+  const { parseShotPlanResponseText } = jiti('../src/lib/shot_planner.ts');
+
+  const shots = parseShotPlanResponseText(
+    "Okay, let's break down this 7-second scene into a series of shots.\n\n" +
+      'Shot 1 (3 seconds):\n' +
+      'Wide shot of a wet platform with flickering station lights in the background. The camera slowly pushes down toward a blue suitcase on the platform.\n\n' +
+      'Shot 2 (4 seconds):\n' +
+      'Close-up on the blue suitcase as the camera continues its slow push down the platform, with the flickering station lights visible in the background.',
+    'The camera slowly pushes down a wet platform toward a blue suitcase.',
+    7,
+  );
+
+  assert.deepEqual(shots.map((shot) => shot.duration), [3, 4]);
+  assert.match(shots[0].prompt, /wet platform/);
+  assert.match(shots[1].prompt, /blue suitcase/);
+});
+
 test('production references choose consented tagged assets and append prompt tags', () => {
   const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
 
@@ -51,6 +69,7 @@ test('final render plan produces a real ffmpeg output path and command inputs', 
         scene_index: 0,
         narrator_text: 'First line.',
         video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4', '/generated/video/session-1/shot-2.mp4']),
+        shot_plan_json: JSON.stringify([{ duration: 3 }, { duration: 5 }]),
         audio_url: '/generated/audio/session-1/scene-1.mp3',
         duration: 8,
       },
@@ -65,16 +84,53 @@ test('final render plan produces a real ffmpeg output path and command inputs', 
   ]);
   assert.deepEqual(plan.audioInputs.map((input) => input.publicUrl), ['/generated/audio/session-1/scene-1.mp3']);
   assert.match(plan.filterGraph, /crop=720:1280/);
+  assert.match(plan.filterGraph, /trim=0:3/);
+  assert.match(plan.filterGraph, /trim=0:5/);
+});
+
+test('final render plan gently speeds narration when it is longer than planned clip time', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+
+  const plan = buildFinalRenderPlan({
+    sessionId: 'session-1',
+    aspectRatio: '16:9',
+    scenes: [
+      {
+        id: 'scene-1',
+        scene_index: 0,
+        narrator_text: 'First line.',
+        video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4', '/generated/video/session-1/shot-2.mp4']),
+        shot_plan_json: JSON.stringify([{ duration: 3 }, { duration: 3 }]),
+        audio_url: '/generated/audio/session-1/scene-1.mp3',
+        duration: 6.4,
+      },
+    ],
+  });
+
+  assert.equal(plan.audioInputs[0].targetDuration, 6);
+  assert.ok(plan.audioInputs[0].tempo && plan.audioInputs[0].tempo > 1);
+  assert.match(plan.filterGraph, /atempo=1\.067/);
+  assert.match(plan.filterGraph, /atrim=0:6/);
+});
+
+test('Runway video model can be configured from the environment', () => {
+  const { DEFAULT_VIDEO_MODEL, getRunwayVideoModel } = jiti('../src/lib/production-config.ts');
+
+  assert.equal(getRunwayVideoModel({}), DEFAULT_VIDEO_MODEL);
+  assert.equal(getRunwayVideoModel({ video_model: 'gen4_aleph' }), 'gen4_aleph');
+  assert.equal(getRunwayVideoModel({ VIDEO_MODEL: 'gen4_turbo' }), 'gen4_turbo');
+  assert.equal(getRunwayVideoModel({ RUNWAY_VIDEO_MODEL: 'gen4_aleph' }), 'gen4_aleph');
 });
 
 test('Runway image task helper preserves the SDK resource client binding', async () => {
   const { createTextToImageTask } = jiti('../src/lib/runway.ts');
+  const { RUNWAY_TASK_CREATE_TIMEOUT_MS } = jiti('../src/lib/production-config.ts');
   const resource = {
     _client: { ok: true },
     create(body, options) {
       assert.equal(this._client.ok, true);
       assert.equal(body.model, 'gpt_image_2');
-      assert.equal(options.timeout, 60000);
+      assert.equal(options.timeout, RUNWAY_TASK_CREATE_TIMEOUT_MS);
       return Promise.resolve({ id: 'task-1' });
     },
   };

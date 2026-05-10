@@ -10,6 +10,7 @@ type RenderScene = {
   scene_index: number;
   narrator_text: string;
   video_url: string | null;
+  shot_plan_json?: string | null;
   audio_url: string | null;
   duration: number | null;
 };
@@ -19,6 +20,8 @@ type RenderInput = {
   filePath: string;
   sceneId: string;
   duration?: number;
+  targetDuration?: number;
+  tempo?: number;
 };
 
 export type FinalRenderPlan = {
@@ -59,15 +62,64 @@ function dimensionsForAspectRatio(aspectRatio: AspectRatio) {
     : { width: 1280, height: 720 };
 }
 
+const MAX_NARRATION_TEMPO = 1.12;
+
+function formatFilterNumber(value: number) {
+  return value.toFixed(3).replace(/\.?0+$/, '');
+}
+
+function distributeDuration(totalDuration: number, count: number) {
+  if (!Number.isFinite(totalDuration) || totalDuration <= 0 || count <= 0) return [];
+  const totalMillis = Math.max(1, Math.round(totalDuration * 1000));
+  const baseMillis = Math.floor(totalMillis / count);
+  let remainder = totalMillis - baseMillis * count;
+
+  return Array.from({ length: count }, () => {
+    const durationMillis = baseMillis + (remainder > 0 ? 1 : 0);
+    remainder -= 1;
+    return durationMillis / 1000;
+  });
+}
+
+function parseShotPlanDurations(value: string | null | undefined, urlCount: number) {
+  if (!value || urlCount <= 0) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const durations = parsed
+      .map((item) => (typeof item === 'object' && item !== null ? Number((item as { duration?: unknown }).duration) : Number.NaN))
+      .filter((duration) => Number.isFinite(duration) && duration > 0)
+      .slice(0, urlCount);
+    return durations.length === urlCount ? durations : [];
+  } catch {
+    return [];
+  }
+}
+
+function videoDurationsForScene(scene: RenderScene, urlCount: number) {
+  const plannedDurations = parseShotPlanDurations(scene.shot_plan_json, urlCount);
+  if (plannedDurations.length) return plannedDurations;
+  return distributeDuration(scene.duration || 0, urlCount);
+}
+
+function narrationTempo(audioDuration: number, targetDuration: number) {
+  if (!Number.isFinite(audioDuration) || !Number.isFinite(targetDuration) || targetDuration <= 0) return undefined;
+  if (audioDuration <= targetDuration + 0.05) return undefined;
+  return Math.min(MAX_NARRATION_TEMPO, audioDuration / targetDuration);
+}
+
 function buildFilterGraph(params: {
   videoInputs: RenderInput[];
   audioInputs: RenderInput[];
   aspectRatio: AspectRatio;
 }) {
   const { width, height } = dimensionsForAspectRatio(params.aspectRatio);
-  const videoFilters = params.videoInputs.map((_, index) => (
-    `[${index}:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,fps=30,format=yuv420p[v${index}]`
-  ));
+  const videoFilters = params.videoInputs.map((input, index) => {
+    const durationFilter = input.duration
+      ? `,tpad=stop_mode=clone:stop_duration=${formatFilterNumber(input.duration)},trim=0:${formatFilterNumber(input.duration)},setpts=PTS-STARTPTS`
+      : '';
+    return `[${index}:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1${durationFilter},fps=30,format=yuv420p[v${index}]`;
+  });
   const videoConcat = `${params.videoInputs.map((_, index) => `[v${index}]`).join('')}concat=n=${params.videoInputs.length}:v=1:a=0[vout]`;
 
   if (!params.audioInputs.length) {
@@ -76,8 +128,9 @@ function buildFilterGraph(params: {
 
   const audioOffset = params.videoInputs.length;
   const audioFilters = params.audioInputs.map((input, index) => {
-    const duration = Math.max(2, Math.ceil(input.duration || 2));
-    return `[${audioOffset + index}:a]aresample=48000,apad,atrim=0:${duration},asetpts=PTS-STARTPTS[a${index}]`;
+    const targetDuration = Math.max(0.1, input.targetDuration || input.duration || 2);
+    const tempoFilter = input.tempo && input.tempo > 1.001 ? `,atempo=${formatFilterNumber(input.tempo)}` : '';
+    return `[${audioOffset + index}:a]aresample=48000${tempoFilter},apad,atrim=0:${formatFilterNumber(targetDuration)},asetpts=PTS-STARTPTS[a${index}]`;
   });
   const audioConcat = `${params.audioInputs.map((_, index) => `[a${index}]`).join('')}concat=n=${params.audioInputs.length}:v=0:a=1[aout]`;
 
@@ -123,28 +176,41 @@ export function buildFinalRenderPlan(params: {
   scenes: RenderScene[];
 }): FinalRenderPlan {
   const orderedScenes = [...params.scenes].sort((a, b) => a.scene_index - b.scene_index);
-  const videoInputs = orderedScenes.flatMap((scene) => parseSceneVideoUrls(scene.video_url).map((url) => {
-    const publicUrl = normalizePublicUrl(url);
-    return {
-      publicUrl,
-      filePath: publicUrlToFilePath(publicUrl),
-      sceneId: scene.id,
-    };
-  }));
+  const scenePlans = orderedScenes.map((scene) => {
+    const urls = parseSceneVideoUrls(scene.video_url);
+    const durations = videoDurationsForScene(scene, urls.length);
+    const videoInputs = urls.map((url, index) => {
+      const publicUrl = normalizePublicUrl(url);
+      return {
+        publicUrl,
+        filePath: publicUrlToFilePath(publicUrl),
+        sceneId: scene.id,
+        duration: durations[index],
+      };
+    });
+    const videoDuration = durations.reduce((total, duration) => total + duration, 0) || scene.duration || undefined;
+
+    return { scene, videoInputs, videoDuration };
+  });
+  const videoInputs = scenePlans.flatMap((scenePlan) => scenePlan.videoInputs);
 
   if (!videoInputs.length) {
     throw new Error('No generated video clips are available for final render.');
   }
 
-  const audioInputs = orderedScenes
-    .filter((scene) => scene.audio_url)
-    .map((scene) => {
-      const publicUrl = normalizePublicUrl(scene.audio_url || '');
+  const audioInputs = scenePlans
+    .filter((scenePlan) => scenePlan.scene.audio_url)
+    .map((scenePlan) => {
+      const publicUrl = normalizePublicUrl(scenePlan.scene.audio_url || '');
+      const audioDuration = scenePlan.scene.duration || scenePlan.videoDuration || 2;
+      const targetDuration = scenePlan.videoDuration || audioDuration;
       return {
         publicUrl,
         filePath: publicUrlToFilePath(publicUrl),
-        sceneId: scene.id,
-        duration: scene.duration || 2,
+        sceneId: scenePlan.scene.id,
+        duration: audioDuration,
+        targetDuration,
+        tempo: narrationTempo(audioDuration, targetDuration),
       };
     });
 

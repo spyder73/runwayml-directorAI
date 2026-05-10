@@ -1,4 +1,4 @@
-import { generateObject } from 'ai';
+import { generateObject, generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { z } from 'zod';
 
@@ -11,6 +11,17 @@ export type ShotPlan = {
   prompt: string;
 };
 
+const shotPlanSchema = z.object({
+  shots: z.array(z.object({
+    duration: z.number().describe('Duration in seconds (2 to 10)'),
+    prompt: z.string().describe('Cinematic prompt for this specific shot'),
+  })),
+});
+
+function clampShotDuration(duration: number) {
+  return Math.max(2, Math.min(10, Math.round(duration)));
+}
+
 function splitDurationIntoShots(durationSeconds: number) {
   const totalDuration = Math.max(2, Math.ceil(durationSeconds));
   const shotCount = Math.max(1, Math.ceil(totalDuration / 10));
@@ -20,8 +31,36 @@ function splitDurationIntoShots(durationSeconds: number) {
   return Array.from({ length: shotCount }, () => {
     const duration = baseDuration + (remainder > 0 ? 1 : 0);
     remainder -= 1;
-    return Math.max(2, Math.min(10, duration));
+    return clampShotDuration(duration);
   });
+}
+
+function rebalanceDurations(durations: number[], totalDuration: number) {
+  if (!durations.length) return null;
+  if (totalDuration < durations.length * 2 || totalDuration > durations.length * 10) return null;
+
+  const balanced = durations.map(clampShotDuration);
+  let delta = totalDuration - balanced.reduce((total, duration) => total + duration, 0);
+
+  while (delta !== 0) {
+    let adjusted = false;
+
+    for (let index = 0; index < balanced.length && delta !== 0; index += 1) {
+      if (delta > 0 && balanced[index] < 10) {
+        balanced[index] += 1;
+        delta -= 1;
+        adjusted = true;
+      } else if (delta < 0 && balanced[index] > 2) {
+        balanced[index] -= 1;
+        delta += 1;
+        adjusted = true;
+      }
+    }
+
+    if (!adjusted) return null;
+  }
+
+  return balanced;
 }
 
 export function normalizeShotPlan(
@@ -31,19 +70,99 @@ export function normalizeShotPlan(
 ): ShotPlan[] {
   const totalDuration = Math.max(2, Math.ceil(durationSeconds));
   const safePrompt = visualPrompt.trim() || 'Cinematic emotional memory scene.';
-  const boundedDurations = splitDurationIntoShots(totalDuration);
 
   if (!proposedShots?.length) {
+    const boundedDurations = splitDurationIntoShots(totalDuration);
     return boundedDurations.map((duration, index) => ({
       duration,
       prompt: index === 0 ? safePrompt : `${safePrompt} Alternate cinematic angle ${index + 1}.`,
     }));
   }
 
+  const usableShots = proposedShots.filter((shot) => shot.prompt?.trim());
+  const boundedDurations = rebalanceDurations(
+    usableShots.map((shot) => shot.duration),
+    totalDuration,
+  ) || splitDurationIntoShots(totalDuration);
+  const fallbackPrompt = usableShots[usableShots.length - 1]?.prompt?.trim() || safePrompt;
+
   return boundedDurations.map((duration, index) => ({
     duration,
-    prompt: proposedShots[index]?.prompt?.trim() || proposedShots[proposedShots.length - 1]?.prompt?.trim() || safePrompt,
+    prompt: usableShots[index]?.prompt?.trim() || fallbackPrompt,
   }));
+}
+
+function parseShotPlanJson(text: string) {
+  const candidates = [
+    text.trim(),
+    ...[...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((match) => match[1].trim()),
+  ];
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(text.slice(firstBrace, lastBrace + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = shotPlanSchema.safeParse(JSON.parse(candidate));
+      if (parsed.success) return parsed.data.shots;
+    } catch {}
+  }
+
+  return null;
+}
+
+function parseShotPlanProse(text: string) {
+  const pattern = /(?:^|\n)\s*Shot\s*\d+\s*(?:\((\d+(?:\.\d+)?)\s*(?:seconds?|s)\)|[-:]\s*(\d+(?:\.\d+)?)\s*(?:seconds?|s))\s*:?\s*/gi;
+  const matches = [...text.matchAll(pattern)];
+  if (!matches.length) return null;
+
+  const shots = matches.map((match, index) => {
+    const duration = Number(match[1] || match[2]);
+    const start = (match.index || 0) + match[0].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index || text.length : text.length;
+    const prompt = text
+      .slice(start, end)
+      .trim()
+      .split(/\n\s*\n/)[0]
+      .replace(/^[-*\s]+/, '')
+      .trim();
+
+    return { duration, prompt };
+  }).filter((shot) => Number.isFinite(shot.duration) && shot.prompt.length > 0);
+
+  return shots.length ? shots : null;
+}
+
+function extractProposedShotsFromText(text: string) {
+  return parseShotPlanJson(text) || parseShotPlanProse(text);
+}
+
+export function parseShotPlanResponseText(text: string, visualPrompt: string, durationSeconds: number) {
+  const proposedShots = extractProposedShotsFromText(text);
+  return normalizeShotPlan(visualPrompt, durationSeconds, proposedShots || undefined);
+}
+
+function extractAiResponseText(error: unknown) {
+  if (typeof error !== 'object' || error === null) return null;
+  const direct = (error as { text?: unknown }).text;
+  if (typeof direct === 'string') return direct;
+  const cause = (error as { cause?: unknown }).cause;
+  if (typeof cause === 'object' && cause !== null && typeof (cause as { text?: unknown }).text === 'string') {
+    return (cause as { text: string }).text;
+  }
+  return null;
+}
+
+async function repairShotPlanTextWithAi(text: string) {
+  const { text: repairedText } = await generateText({
+    model: openrouter('anthropic/claude-3-haiku'),
+    system: 'Convert shot-plan text into strict JSON. Return only JSON matching {"shots":[{"duration":number,"prompt":string}]}. Do not include markdown or commentary.',
+    prompt: text,
+  });
+
+  return extractProposedShotsFromText(repairedText);
 }
 
 export async function planShots(visualPrompt: string, durationSeconds: number) {
@@ -65,17 +184,27 @@ Since AI video generators work best between 2 to 10 seconds, you must break down
 Each shot must have a specific duration (between 2 and 10 seconds), and the sum of all shot durations must exactly equal the total duration provided.
 For each shot, provide a slightly adjusted cinematic prompt to reflect the camera angle or action (e.g. "Close up of...", "Wide shot of...").`,
       prompt: `Visual Description: ${visualPrompt}\nTotal Duration: ${durationSeconds.toFixed(1)} seconds. Break this down into shots.`,
-      schema: z.object({
-        shots: z.array(z.object({
-          duration: z.number().describe('Duration in seconds (2 to 10)'),
-          prompt: z.string().describe('Cinematic prompt for this specific shot')
-        }))
-      })
+      schema: shotPlanSchema,
     });
     
     return normalizeShotPlan(visualPrompt, durationSeconds, object.shots);
   } catch (error) {
-    console.error('Error planning shots:', error);
+    const responseText = extractAiResponseText(error);
+    if (responseText) {
+      const parsedShots = extractProposedShotsFromText(responseText);
+      if (parsedShots?.length) {
+        return normalizeShotPlan(visualPrompt, durationSeconds, parsedShots);
+      }
+
+      try {
+        const repairedShots = await repairShotPlanTextWithAi(responseText);
+        if (repairedShots?.length) {
+          return normalizeShotPlan(visualPrompt, durationSeconds, repairedShots);
+        }
+      } catch {}
+    }
+
+    console.warn('Shot planner received invalid structured output; using deterministic fallback.');
     return normalizeShotPlan(visualPrompt, durationSeconds);
   }
 }
