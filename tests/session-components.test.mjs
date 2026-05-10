@@ -63,6 +63,19 @@ test('treatment review uses explicit actions and disables free chat decisions', 
   assert.match(pageSource, /I approve this film treatment/);
 });
 
+test('approving a treatment shows drafting animation until the film shape appears', () => {
+  const cardSource = fs.readFileSync(new URL('../src/components/session/FilmTreatmentCard.tsx', import.meta.url), 'utf8');
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(cardSource, /isDrafting/);
+  assert.match(cardSource, /Drafting film shape/i);
+  assert.match(cardSource, /animate-spin/);
+  assert.match(pageSource, /isDraftingOutline/);
+  assert.match(pageSource, /isDraftingFilmShape/);
+  assert.match(pageSource, /setIsDraftingOutline\(true\)/);
+  assert.match(pageSource, /!hasSceneOutline/);
+});
+
 test('director route can revise a single generated sub-scene prompt', () => {
   const source = fs.readFileSync(new URL('../src/app/api/pipeline/director/route.ts', import.meta.url), 'utf8');
 

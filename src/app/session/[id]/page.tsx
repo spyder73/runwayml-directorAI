@@ -31,6 +31,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDraftingOutline, setIsDraftingOutline] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
 
@@ -150,6 +151,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   };
 
   const handleAcceptTreatment = async () => {
+    setIsDraftingOutline(true);
     await handleSendMessage(undefined, 'I approve this film treatment. Please draft the scene outline now.');
   };
 
@@ -250,10 +252,14 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const hasUnlockedOutline = Boolean(storyBucket?.sceneOutline.some((scene) => scene.status !== 'locked'));
   const hasTreatmentAwaitingDecision = Boolean(storyBucket?.treatment && !hasUnlockedOutline && !productionStarted && !showReferenceRequest);
   const hasOutlineAwaitingDecision = Boolean(hasUnlockedOutline && session.status === 'OUTLINE_REVIEW' && !showReferenceRequest);
-  const freeChatDisabled = isUploading || isSending || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision;
+  const hasSceneOutline = (storyBucket?.sceneOutline.length || 0) > 0;
+  const isDraftingFilmShape = isDraftingOutline && !hasSceneOutline && !showReferenceRequest && !pipelineError && !productionStarted;
+  const freeChatDisabled = isUploading || isSending || isDraftingFilmShape || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision;
   const inputPlaceholder = showReferenceRequest
     ? 'Upload, describe, or skip the reference...'
-    : hasTreatmentAwaitingDecision
+    : isDraftingFilmShape
+      ? 'Drafting the film shape...'
+      : hasTreatmentAwaitingDecision
       ? 'Approve or revise the treatment above...'
       : hasOutlineAwaitingDecision
         ? 'Use the outline notes or approve it above...'
@@ -292,7 +298,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           <FilmTreatmentCard
             treatment={storyBucket?.treatment || null}
             isActionable={hasTreatmentAwaitingDecision}
-            isBusy={isSending}
+            isBusy={isSending || isDraftingFilmShape}
+            isDrafting={isDraftingFilmShape}
             onAccept={handleAcceptTreatment}
             onRequestChanges={handleTreatmentRevision}
           />
