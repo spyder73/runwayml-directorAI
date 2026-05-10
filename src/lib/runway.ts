@@ -16,7 +16,8 @@ type AspectRatio = '16:9' | '9:16';
 type MediaType = 'image' | 'audio' | 'video';
 type RunwayTaskOutput = { output: string[] };
 type GptImageQuality = 'low' | 'medium' | 'high' | 'auto';
-type RunwayImageToVideoModel = 'gen4_turbo' | 'gen4.5' | 'seedance2';
+type RunwayVideoRatio = '720:1280' | '1280:720' | '1080:1920' | '1920:1080';
+type RunwayImageToVideoModel = 'gen4_turbo' | 'gen4.5' | 'seedance2' | 'veo3.1_fast' | string;
 
 export type GeneratedAsset = {
   remoteUrl: string;
@@ -38,6 +39,14 @@ type GptImage2CreateParams = {
   referenceImages?: RunwayReferenceImage[];
 };
 
+type ImageToVideoCreateParams = {
+  model: RunwayImageToVideoModel;
+  promptImage: Array<{ uri: string; position: 'first' }>;
+  ratio: RunwayVideoRatio;
+  promptText: string;
+  duration: number;
+};
+
 const runway = new RunwayML({
   apiKey: process.env.RUNWAYML_API_SECRET || '',
 });
@@ -47,6 +56,13 @@ const runwayUploadCache = new Map<string, Promise<string>>();
 type TextToImageResource = {
   create: (
     body: GptImage2CreateParams,
+    options?: { timeout?: number },
+  ) => Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>;
+};
+
+type ImageToVideoResource = {
+  create: (
+    body: ImageToVideoCreateParams,
     options?: { timeout?: number },
   ) => Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>;
 };
@@ -85,6 +101,49 @@ export function imageRatio(aspectRatio: AspectRatio): GptImage2CreateParams['rat
 
 export function videoRatio(aspectRatio: AspectRatio) {
   return aspectRatio === '9:16' ? '720:1280' : '1280:720';
+}
+
+function isVeo31Model(model: string) {
+  return model.startsWith('veo3.1');
+}
+
+export function runwayVideoRatio(model: string, ratio: ReturnType<typeof videoRatio>): RunwayVideoRatio {
+  if (!isVeo31Model(model)) return ratio;
+  return ratio === '720:1280' ? '1080:1920' : '1920:1080';
+}
+
+export function runwayVideoDuration(model: string, duration: number) {
+  if (!isVeo31Model(model)) {
+    return Math.max(2, Math.min(10, Math.ceil(duration)));
+  }
+
+  const allowedDurations = [4, 6, 8];
+  return allowedDurations.reduce((nearest, candidate) => {
+    const currentDistance = Math.abs(nearest - duration);
+    const candidateDistance = Math.abs(candidate - duration);
+    if (candidateDistance < currentDistance) return candidate;
+    if (candidateDistance === currentDistance && candidate > nearest) return candidate;
+    return nearest;
+  }, allowedDurations[0]);
+}
+
+export function createImageToVideoTask(
+  resource: ImageToVideoResource,
+  params: {
+    model: string;
+    promptImageUri: string;
+    promptText: string;
+    ratio: ReturnType<typeof videoRatio>;
+    duration: number;
+  },
+) {
+  return resource.create({
+    model: params.model,
+    promptImage: [{ uri: params.promptImageUri, position: 'first' }],
+    ratio: runwayVideoRatio(params.model, params.ratio),
+    promptText: params.promptText,
+    duration: runwayVideoDuration(params.model, params.duration),
+  }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
 }
 
 export async function loadReferenceImage(filePath: string, tag?: string): Promise<RunwayReferenceImage> {
@@ -280,14 +339,16 @@ export async function generateVideoAsset(params: {
 }) {
   requireRunwayApiKey();
   const promptImageUri = await uploadLocalAssetForRunway(params.promptImageUrl);
+  const model = getRunwayVideoModel();
+  const imageToVideoResource = runway.imageToVideo as unknown as ImageToVideoResource;
   const task = await waitForOutput(
-    retryTaskCreation('Runway video', () => runway.imageToVideo.create({
-      model: getRunwayVideoModel() as RunwayImageToVideoModel,
-      promptImage: [{ uri: promptImageUri, position: 'first' }],
-      ratio: params.ratio,
+    retryTaskCreation('Runway video', () => createImageToVideoTask(imageToVideoResource, {
+      model,
+      promptImageUri,
       promptText: params.promptText,
-      duration: Math.max(2, Math.min(10, Math.ceil(params.duration))),
-    }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS })),
+      ratio: params.ratio,
+      duration: params.duration,
+    })),
     'Runway video generation',
   );
 

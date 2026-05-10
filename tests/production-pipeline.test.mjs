@@ -117,9 +117,45 @@ test('Runway video model can be configured from the environment', () => {
   const { DEFAULT_VIDEO_MODEL, getRunwayVideoModel } = jiti('../src/lib/production-config.ts');
 
   assert.equal(getRunwayVideoModel({}), DEFAULT_VIDEO_MODEL);
+  assert.equal(getRunwayVideoModel({ video_model: 'veo3.1_fast' }), 'veo3.1_fast');
   assert.equal(getRunwayVideoModel({ video_model: 'gen4_aleph' }), 'gen4_aleph');
   assert.equal(getRunwayVideoModel({ VIDEO_MODEL: 'gen4_turbo' }), 'gen4_turbo');
   assert.equal(getRunwayVideoModel({ RUNWAY_VIDEO_MODEL: 'gen4_aleph' }), 'gen4_aleph');
+});
+
+test('Runway video task helper normalizes Veo 3.1 Fast payload constraints', async () => {
+  const {
+    createImageToVideoTask,
+    runwayVideoDuration,
+    runwayVideoRatio,
+  } = jiti('../src/lib/runway.ts');
+  const { RUNWAY_TASK_CREATE_TIMEOUT_MS } = jiti('../src/lib/production-config.ts');
+  const resource = {
+    create(body, options) {
+      assert.equal(body.model, 'veo3.1_fast');
+      assert.equal(body.ratio, '1080:1920');
+      assert.equal(body.duration, 6);
+      assert.equal(options.timeout, RUNWAY_TASK_CREATE_TIMEOUT_MS);
+      return Promise.resolve({ id: 'task-1' });
+    },
+  };
+
+  assert.equal(runwayVideoDuration('veo3.1_fast', 3.1), 4);
+  assert.equal(runwayVideoDuration('veo3.1_fast', 5), 6);
+  assert.equal(runwayVideoDuration('veo3.1_fast', 7.2), 8);
+  assert.equal(runwayVideoDuration('veo3.1_fast', 9.8), 8);
+  assert.equal(runwayVideoRatio('veo3.1_fast', '720:1280'), '1080:1920');
+  assert.equal(runwayVideoRatio('veo3.1_fast', '1280:720'), '1920:1080');
+
+  const task = await createImageToVideoTask(resource, {
+    model: 'veo3.1_fast',
+    promptImageUri: 'runway://asset',
+    promptText: 'The camera slowly drifts forward.',
+    ratio: '720:1280',
+    duration: 5,
+  });
+
+  assert.equal(task.id, 'task-1');
 });
 
 test('Runway image task helper preserves the SDK resource client binding', async () => {
