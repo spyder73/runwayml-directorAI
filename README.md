@@ -25,8 +25,10 @@ To run this project locally for testing:
    ```env
    OPENROUTER_API_KEY=your_openrouter_api_key
    RUNWAYML_API_SECRET=your_runwayml_api_secret
+   CREDENTIAL_ENCRYPTION_KEY=base64-encoded-32-byte-key
    ```
    Generated reference frames are persisted locally and uploaded to Runway through temporary SDK uploads before video generation.
+   Generate the credential encryption key with `openssl rand -base64 32`.
 
 3. **Run the Development Server:**
    ```bash

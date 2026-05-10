@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, use } from 'react';
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Camera, Film, Send, X } from 'lucide-react';
+import { Camera, Film, Send, Settings, X } from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 import InterviewChat from '@/components/session/InterviewChat';
 import FilmTreatmentCard from '@/components/session/FilmTreatmentCard';
@@ -11,6 +11,7 @@ import MemorySketchCard from '@/components/session/MemorySketchCard';
 import ProductionProgress from '@/components/session/ProductionProgress';
 import ReferenceUploadRequest from '@/components/session/ReferenceUploadRequest';
 import SceneOutlineReview from '@/components/session/SceneOutlineReview';
+import SettingsModal from '@/components/session/SettingsModal';
 import type {
   ChatHistoryRow,
   MemoryCandidateRow,
@@ -43,6 +44,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [renderProgress, setRenderProgress] = useState<RenderProgressPayload | null>(null);
   const [modalImage, setModalImage] = useState<string | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -289,6 +291,14 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           <Film size={18} />
           <span className="font-mono text-xs uppercase tracking-[0.3em]">Lifestory</span>
         </div>
+        <button
+          type="button"
+          onClick={() => setIsSettingsOpen(true)}
+          className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+          aria-label="Open settings"
+        >
+          <Settings size={18} />
+        </button>
       </header>
 
       <div className={`relative z-[1] flex flex-1 flex-col overflow-y-auto px-4 pt-24 md:px-20 ${showReferenceRequest && !isReferenceDescribeDraft ? 'pb-80 md:pb-72' : 'pb-36'}`}>
@@ -424,6 +434,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           </motion.div>
         )}
       </AnimatePresence>
+
+      <SettingsModal open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </main>
   );
 }
