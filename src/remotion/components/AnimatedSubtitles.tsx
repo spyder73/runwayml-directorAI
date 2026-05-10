@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
 import { useCurrentFrame, useVideoConfig, spring, interpolate } from 'remotion';
 
-export const AnimatedSubtitles: React.FC<{ text: string }> = ({ text }) => {
+export const AnimatedSubtitles: React.FC<{ text: string; durationInFrames: number }> = ({ text, durationInFrames }) => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames } = useVideoConfig();
+  const { fps } = useVideoConfig();
 
   // Split text into words
   const words = useMemo(() => text.split(' ').filter(Boolean), [text]);

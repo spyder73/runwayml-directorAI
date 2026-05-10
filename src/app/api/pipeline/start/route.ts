@@ -20,17 +20,19 @@ export async function POST(req: NextRequest) {
     const msgId = uuidv4();
     const firstMessage = mode === 'single_memory'
       ? 'Hello. I am the Director. You can add a protagonist reference now if you want yourself to appear more faithfully, or skip it. Tell me the memory you want to turn into a short film. What happened, and why does it still stay with you?'
-      : 'Hello. I am the Director. You can add a protagonist reference now if you want yourself to appear more faithfully, or skip it. Let us start simply: what is your name and age?';
+      : 'Hi, I am Nico Hale, your content director. I am 46, and I spent years turning half-remembered family stories into films over extremely bad coffee. We will keep this simple. To begin, what is your name, your age, what do you do, and where do you live now?';
     db.prepare('INSERT INTO chat_history (id, session_id, role, content) VALUES (?, ?, ?, ?)')
       .run(msgId, sessionId, 'assistant', firstMessage);
 
-    createReferenceUploadRequest(db, sessionId, {
-      targetType: 'protagonist',
-      targetLabel: 'you',
-      promptText: 'Would you like to add a protagonist reference photo? It is completely optional.',
-      reason: 'This helps keep you visually consistent if you appear in the film.',
-      fallbackPrompt: 'No problem if you would rather not upload one. You can describe how you should appear instead.',
-    }, { updateSessionStatus: false });
+    if (mode === 'single_memory') {
+      createReferenceUploadRequest(db, sessionId, {
+        targetType: 'protagonist',
+        targetLabel: 'you',
+        promptText: 'Would you like to add a protagonist reference photo? It is completely optional.',
+        reason: 'This helps keep you visually consistent if you appear in the film.',
+        fallbackPrompt: 'No problem if you would rather not upload one. You can describe how you should appear instead.',
+      }, { updateSessionStatus: false });
+    }
 
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow;
     const history = db.prepare('SELECT * FROM chat_history WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ChatHistoryRow[];

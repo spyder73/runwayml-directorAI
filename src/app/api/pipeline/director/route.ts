@@ -3,9 +3,10 @@ import { generateText, tool } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import db from '@/lib/db';
 import { broadcastSessionUpdate } from '@/lib/sse';
-import { generateImagesPhase } from '@/lib/pipeline_final';
+import { runFrameGenerationPhase, runMediaGenerationPhase } from '@/lib/pipeline_media';
+import { requeueMediaTasks } from '@/lib/media-tasks';
 import { z } from 'zod';
-import type { SceneRow } from '@/lib/types';
+import type { SceneRow, SessionRow } from '@/lib/types';
 
 const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest) {
     }
 
     const scenes = getSessionScenes(sessionId);
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
+    const isFrameReview = session?.mode === 'life_story' && session.status === 'AWAITING_APPROVAL';
     
     // Vercel AI SDK with Tools for MCP simulation
     const { text, toolCalls } = await generateText({
@@ -48,7 +51,7 @@ ${JSON.stringify(scenes, null, 2)}
 
 User Request: "${message}"
 
-If you need to change a scene, use the \`update_scene_prompt\` tool to change the visual prompt. Then I will regenerate the video.
+If you need to change a scene, use the \`update_scene_prompt\` tool to change the visual prompt. ${isFrameReview ? 'We are still reviewing generated still frames, so revise the still-frame direction before motion generation.' : 'Then I will regenerate the video.'}
 If it's just a general chat, reply naturally.
 `,
       tools: {
@@ -73,8 +76,33 @@ If it's just a general chat, reply naturally.
             continue;
           }
 
-          db.prepare('UPDATE scenes SET visual_prompt = ?, status = ?, video_url = NULL WHERE id = ?')
-            .run(args.new_visual_prompt, 'generating_video', sceneId);
+          if (isFrameReview) {
+            db.prepare(`
+              UPDATE scenes
+              SET visual_prompt = ?,
+                  image_prompt = ?,
+                  video_prompt = ?,
+                  reference_image_url = NULL,
+                  video_url = NULL,
+                  audio_url = NULL,
+                  shot_plan_json = NULL,
+                  status = 'pending',
+                  last_failure = NULL
+              WHERE id = ?
+            `).run(args.new_visual_prompt, args.new_visual_prompt, args.new_visual_prompt, sceneId);
+            requeueMediaTasks(db, { sessionId, sceneId, kind: 'generate_scene_frame', clearOutput: true });
+            requeueMediaTasks(db, { sessionId, sceneId, kind: 'generate_narration', clearOutput: true });
+            requeueMediaTasks(db, { sessionId, sceneId, kind: 'generate_video_shot', clearOutput: true });
+          } else {
+            db.prepare('UPDATE scenes SET visual_prompt = ?, video_prompt = ?, status = ?, video_url = NULL, shot_plan_json = NULL WHERE id = ?')
+              .run(args.new_visual_prompt, args.new_visual_prompt, 'video_failed', sceneId);
+            requeueMediaTasks(db, {
+              sessionId,
+              sceneId,
+              kind: 'generate_video_shot',
+              clearOutput: true,
+            });
+          }
         }
       }
       
@@ -82,9 +110,12 @@ If it's just a general chat, reply naturally.
       broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
       // Triggers regeneration for that scene in background
-      generateImagesPhase(sessionId).catch(console.error);
+      const runner = isFrameReview ? runFrameGenerationPhase : runMediaGenerationPhase;
+      runner(sessionId).catch(console.error);
 
-      responseText = `I am adjusting the scenes as requested. Let's see how this new cut looks.`;
+      responseText = isFrameReview
+        ? 'I am adjusting that still frame now. Once it feels right, we can move into motion.'
+        : `I am adjusting the scenes as requested. Let's see how this new cut looks.`;
     }
 
     return NextResponse.json({ response: responseText });

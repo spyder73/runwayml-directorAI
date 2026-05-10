@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { motion } from 'framer-motion';
+import { splitVisibleMessageContent } from '@/lib/chat-display';
 import type { ChatHistoryRow } from '@/lib/types';
 
 type InterviewChatProps = {
@@ -14,31 +15,24 @@ type InterviewChatProps = {
 function MessageContent({ content, onOpenImage }: { content: string; onOpenImage: (url: string) => void }) {
   const elements: React.ReactNode[] = [];
 
-  content.split('\n').forEach((line, index) => {
-    if (line.includes('trying to generate an image of your memory..')) return;
-    if (line.startsWith('*User uploaded') || line.startsWith('*Vision Analysis:')) return;
-
-    const imageMatch = line.match(/\[(?:Mockup|Image|Sketch):\s([^\]]+)\]/);
-    if (imageMatch) {
-      const url = imageMatch[1];
+  splitVisibleMessageContent(content).forEach((part, index) => {
+    if (part.type === 'image') {
       elements.push(
         <button
           key={`img-${index}`}
           type="button"
-          onClick={() => onOpenImage(url)}
+          onClick={() => onOpenImage(part.url)}
           className="my-6 block w-full max-w-lg overflow-hidden rounded-xl border border-white/10 bg-black/40 text-left shadow-[0_10px_40px_rgba(0,0,0,0.5)]"
         >
           <span className="relative block aspect-video w-full">
-            <Image src={url} alt="Memory sketch" fill className="object-cover" unoptimized />
+            <Image src={part.url} alt="Uploaded reference" fill className="object-cover" unoptimized />
           </span>
         </button>,
       );
       return;
     }
 
-    if (line.trim()) {
-      elements.push(<span key={`text-${index}`} className="block mb-4 last:mb-0">{line}</span>);
-    }
+    elements.push(<span key={`text-${index}`} className="block mb-4 last:mb-0">{part.text}</span>);
   });
 
   return elements;

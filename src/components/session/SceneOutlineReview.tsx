@@ -68,7 +68,7 @@ export default function SceneOutlineReview({ scenes, onComment, onLock }: SceneO
           onClick={onLock}
           className="inline-flex items-center gap-3 rounded-full bg-white px-8 py-4 font-mono text-xs font-bold uppercase tracking-widest text-black shadow-[0_0_30px_rgba(255,255,255,0.25)] transition-colors hover:bg-amber-100"
         >
-          <Check size={18} /> Approve outline
+          <Check size={18} /> Approve outline and generate stills
         </button>
       </div>
     </section>

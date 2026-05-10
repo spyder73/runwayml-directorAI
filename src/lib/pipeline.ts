@@ -3,11 +3,12 @@ import { broadcastSessionUpdate } from './sse';
 import { generateText, streamText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { v4 as uuidv4 } from 'uuid';
-import { generateImagesPhase } from './pipeline_final';
+import { runFrameGenerationPhase, runMediaGenerationPhase } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
 import { buildDirectorContinuationPrompt } from './director-continuation';
 import {
   aiTools,
+  filmTreatmentSchema,
   getToolCall,
   lockSceneOutlineSchema,
   memorySketchSchema,
@@ -20,6 +21,8 @@ import {
 } from './ai/tools';
 import { buildInterviewSystemPrompt } from './ai/prompts';
 import { generateImageAsset, imageRatio } from './runway';
+import { SKETCH_IMAGE_QUALITY } from './production-config';
+import { evaluateLifeStoryOutlineReadiness } from './story-readiness';
 import {
   applyProfileBucketUpdate,
   createReferenceAsset,
@@ -28,6 +31,7 @@ import {
   hasProtagonistReferenceDecision,
   loadStoryBucket,
   lockSceneOutlineForProduction,
+  proposeFilmTreatment,
   proposeSceneOutline,
   recordMemorySketch,
   reviseSceneOutline,
@@ -65,12 +69,18 @@ export function formatStoryBucketForPrompt(bucket: StoryBucket) {
     const profileBits = [
       bucket.profile.protagonist_name ? `name: ${bucket.profile.protagonist_name}` : '',
       bucket.profile.age ? `age: ${bucket.profile.age}` : '',
+      bucket.profile.profession ? `profession: ${bucket.profile.profession}` : '',
+      bucket.profile.current_location ? `current place: ${bucket.profile.current_location}` : '',
       bucket.profile.life_phase ? `phase: ${bucket.profile.life_phase}` : '',
       bucket.profile.emotional_tone ? `tone: ${bucket.profile.emotional_tone}` : '',
       bucket.profile.summary ? `summary: ${bucket.profile.summary}` : '',
       formatJsonList(bucket.profile.themes_json) ? `themes: ${formatJsonList(bucket.profile.themes_json)}` : '',
     ].filter(Boolean).join('; ');
     if (profileBits) parts.push(`Profile: ${profileBits}`);
+  }
+
+  if (bucket.treatment) {
+    parts.push(`Film treatment: ${bucket.treatment.title}; thesis: ${bucket.treatment.emotional_thesis}; arc: ${bucket.treatment.narrative_arc}; motif: ${bucket.treatment.visual_motif}; narrator style: ${bucket.treatment.narrator_style}; ending: ${bucket.treatment.ending_feeling}`);
   }
 
   if (bucket.entities.length) {
@@ -103,7 +113,13 @@ function advanceInterviewStatus(session: SessionRow, bucket: StoryBucket) {
       return;
     }
 
-    if (session.mode === 'life_story' && bucket.profile?.protagonist_name && bucket.profile?.age) {
+    if (
+      session.mode === 'life_story'
+      && bucket.profile?.protagonist_name
+      && bucket.profile?.age
+      && bucket.profile?.profession
+      && bucket.profile?.current_location
+    ) {
       db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('INTERVIEW_PSYCH_PROFILE', session.id);
       return;
     }
@@ -126,7 +142,46 @@ function getFullSessionUpdate(sessionId: string) {
 
 function protagonistReferencePrompt(session: SessionRow) {
   const name = session.user_name || 'you';
-  return `Before I sketch scenes with ${name} on screen, would you like to add a protagonist reference photo? It is completely optional. You can upload one, describe how ${name} should appear, or skip it and I will keep the scene less dependent on likeness.`;
+  return `If you are comfortable with it, you can add a selfie now so I can keep ${name} visually consistent in the film. Drop a photo into the upload box, describe yourself instead, or skip it.`;
+}
+
+function hasBasicLifeStoryProfile(bucket: StoryBucket) {
+  return Boolean(
+    bucket.profile?.protagonist_name
+    && bucket.profile?.age
+    && bucket.profile?.profession
+    && bucket.profile?.current_location,
+  );
+}
+
+function hasLifePathContext(bucket: StoryBucket) {
+  return Boolean(
+    bucket.timelineEvents.length > 0
+    || bucket.memoryCandidates.length > 0
+    || (bucket.profile?.summary && bucket.profile.summary.length > 40),
+  );
+}
+
+function maybeRequestLifeStorySelfie(session: SessionRow, bucket: StoryBucket) {
+  if (session.mode !== 'life_story') return null;
+  if (!hasBasicLifeStoryProfile(bucket) || !hasLifePathContext(bucket)) return null;
+  if (hasProtagonistReferenceDecision(db, session.id)) return null;
+
+  const active = getActiveReferenceRequest(db, session.id);
+  if (active?.target_type === 'protagonist' && active.reference_scope !== 'scene') {
+    return active.prompt_text;
+  }
+
+  const promptText = protagonistReferencePrompt(session);
+  const request = createReferenceUploadRequest(db, session.id, {
+    targetType: 'protagonist',
+    targetLabel: session.user_name || bucket.profile?.protagonist_name || 'you',
+    promptText,
+    reason: 'This helps keep you visually consistent in generated scenes, but it is optional.',
+    fallbackPrompt: 'No problem if you would rather not upload one. You can describe how you should appear instead.',
+  });
+
+  return request ? promptText : null;
 }
 
 async function generateDirectorContinuation(sessionId: string, messages: InterviewMessage[]) {
@@ -225,11 +280,14 @@ export async function processInterviewTurn(sessionId: string) {
            const args = updateProfileBucketSchema.parse(call.input);
            const updatedBucket = applyProfileBucketUpdate(db, sessionId, args);
            advanceInterviewStatus(session, updatedBucket);
-           finalReply = text || args.directorReply || finalReply;
+           const selfiePrompt = maybeRequestLifeStorySelfie(session, updatedBucket);
+           finalReply = selfiePrompt || text || args.directorReply || finalReply;
         } else if (call.toolName === 'request_reference_upload') {
            const args = requestReferenceUploadSchema.parse(call.input);
-           createReferenceUploadRequest(db, sessionId, args);
-           finalReply = text || args.promptText;
+           const request = createReferenceUploadRequest(db, sessionId, args);
+           finalReply = request
+             ? (text || args.promptText)
+             : (text || 'I already have the protagonist reference, so I will keep using that unless we need a specific scene-era image later. What should we explore next?');
         } else if (call.toolName === 'save_reference_description') {
            const args = saveReferenceDescriptionSchema.parse(call.input);
            saveReferenceDescription(db, sessionId, args);
@@ -277,7 +335,7 @@ export async function processInterviewTurn(sessionId: string) {
            try {
              const imageAsset = await generateImageAsset({
                promptText: args.visualPrompt,
-               quality: 'low',
+               quality: SKETCH_IMAGE_QUALITY,
                ratio: imageRatio(session.aspect_ratio),
                sessionId,
              });
@@ -319,8 +377,25 @@ export async function processInterviewTurn(sessionId: string) {
            const args = saveSketchFeedbackSchema.parse(call.input);
            saveSketchFeedback(db, sessionId, args);
            finalReply = text || args.directorReply || finalReply;
+        } else if (call.toolName === 'propose_film_treatment') {
+           const args = filmTreatmentSchema.parse(call.input);
+           proposeFilmTreatment(db, sessionId, args);
+           finalReply = text || args.directorReply || finalReply;
         } else if (call.toolName === 'propose_scene_outline') {
            const args = proposeSceneOutlineSchema.parse(call.input);
+           const bucketBeforeOutline = loadStoryBucket(db, sessionId);
+           if (!bucketBeforeOutline.treatment) {
+             finalReply = text || 'Before I turn this into scenes, I want to shape the film treatment first: the title, emotional thesis, arc, visual motif, narrator style, ending feeling, and what to avoid. What should this short film feel like at the end?';
+             continue;
+           }
+           if (session.mode === 'life_story') {
+             const readiness = evaluateLifeStoryOutlineReadiness(bucketBeforeOutline);
+             if (!readiness.ready) {
+               finalReply = text || readiness.nextQuestion;
+               continue;
+             }
+           }
+
            const needsProtagonistReference = args.scenes.some((scene) => scene.protagonistVisible !== false);
            if (needsProtagonistReference && !hasProtagonistReferenceDecision(db, sessionId)) {
              createReferenceUploadRequest(db, sessionId, {
@@ -345,7 +420,8 @@ export async function processInterviewTurn(sessionId: string) {
            lockSceneOutlineForProduction(db, sessionId);
 
             // Fire off phase 1 of generation (Images only)
-            generateImagesPhase(sessionId).catch(console.error);
+            const runner = session.mode === 'life_story' ? runFrameGenerationPhase : runMediaGenerationPhase;
+            runner(sessionId).catch(console.error);
 
             const productionMessage = "Perfect. I am moving from outline into production now. You will see each scene come to life as the cut takes shape.";
             finalReply = text ? `${text}\n\n${productionMessage}` : productionMessage;

@@ -1,14 +1,25 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
-import { generateImagesPhase, generateVideoAudioPhase } from '@/lib/pipeline_final';
+import { runFinalAssetsPhase, runFinalRenderPhase, runFrameGenerationPhase, runMediaGenerationPhase } from '@/lib/pipeline_media';
 import { broadcastSessionUpdate } from '@/lib/sse';
-import type { SceneRow } from '@/lib/types';
+import { resetFailedMediaTasks, type MediaTaskKind } from '@/lib/media-tasks';
+import type { SceneRow, SessionRow } from '@/lib/types';
+
+type RetryUnit = 'image' | 'audio' | 'video' | 'render';
 
 export async function POST(req: Request) {
   try {
-    const { sessionId } = await req.json() as { sessionId?: string };
+    const { sessionId, unit, sceneId } = await req.json() as { sessionId?: string; unit?: RetryUnit; sceneId?: string };
     if (!sessionId) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
+    }
+
+    if (unit === 'render') {
+      resetFailedMediaTasks(db, { sessionId, kind: 'render_final' });
+      runFinalRenderPhase(sessionId).catch((error) => {
+        console.error('Final render retry failed:', error);
+      });
+      return NextResponse.json({ success: true });
     }
 
     const scenes = db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[];
@@ -16,22 +27,75 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No scenes to retry' }, { status: 400 });
     }
 
-    const needsImages = scenes.some((scene) => !scene.reference_image_url || scene.status === 'generating_image' || scene.status === 'failed');
+    if (unit && sceneId) {
+      if (unit === 'image') {
+        resetFailedMediaTasks(db, { sessionId, sceneId, kind: 'generate_scene_frame' });
+        db.prepare(`
+          UPDATE scenes
+          SET reference_image_url = NULL, status = 'pending', last_failure = NULL
+          WHERE id = ? AND session_id = ?
+        `).run(sceneId, sessionId);
+      } else if (unit === 'audio') {
+        resetFailedMediaTasks(db, { sessionId, sceneId, kind: 'generate_narration' });
+        db.prepare(`
+          UPDATE scenes
+          SET audio_url = NULL, status = 'audio_failed', last_failure = NULL
+          WHERE id = ? AND session_id = ?
+        `).run(sceneId, sessionId);
+      } else if (unit === 'video') {
+        resetFailedMediaTasks(db, { sessionId, sceneId, kind: 'generate_video_shot' });
+        db.prepare(`
+          UPDATE scenes
+          SET video_url = NULL, shot_plan_json = NULL, status = 'video_failed', last_failure = NULL
+          WHERE id = ? AND session_id = ?
+        `).run(sceneId, sessionId);
+      }
+    } else {
+      ([
+        'generate_scene_frame',
+        'generate_narration',
+        'generate_video_shot',
+        'render_final',
+      ] as MediaTaskKind[]).forEach((kind) => resetFailedMediaTasks(db, { sessionId, kind }));
+      db.prepare(`
+        UPDATE scenes
+        SET status = CASE
+              WHEN status IN ('image_failed', 'failed') AND reference_image_url IS NULL THEN 'pending'
+              WHEN status = 'audio_failed' THEN 'audio_failed'
+              WHEN status = 'video_failed' THEN 'video_failed'
+              ELSE status
+            END,
+            last_failure = NULL
+        WHERE session_id = ?
+          AND status IN ('failed', 'image_failed', 'audio_failed', 'video_failed')
+      `).run(sessionId);
+    }
+
+    const refreshedScenes = db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[];
+    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
+    const needsImages = refreshedScenes.some((scene) => !scene.reference_image_url || scene.status === 'generating_image' || scene.status === 'image_failed' || scene.status === 'pending');
+    const hasMediaFailures = refreshedScenes.some((scene) => scene.status === 'audio_failed' || scene.status === 'video_failed');
+
+    if (!unit && !needsImages && !hasMediaFailures && refreshedScenes.every((scene) => scene.video_url)) {
+      runFinalRenderPhase(sessionId).catch((error) => {
+        console.error('Final render retry failed:', error);
+      });
+      return NextResponse.json({ success: true });
+    }
+
     const nextStatus = needsImages ? 'GENERATING_IMAGES' : 'GENERATING_FINAL_ASSETS';
 
     db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(nextStatus, sessionId);
-    db.prepare('UPDATE scenes SET status = ? WHERE session_id = ? AND status = ?')
-      .run('pending', sessionId, 'failed');
     broadcastSessionUpdate(sessionId, {
       status: nextStatus,
       scenes: db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[],
     });
 
-    if (needsImages) {
-      generateImagesPhase(sessionId).catch(console.error);
-    } else {
-      generateVideoAudioPhase(sessionId).catch(console.error);
-    }
+    const runner = session?.mode === 'life_story'
+      ? (needsImages ? runFrameGenerationPhase : runFinalAssetsPhase)
+      : runMediaGenerationPhase;
+
+    runner(sessionId).catch(console.error);
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

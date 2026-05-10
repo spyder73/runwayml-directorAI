@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { generateVideoAudioPhase } from '@/lib/pipeline_final';
+import { runFinalAssetsPhase } from '@/lib/pipeline_media';
 
 export async function POST(req: Request) {
   try {
@@ -8,7 +8,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
     }
 
-    generateVideoAudioPhase(sessionId).catch(console.error);
+    runFinalAssetsPhase(sessionId).catch(console.error);
 
     return NextResponse.json({ success: true });
   } catch (error) {

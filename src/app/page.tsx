@@ -1,14 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Film, Smartphone } from 'lucide-react';
+import { Clapperboard, Film, Smartphone } from 'lucide-react';
 
 export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
+  const [readiness, setReadiness] = useState<{ ok: boolean; userMessage: string } | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch('/api/pipeline/readiness')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && typeof data.userMessage === 'string') {
+          setReadiness({ ok: Boolean(data.ok), userMessage: data.userMessage });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setReadiness({ ok: false, userMessage: 'Rehearsal is ready. Live generation needs setup.' });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleStart = async (mode: 'single_memory' | 'life_story') => {
     setIsSubmitting(true);
@@ -25,6 +47,29 @@ export default function Home() {
         router.push(`/session/${data.sessionId}`);
       } else {
         console.error('Failed to start session', data);
+        setIsSubmitting(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDemoSeed = async () => {
+    setIsSubmitting(true);
+
+    try {
+      const res = await fetch('/api/pipeline/demo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aspectRatio }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.sessionId) {
+        router.push(`/session/${data.sessionId}`);
+      } else {
+        console.error('Failed to open demo session', data);
         setIsSubmitting(false);
       }
     } catch (err) {
@@ -125,6 +170,20 @@ export default function Home() {
                   </div>
                 </motion.button>
               </div>
+
+              <button
+                type="button"
+                onClick={handleDemoSeed}
+                className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-xs font-mono uppercase tracking-widest text-white/55 transition-colors hover:border-white/25 hover:text-white"
+              >
+                <Clapperboard size={16} /> Open rehearsal memory
+              </button>
+
+              {readiness && (
+                <p className={`font-mono text-[10px] uppercase tracking-[0.28em] ${readiness.ok ? 'text-emerald-100/45' : 'text-amber-100/45'}`}>
+                  {readiness.userMessage}
+                </p>
+              )}
             </motion.div>
           ) : (
             <motion.div

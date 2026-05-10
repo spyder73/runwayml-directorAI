@@ -18,6 +18,13 @@ function describedReference(message: string) {
   return match?.[1]?.trim();
 }
 
+function nextStatusAfterReference(session: Pick<SessionRow, 'mode' | 'status'> | undefined, request: NonNullable<ReturnType<typeof getActiveReferenceRequest>>) {
+  if (session?.mode === 'life_story' && request.target_type === 'protagonist' && request.reference_scope !== 'scene') {
+    return 'INTERVIEW_PSYCH_PROFILE';
+  }
+  return 'INTERVIEW_DYNAMIC';
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { sessionId, message } = await req.json() as { sessionId?: string; message?: string };
@@ -32,13 +39,13 @@ export async function POST(req: NextRequest) {
         .run(uuidv4(), sessionId, 'user', message);
 
         const activeRequest = getActiveReferenceRequest(db, sessionId);
-        const session = db.prepare('SELECT status FROM sessions WHERE id = ?').get(sessionId) as Pick<SessionRow, 'status'> | undefined;
+        const session = db.prepare('SELECT mode, status FROM sessions WHERE id = ?').get(sessionId) as Pick<SessionRow, 'mode' | 'status'> | undefined;
         const shouldLeaveReferenceStatus = session?.status === 'AWAITING_SELFIE' || session?.status === 'AWAITING_REFERENCE';
         if (activeRequest && isSkipReferenceMessage(message)) {
           markActiveReferenceRequest(db, sessionId, 'skipped');
           if (shouldLeaveReferenceStatus) {
             db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-              .run('INTERVIEW_DYNAMIC', sessionId);
+              .run(nextStatusAfterReference(session, activeRequest), sessionId);
           }
         } else if (activeRequest) {
           const description = describedReference(message);
@@ -51,7 +58,7 @@ export async function POST(req: NextRequest) {
             });
             if (shouldLeaveReferenceStatus) {
               db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-                .run('INTERVIEW_DYNAMIC', sessionId);
+                .run(nextStatusAfterReference(session, activeRequest), sessionId);
             }
           }
         }

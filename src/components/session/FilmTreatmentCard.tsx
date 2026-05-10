@@ -1,0 +1,49 @@
+'use client';
+
+import { Clapperboard } from 'lucide-react';
+import type { StoryTreatmentRow } from '@/lib/types';
+
+type FilmTreatmentCardProps = {
+  treatment: StoryTreatmentRow | null;
+};
+
+function parseAvoid(value: string | null | undefined) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export default function FilmTreatmentCard({ treatment }: FilmTreatmentCardProps) {
+  if (!treatment) return null;
+  const avoid = parseAvoid(treatment.avoid_json);
+
+  return (
+    <section className="rounded-lg border border-amber-100/15 bg-white/[0.04] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.22)]">
+      <div className="flex items-start gap-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-amber-100/20 bg-amber-100/10 text-amber-100">
+          <Clapperboard size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-amber-100/45">Film treatment</p>
+          <h2 className="mt-2 font-serif text-2xl tracking-wide text-amber-50">{treatment.title}</h2>
+          <p className="mt-3 border-l border-amber-100/25 pl-4 font-serif text-lg italic leading-relaxed text-white/80">{treatment.emotional_thesis}</p>
+          <div className="mt-5 grid gap-4 font-sans text-sm leading-relaxed text-white/58 md:grid-cols-2">
+            <p><span className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">Arc</span><br />{treatment.narrative_arc}</p>
+            <p><span className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">Motif</span><br />{treatment.visual_motif}</p>
+            <p><span className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">Voice</span><br />{treatment.narrator_style}</p>
+            <p><span className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">Ending</span><br />{treatment.ending_feeling}</p>
+          </div>
+          {avoid.length > 0 && (
+            <p className="mt-4 font-sans text-xs leading-relaxed text-white/42">
+              <span className="font-mono uppercase tracking-[0.22em]">Keep away from</span> {avoid.join(', ')}
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

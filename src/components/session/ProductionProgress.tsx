@@ -1,29 +1,51 @@
 'use client';
 
 import Image from 'next/image';
-import { AlertTriangle, Download, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, Download, MessageSquare, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
 import RemotionPreview from '@/components/RemotionPreview';
+import { safeProductionPauseMessage } from '@/lib/user-safe-errors';
 import type { SceneRow, SessionRow } from '@/lib/types';
+
+type RetryUnit = 'image' | 'audio' | 'video' | 'render';
 
 type ProductionProgressProps = {
   session: SessionRow;
   scenes: SceneRow[];
   pipelineError: string | null;
-  onRetry: () => void;
+  onRetry: (unit?: RetryUnit, sceneId?: string) => void;
+  onApproveFrames: () => void;
+  onFrameComment: (scene: SceneRow, comment: string) => void;
   onRenderFinal: () => void;
   onOpenImage: (url: string) => void;
 };
 
 function sceneStatusLabel(scene: SceneRow) {
-  if (scene.status === 'failed') return 'Needs another pass';
+  if (scene.status === 'failed' || scene.status.endsWith('_failed')) return 'Needs another pass';
   if (scene.status === 'completed' || scene.video_url) return 'Complete';
+  if (scene.status === 'generating_audio') return 'Recording';
+  if (scene.status === 'audio_ready') return 'Narration ready';
   if (scene.status === 'generating_video') return 'Filming';
   if (scene.status === 'awaiting_approval' || scene.reference_image_url) return 'Frame ready';
   if (scene.status === 'generating_image') return 'Composing frame';
   return 'Queued';
 }
 
-export default function ProductionProgress({ session, scenes, pipelineError, onRetry, onRenderFinal, onOpenImage }: ProductionProgressProps) {
+function retryUnitForScene(scene: SceneRow): { unit: RetryUnit; label: string } | null {
+  if (scene.status === 'image_failed' || (scene.status === 'failed' && !scene.reference_image_url)) {
+    return { unit: 'image', label: 'Retry frame' };
+  }
+  if (scene.status === 'audio_failed') {
+    return { unit: 'audio', label: 'Retry narration' };
+  }
+  if (scene.status === 'video_failed') {
+    return { unit: 'video', label: 'Retry motion' };
+  }
+  return null;
+}
+
+export default function ProductionProgress({ session, scenes, pipelineError, onRetry, onApproveFrames, onFrameComment, onRenderFinal, onOpenImage }: ProductionProgressProps) {
+  const [frameNotes, setFrameNotes] = useState<Record<string, string>>({});
   const isProductionPhase = ['GENERATING_IMAGES', 'AWAITING_APPROVAL', 'GENERATING_FINAL_ASSETS', 'PREVIEW_READY', 'RENDERING', 'COMPLETED'].includes(session.status);
   if (!isProductionPhase && session.status !== 'FAILED') return null;
 
@@ -33,6 +55,7 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
 
   const copy = (() => {
     if (session.status === 'GENERATING_IMAGES') return { eyebrow: 'First pass', title: 'Composing scene frames', body: 'The first still images are taking shape. Each scene will fill in as its frame is ready.' };
+    if (session.status === 'AWAITING_APPROVAL') return { eyebrow: 'Frame review', title: 'Approve the stills', body: 'Look over the scene images. If they feel right, I will turn them into narration and motion next.' };
     if (session.status === 'GENERATING_FINAL_ASSETS') return { eyebrow: 'Second pass', title: 'Filming and narration', body: 'The approved frames are becoming moving scenes with voiceover.' };
     if (session.status === 'FAILED') return { eyebrow: 'Production paused', title: 'One scene needs another pass', body: 'Nothing has been replaced with pretend media. Retry will continue from the missing piece.' };
     if (session.status === 'PREVIEW_READY') return { eyebrow: 'Preview ready', title: "The Director's Cut", body: 'Your generated scenes are ready to watch.' };
@@ -61,6 +84,16 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
             </div>
           </div>
         )}
+
+        {session.status === 'AWAITING_APPROVAL' && (
+          <button
+            type="button"
+            onClick={onApproveFrames}
+            className="mt-6 inline-flex items-center gap-3 rounded-full bg-white px-7 py-3 font-mono text-xs font-bold uppercase tracking-widest text-black shadow-[0_0_30px_rgba(255,255,255,0.25)] transition-colors hover:bg-amber-100"
+          >
+            <Check size={17} /> Approve frames
+          </button>
+        )}
       </div>
 
       {(session.status === 'FAILED' || pipelineError) && (
@@ -69,9 +102,9 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
             <AlertTriangle className="mt-1 text-red-200" size={22} />
             <div className="flex-1">
               <p className="font-mono text-xs uppercase tracking-[0.25em] text-red-100/70">Paused</p>
-              <p className="mt-2 font-sans text-sm leading-relaxed text-red-50/80">{pipelineError || 'One scene could not be completed.'}</p>
+              <p className="mt-2 font-sans text-sm leading-relaxed text-red-50/80">{safeProductionPauseMessage(pipelineError)}</p>
             </div>
-            <button type="button" onClick={onRetry} className="flex items-center gap-2 rounded-full border border-red-200/30 bg-white/10 px-4 py-2 font-mono text-xs uppercase tracking-widest text-red-50 transition-colors hover:bg-red-100 hover:text-black">
+            <button type="button" onClick={() => onRetry()} className="flex items-center gap-2 rounded-full border border-red-200/30 bg-white/10 px-4 py-2 font-mono text-xs uppercase tracking-widest text-red-50 transition-colors hover:bg-red-100 hover:text-black">
               <RefreshCw size={14} /> Retry
             </button>
           </div>
@@ -80,7 +113,7 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
 
       {(session.status === 'PREVIEW_READY' || session.status === 'RENDERING' || session.status === 'COMPLETED') ? (
         <div className="flex flex-col items-center gap-8">
-          <RemotionPreview scenes={scenes} />
+          <RemotionPreview scenes={scenes} aspectRatio={session.aspect_ratio} />
           {session.status === 'PREVIEW_READY' && (
             <button type="button" onClick={onRenderFinal} className="flex items-center gap-3 rounded-full bg-white px-8 py-4 font-bold uppercase tracking-widest text-black shadow-[0_0_30px_rgba(255,255,255,0.4)] transition-colors hover:bg-amber-100">
               <Download size={20} /> Prepare Final Film
@@ -93,9 +126,9 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
             </div>
           )}
           {session.status === 'COMPLETED' && (
-            <button type="button" className="flex items-center gap-3 rounded-full border border-green-500/50 bg-green-500/20 px-8 py-4 font-bold uppercase tracking-widest text-green-100 transition-colors hover:bg-green-500/30">
+            <a href={session.final_video_url || '#'} download className="flex items-center gap-3 rounded-full border border-green-500/50 bg-green-500/20 px-8 py-4 font-bold uppercase tracking-widest text-green-100 transition-colors hover:bg-green-500/30">
               <Download size={20} /> Download Film
-            </button>
+            </a>
           )}
         </div>
       ) : (
@@ -114,14 +147,48 @@ export default function ProductionProgress({ session, scenes, pipelineError, onR
                     <p className="font-mono text-[10px] uppercase tracking-widest text-white/30">Drafting scene...</p>
                   </div>
                 )}
-                {scene.status === 'failed' && (
+                {(scene.status === 'failed' || scene.status.endsWith('_failed')) && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-red-950/80 px-4 text-center backdrop-blur-sm">
                     <AlertTriangle size={28} className="text-red-100" />
                     <p className="font-mono text-[10px] uppercase tracking-widest text-red-50/80">Needs another pass</p>
+                    {retryUnitForScene(scene) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const retry = retryUnitForScene(scene);
+                          if (retry) onRetry(retry.unit, scene.id);
+                        }}
+                        className="inline-flex items-center gap-2 rounded-full border border-red-100/30 bg-white/10 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-red-50 transition-colors hover:bg-red-100 hover:text-black"
+                      >
+                        <RefreshCw size={13} /> {retryUnitForScene(scene)?.label}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
               <p className="line-clamp-3 font-mono text-xs text-white/50">{scene.narrator_text}</p>
+              {session.status === 'AWAITING_APPROVAL' && (
+                <div className="flex flex-col gap-2">
+                  <input
+                    value={frameNotes[scene.id] || ''}
+                    onChange={(event) => setFrameNotes((current) => ({ ...current, [scene.id]: event.target.value }))}
+                    placeholder="Frame notes..."
+                    className="min-w-0 rounded-full border border-white/10 bg-black/30 px-4 py-2.5 font-sans text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-200/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const note = frameNotes[scene.id]?.trim();
+                      if (!note) return;
+                      onFrameComment(scene, note);
+                      setFrameNotes((current) => ({ ...current, [scene.id]: '' }));
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                  >
+                    <MessageSquare size={13} /> Send frame note
+                  </button>
+                </div>
+              )}
             </div>
           )) : (
             Array.from({ length: 3 }).map((_, idx) => (

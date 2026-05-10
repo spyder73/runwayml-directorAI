@@ -6,7 +6,7 @@ import { AnimatedSubtitles } from './components/AnimatedSubtitles';
 
 type Scene = {
   id: string;
-  video_urls: string[]; // parsed from JSON
+  clips: Array<{ url: string; duration_in_frames: number }>;
   audio_url: string;
   narrator_text: string;
   duration_in_frames: number;
@@ -22,15 +22,14 @@ export const MainComposition = ({ scenes }: { scenes: Scene[] }) => {
         durationInFrames={scene.duration_in_frames}
       >
         <AbsoluteFill>
-          {scene.video_urls.map((url, j) => {
-            const shotDurationFrames = Math.floor(scene.duration_in_frames / scene.video_urls.length);
-            const fromFrame = j * shotDurationFrames;
-            const isLast = j === scene.video_urls.length - 1;
-            const finalShotDuration = isLast ? scene.duration_in_frames - fromFrame : shotDurationFrames;
+          {scene.clips.map((clip, j) => {
+            const fromFrame = scene.clips.slice(0, j).reduce((total, item) => total + item.duration_in_frames, 0);
+            const isLast = j === scene.clips.length - 1;
+            const finalShotDuration = isLast ? scene.duration_in_frames - fromFrame : clip.duration_in_frames;
 
             return (
               <Sequence key={`${scene.id}-${j}`} from={fromFrame} durationInFrames={finalShotDuration}>
-                <Video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <Video src={clip.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </Sequence>
             );
           })}
@@ -39,7 +38,7 @@ export const MainComposition = ({ scenes }: { scenes: Scene[] }) => {
             <Audio src={scene.audio_url} />
           )}
           
-          <AnimatedSubtitles text={scene.narrator_text} />
+          <AnimatedSubtitles text={scene.narrator_text} durationInFrames={scene.duration_in_frames} />
         </AbsoluteFill>
       </TransitionSeries.Sequence>
     );

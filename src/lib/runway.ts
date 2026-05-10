@@ -3,6 +3,7 @@ import type { TaskRetrieveResponse } from '@runwayml/sdk/resources/tasks';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { IMAGE_MODEL, NARRATION_MODEL, VIDEO_MODEL } from './production-config';
 
 type AspectRatio = '16:9' | '9:16';
 type MediaType = 'image' | 'audio' | 'video';
@@ -22,7 +23,7 @@ export type RunwayReferenceImage = {
 };
 
 type GptImage2CreateParams = {
-  model: 'gpt_image_2';
+  model: typeof IMAGE_MODEL;
   promptText: string;
   quality: GptImageQuality;
   ratio: '1920:1088' | '1088:1920';
@@ -35,10 +36,34 @@ const runway = new RunwayML({
 
 const runwayUploadCache = new Map<string, Promise<string>>();
 
-const createGptImage2 = runway.textToImage.create.bind(runway.textToImage) as unknown as (
-  body: GptImage2CreateParams,
-  options?: { timeout?: number },
-) => Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>;
+type TextToImageResource = {
+  create: (
+    body: GptImage2CreateParams,
+    options?: { timeout?: number },
+  ) => Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>;
+};
+
+export function createTextToImageTask(
+  resource: TextToImageResource,
+  params: {
+    promptText: string;
+    quality: GptImageQuality;
+    ratio: GptImage2CreateParams['ratio'];
+    referenceImages?: RunwayReferenceImage[];
+  },
+) {
+  return resource.create({
+    model: IMAGE_MODEL,
+    promptText: params.promptText,
+    quality: params.quality,
+    ratio: params.ratio,
+    referenceImages: params.referenceImages?.length ? params.referenceImages : undefined,
+  }, { timeout: 60000 });
+}
+
+const textToImageResource = runway.textToImage as unknown as TextToImageResource;
+
+type RunwayTaskPromise = ReturnType<TextToImageResource['create']>;
 
 function requireRunwayApiKey() {
   if (!process.env.RUNWAYML_API_SECRET) {
@@ -208,13 +233,12 @@ export async function generateImageAsset(params: {
 }) {
   requireRunwayApiKey();
   const task = await waitForOutput(
-    retryTaskCreation('Runway image', () => createGptImage2({
-      model: 'gpt_image_2',
+    retryTaskCreation('Runway image', (): RunwayTaskPromise => createTextToImageTask(textToImageResource, {
       promptText: params.promptText,
       quality: params.quality,
       ratio: params.ratio,
       referenceImages: params.referenceImages?.length ? params.referenceImages : undefined,
-    }, { timeout: 60000 })),
+    })),
     'Runway image generation',
   );
 
@@ -228,7 +252,7 @@ export async function generateSpeechAsset(params: {
   requireRunwayApiKey();
   const task = await waitForOutput(
     retryTaskCreation('Runway TTS', () => runway.textToSpeech.create({
-      model: 'eleven_multilingual_v2',
+      model: NARRATION_MODEL,
       promptText: params.promptText,
       voice: { type: 'runway-preset', presetId: 'Bernard' },
     }, { timeout: 60000 })),
@@ -249,7 +273,7 @@ export async function generateVideoAsset(params: {
   const promptImageUri = await uploadLocalAssetForRunway(params.promptImageUrl);
   const task = await waitForOutput(
     retryTaskCreation('Runway video', () => runway.imageToVideo.create({
-      model: 'gen4_turbo',
+      model: VIDEO_MODEL,
       promptImage: [{ uri: promptImageUri, position: 'first' }],
       ratio: params.ratio,
       promptText: params.promptText,

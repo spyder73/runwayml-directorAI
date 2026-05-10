@@ -5,11 +5,14 @@ import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Camera, Film, Send, X } from 'lucide-react';
 import InterviewChat from '@/components/session/InterviewChat';
+import FilmTreatmentCard from '@/components/session/FilmTreatmentCard';
+import MemorySketchCard from '@/components/session/MemorySketchCard';
 import ProductionProgress from '@/components/session/ProductionProgress';
 import ReferenceUploadRequest from '@/components/session/ReferenceUploadRequest';
 import SceneOutlineReview from '@/components/session/SceneOutlineReview';
 import type {
   ChatHistoryRow,
+  MemoryCandidateRow,
   ReferenceUploadRequestRow,
   SceneOutlineRow,
   SceneRow,
@@ -153,17 +156,52 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     });
   };
 
-  const handleRetryGeneration = async () => {
+  const handleApproveFrames = async () => {
+    await fetch('/api/pipeline/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    });
+  };
+
+  const handleFrameComment = async (scene: SceneRow, comment: string) => {
+    await fetch('/api/pipeline/director', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, message: `For scene ${scene.scene_index + 1}, revise the still frame before motion: ${comment}` }),
+    });
+  };
+
+  const handleSketchFeedback = async (candidate: MemoryCandidateRow, feedback: 'accepted' | 'rejected' | 'revised') => {
+    await fetch('/api/pipeline/sketch-feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, candidateId: candidate.id, feedback }),
+    });
+  };
+
+  const handleRetryGeneration = async (unit?: 'image' | 'audio' | 'video' | 'render', sceneId?: string) => {
     setPipelineError(null);
     try {
       await fetch('/api/pipeline/retry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId, unit, sceneId }),
       });
     } catch (error) {
       setPipelineError(error instanceof Error ? error.message : 'Failed to restart production.');
     }
+  };
+
+  const resolveActiveReferenceRequest = async (status: 'skipped' | 'described') => {
+    if (!session) return;
+    if (!activeReferenceRequest && session.status !== 'AWAITING_SELFIE' && session.status !== 'AWAITING_REFERENCE') return;
+    setActiveReferenceRequest(null);
+    await fetch('/api/pipeline/reference-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, status }),
+    });
   };
 
   const handleDrop = (event: React.DragEvent) => {
@@ -228,6 +266,14 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
             onOpenImage={setModalImage}
           />
 
+          <FilmTreatmentCard treatment={storyBucket?.treatment || null} />
+
+          <MemorySketchCard
+            candidates={storyBucket?.memoryCandidates || []}
+            onOpenImage={setModalImage}
+            onFeedback={handleSketchFeedback}
+          />
+
           <SceneOutlineReview
             scenes={storyBucket?.sceneOutline || []}
             onComment={handleOutlineComment}
@@ -235,13 +281,15 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           />
 
           <ProductionProgress
-            session={session}
-            scenes={scenes}
-            pipelineError={pipelineError}
-            onRetry={handleRetryGeneration}
-            onRenderFinal={handleRenderFinal}
-            onOpenImage={setModalImage}
-          />
+          session={session}
+          scenes={scenes}
+          pipelineError={pipelineError}
+          onRetry={handleRetryGeneration}
+          onApproveFrames={handleApproveFrames}
+          onFrameComment={handleFrameComment}
+          onRenderFinal={handleRenderFinal}
+          onOpenImage={setModalImage}
+        />
 
           <div ref={chatEndRef} />
         </div>
@@ -251,10 +299,14 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         <ReferenceUploadRequest
           request={activeReferenceRequest}
           isSelfieRequest={session.status === 'AWAITING_SELFIE' && !session.user_selfie_url}
+          hasSelfie={Boolean(session.user_selfie_url)}
           isUploading={isUploading}
           onChooseFiles={() => fileInputRef.current?.click()}
-          onSkip={() => handleSendMessage(undefined, "I'd like to skip that image for now. Please ask me for visual details instead.")}
-          onDescribeInstead={() => {
+          onSkip={async () => {
+            await resolveActiveReferenceRequest('skipped');
+            await handleSendMessage(undefined, "I'd like to skip that image for now. Please ask me for visual details instead.");
+          }}
+          onDescribeInstead={async () => {
             const label = activeReferenceRequest?.target_label || 'this reference';
             setMessage(`Here is how ${label} looks: `);
           }}

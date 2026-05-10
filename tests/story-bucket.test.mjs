@@ -8,10 +8,13 @@ const {
   applyProfileBucketUpdate,
   createReferenceAsset,
   createReferenceUploadRequest,
+  getActiveReferenceRequest,
   hasProtagonistReferenceDecision,
   initializeStoryBucketTables,
   loadStoryBucket,
   lockSceneOutlineForProduction,
+  markActiveReferenceRequest,
+  proposeFilmTreatment,
   proposeSceneOutline,
 } = jiti('../src/lib/story-bucket.ts');
 
@@ -58,6 +61,18 @@ function createDb() {
   return db;
 }
 
+function addTreatment(db) {
+  proposeFilmTreatment(db, 'session-1', {
+    title: 'A Small Film',
+    emotionalThesis: 'A memory shaped by quiet courage.',
+    narrativeArc: 'arrival to recognition to release',
+    visualMotif: 'warm light and thresholds',
+    narratorStyle: 'restrained documentary warmth',
+    endingFeeling: 'gentle gratitude',
+    avoid: ['generic montage'],
+  });
+}
+
 test('profile bucket update persists profile, entities, themes, and memory candidates', () => {
   const db = createDb();
 
@@ -65,6 +80,8 @@ test('profile bucket update persists profile, entities, themes, and memory candi
     profile: {
       protagonistName: 'Maya',
       age: '41',
+      profession: 'architect',
+      currentLocation: 'Berlin',
       lifePhase: 'starting over in a new city',
       emotionalTone: 'hopeful but guarded',
       themes: ['belonging', 'reinvention'],
@@ -94,6 +111,8 @@ test('profile bucket update persists profile, entities, themes, and memory candi
 
   assert.equal(bucket.profile?.protagonist_name, 'Maya');
   assert.equal(bucket.profile?.age, '41');
+  assert.equal(bucket.profile?.profession, 'architect');
+  assert.equal(bucket.profile?.current_location, 'Berlin');
   assert.deepEqual(JSON.parse(bucket.profile?.themes_json || '[]'), ['belonging', 'reinvention']);
   assert.equal(bucket.entities[0]?.display_name, 'Aunt Lena');
   assert.equal(bucket.memoryCandidates[0]?.title, 'The bus station goodbye');
@@ -123,6 +142,21 @@ test('reference assets get stable unique tags and attach to active requests', ()
   assert.notEqual(first.stable_tag, second.stable_tag);
 });
 
+test('reference asset tags are lowercase runway-safe and capped to sixteen characters', () => {
+  const db = createDb();
+
+  const asset = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/school.jpg',
+    targetType: 'very important childhood school building',
+    targetLabel: 'The North-East Hallway From 1997',
+    visionDescription: 'A long school hallway with old lockers.',
+    usagePermissions: 'allowed',
+  });
+
+  assert.match(asset.stable_tag, /^[a-z][a-z0-9_]{2,15}$/);
+  assert.ok(asset.stable_tag.length <= 16);
+});
+
 test('protagonist reference decision is true after upload request, upload, or description', () => {
   const db = createDb();
 
@@ -132,7 +166,11 @@ test('protagonist reference decision is true after upload request, upload, or de
     targetType: 'protagonist',
     targetLabel: 'Maya',
     promptText: 'Would you like to add a photo of yourself?',
+    reason: 'This can help visible protagonist scenes.',
   });
+
+  assert.equal(hasProtagonistReferenceDecision(db, 'session-1'), false);
+  markActiveReferenceRequest(db, 'session-1', 'skipped');
 
   assert.equal(hasProtagonistReferenceDecision(db, 'session-1'), true);
 });
@@ -144,15 +182,52 @@ test('opening protagonist request can be shown without leaving onboarding', () =
     targetType: 'protagonist',
     targetLabel: 'Maya',
     promptText: 'Would you like to add a photo of yourself?',
+    reason: 'This can help visible protagonist scenes.',
   }, { updateSessionStatus: false });
 
   const session = db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1');
   assert.equal(session.status, 'INTERVIEW_ONBOARDING');
-  assert.equal(hasProtagonistReferenceDecision(db, 'session-1'), true);
+  assert.equal(getActiveReferenceRequest(db, 'session-1')?.target_type, 'protagonist');
+  assert.equal(hasProtagonistReferenceDecision(db, 'session-1'), false);
+});
+
+test('protagonist upload request does not repeat after a fulfilled selfie unless scene-specific', () => {
+  const db = createDb();
+
+  createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/maya.jpg',
+    targetType: 'protagonist',
+    targetLabel: 'Maya',
+    usagePermissions: 'allowed',
+  });
+
+  createReferenceUploadRequest(db, 'session-1', {
+    targetType: 'protagonist',
+    targetLabel: 'Maya',
+    promptText: 'Would you like to add another photo?',
+    reason: 'A protagonist reference can help visible scenes.',
+  });
+
+  assert.equal(getActiveReferenceRequest(db, 'session-1'), undefined);
+
+  createReferenceUploadRequest(db, 'session-1', {
+    targetType: 'protagonist',
+    targetLabel: 'Maya in the school scene',
+    promptText: 'For the school scene, a different photo could help if you want that era to feel specific.',
+    reason: 'This is for a specific school-era scene.',
+    referenceScope: 'scene',
+    sceneTitle: 'School hallway',
+  });
+
+  const request = getActiveReferenceRequest(db, 'session-1');
+  assert.equal(request?.target_label, 'Maya in the school scene');
+  assert.equal(request?.reference_scope, 'scene');
+  assert.equal(request?.scene_title, 'School hallway');
 });
 
 test('locking an outline creates production scenes and moves session to image generation', () => {
   const db = createDb();
+  addTreatment(db);
 
   proposeSceneOutline(db, 'session-1', {
     scenes: [
@@ -178,4 +253,95 @@ test('locking an outline creates production scenes and moves session to image ge
   assert.equal(scene.narrator_text, 'She arrived with almost nothing, which made every object feel chosen.');
   assert.equal(scene.scene_references, '["protagonist"]');
   assert.equal(session.status, 'GENERATING_IMAGES');
+});
+
+test('locking an outline stores selected reference asset ids and generated tags on production scenes', () => {
+  const db = createDb();
+  addTreatment(db);
+
+  const protagonist = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/maya.jpg',
+    stableTag: 'self',
+    targetType: 'protagonist',
+    targetLabel: 'Maya',
+    usagePermissions: 'allowed',
+  });
+
+  const school = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/school.jpg',
+    stableTag: 'school_01',
+    targetType: 'place',
+    targetLabel: 'School',
+    usagePermissions: 'allowed',
+  });
+
+  proposeSceneOutline(db, 'session-1', {
+    scenes: [
+      {
+        title: 'The hallway',
+        summary: 'Maya remembers walking through school alone.',
+        narratorText: 'The hallway seemed longer when she was alone.',
+        imagePrompt: 'A cinematic school hallway with Maya in soft light.',
+        videoPrompt: 'Slow tracking shot through lockers toward Maya.',
+        duration: 7,
+        referenceNeeds: ['protagonist', 'school'],
+        referenceAssetIds: [protagonist.id, school.id],
+        protagonistVisible: true,
+      },
+    ],
+  });
+
+  lockSceneOutlineForProduction(db, 'session-1');
+  const scene = db.prepare('SELECT * FROM scenes WHERE session_id = ?').get('session-1');
+
+  assert.deepEqual(JSON.parse(scene.scene_references), [protagonist.id, school.id]);
+  assert.deepEqual(JSON.parse(scene.reference_tags), ['self', 'school_01']);
+});
+
+test('locking an outline rejects references owned by denied-consent entities', () => {
+  const db = createDb();
+  addTreatment(db);
+  const entityId = 'entity-denied-friend';
+
+  applyProfileBucketUpdate(db, 'session-1', {
+    entities: [
+      {
+        id: entityId,
+        type: 'friend',
+        displayName: 'Jordan',
+        description: 'A childhood friend who appears in the memory.',
+        consentState: 'denied',
+      },
+    ],
+  });
+
+  const friendReference = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/jordan.jpg',
+    stableTag: 'jordan',
+    targetType: 'friend',
+    targetLabel: 'Jordan',
+    ownerEntityId: entityId,
+    usagePermissions: 'allowed',
+  });
+
+  proposeSceneOutline(db, 'session-1', {
+    scenes: [
+      {
+        title: 'The schoolyard promise',
+        summary: 'Maya and Jordan stand near the fence after school.',
+        narratorText: 'Jordan was there when Maya first admitted she wanted a different life.',
+        imagePrompt: 'A cinematic schoolyard with @jordan near the fence in late light.',
+        videoPrompt: 'The camera slowly tracks along the fence as Jordan turns toward Maya.',
+        duration: 6,
+        referenceNeeds: ['Jordan'],
+        referenceAssetIds: [friendReference.id],
+        protagonistVisible: false,
+      },
+    ],
+  });
+
+  assert.throws(
+    () => lockSceneOutlineForProduction(db, 'session-1'),
+    /consent/i,
+  );
 });

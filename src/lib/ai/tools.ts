@@ -8,6 +8,8 @@ export const updateProfileBucketSchema = z.object({
   profile: z.object({
     protagonistName: z.string().optional(),
     age: z.string().optional(),
+    profession: z.string().optional(),
+    currentLocation: z.string().optional(),
     pronouns: z.string().optional(),
     lifePhase: z.string().optional(),
     emotionalTone: z.string().optional(),
@@ -46,12 +48,14 @@ export const updateProfileBucketSchema = z.object({
 });
 
 export const requestReferenceUploadSchema = z.object({
-  targetType: z.enum(['protagonist', 'person', 'family', 'friend', 'place', 'object', 'keepsake']).or(z.string().min(1)),
+  targetType: z.enum(['protagonist', 'person', 'family', 'friend', 'place', 'object', 'keepsake', 'school', 'home', 'workplace', 'scene_reference']).or(z.string().min(1)),
   targetLabel: z.string().min(1),
   promptText: z.string().min(1),
-  reason: z.string().optional(),
+  reason: z.string().min(1),
   fallbackPrompt: z.string().optional(),
   entityId: z.string().optional(),
+  referenceScope: z.enum(['general', 'scene']).optional(),
+  sceneTitle: z.string().optional(),
 });
 
 export const saveReferenceDescriptionSchema = z.object({
@@ -76,6 +80,17 @@ export const saveSketchFeedbackSchema = z.object({
   candidateId: z.string().min(1),
   feedback: z.enum(['accepted', 'rejected', 'revised']),
   note: z.string().optional(),
+});
+
+export const filmTreatmentSchema = z.object({
+  directorReply: z.string().min(1).optional(),
+  title: z.string().min(1),
+  emotionalThesis: z.string().min(1),
+  narrativeArc: z.string().min(1),
+  visualMotif: z.string().min(1),
+  narratorStyle: z.string().min(1),
+  endingFeeling: z.string().min(1),
+  avoid: optionalStringArray,
 });
 
 const outlineSceneSchema = z.object({
@@ -127,7 +142,7 @@ export const aiTools = {
     inputSchema: updateProfileBucketSchema,
   }),
   request_reference_upload: tool({
-    description: 'Ask for an optional reference image for a concrete protagonist, person, place, or object and include a graceful skip path.',
+    description: 'Ask for an optional reference image for a concrete protagonist, friend, family member, place, school, home, workplace, object, keepsake, or scene-specific visual reference. Always explain what it is for in user-facing language and include a graceful skip path.',
     inputSchema: requestReferenceUploadSchema,
   }),
   save_reference_description: tool({
@@ -141,6 +156,10 @@ export const aiTools = {
   save_sketch_feedback: tool({
     description: 'Record whether the user accepted, rejected, or revised a generated memory sketch. Include directorReply with the next natural response.',
     inputSchema: saveSketchFeedbackSchema,
+  }),
+  propose_film_treatment: tool({
+    description: 'Create the short film treatment before scene outline: title, emotional thesis, narrative arc, visual motif, narrator style, ending feeling, and things to avoid. Include directorReply with the user-facing treatment summary and ask whether it feels right.',
+    inputSchema: filmTreatmentSchema,
   }),
   propose_scene_outline: tool({
     description: 'Create a reviewable scene outline with durations, emotional purpose, narration, prompts, and reference needs. Include directorReply or chatMessage for the user-facing introduction.',

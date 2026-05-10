@@ -6,14 +6,54 @@ const openrouter = createOpenRouter({
   apiKey: process.env.OPENROUTER_API_KEY,
 });
 
+export type ShotPlan = {
+  duration: number;
+  prompt: string;
+};
+
+function splitDurationIntoShots(durationSeconds: number) {
+  const totalDuration = Math.max(2, Math.ceil(durationSeconds));
+  const shotCount = Math.max(1, Math.ceil(totalDuration / 10));
+  const baseDuration = Math.floor(totalDuration / shotCount);
+  let remainder = totalDuration - baseDuration * shotCount;
+
+  return Array.from({ length: shotCount }, () => {
+    const duration = baseDuration + (remainder > 0 ? 1 : 0);
+    remainder -= 1;
+    return Math.max(2, Math.min(10, duration));
+  });
+}
+
+export function normalizeShotPlan(
+  visualPrompt: string,
+  durationSeconds: number,
+  proposedShots?: ShotPlan[],
+): ShotPlan[] {
+  const totalDuration = Math.max(2, Math.ceil(durationSeconds));
+  const safePrompt = visualPrompt.trim() || 'Cinematic emotional memory scene.';
+  const boundedDurations = splitDurationIntoShots(totalDuration);
+
+  if (!proposedShots?.length) {
+    return boundedDurations.map((duration, index) => ({
+      duration,
+      prompt: index === 0 ? safePrompt : `${safePrompt} Alternate cinematic angle ${index + 1}.`,
+    }));
+  }
+
+  return boundedDurations.map((duration, index) => ({
+    duration,
+    prompt: proposedShots[index]?.prompt?.trim() || proposedShots[proposedShots.length - 1]?.prompt?.trim() || safePrompt,
+  }));
+}
+
 export async function planShots(visualPrompt: string, durationSeconds: number) {
   if (!process.env.OPENROUTER_API_KEY) {
-     return [{ duration: durationSeconds, prompt: visualPrompt }];
+     return normalizeShotPlan(visualPrompt, durationSeconds);
   }
   
   // ensure duration is at least 2, else give one shot
   if (durationSeconds < 2) {
-      return [{ duration: Math.max(durationSeconds, 2), prompt: visualPrompt }];
+      return normalizeShotPlan(visualPrompt, durationSeconds);
   }
 
   try {
@@ -33,20 +73,9 @@ For each shot, provide a slightly adjusted cinematic prompt to reflect the camer
       })
     });
     
-    // Safety check sum
-    const sum = object.shots.reduce((acc, shot) => acc + shot.duration, 0);
-    if (Math.abs(sum - durationSeconds) > 0.5) {
-      console.warn(`Shot duration sum ${sum} does not match total ${durationSeconds}. Adjusting last shot.`);
-      let currentSum = 0;
-      for (let i = 0; i < object.shots.length - 1; i++) {
-         currentSum += object.shots[i].duration;
-      }
-      object.shots[object.shots.length - 1].duration = Math.max(2, durationSeconds - currentSum);
-    }
-    
-    return object.shots;
+    return normalizeShotPlan(visualPrompt, durationSeconds, object.shots);
   } catch (error) {
     console.error('Error planning shots:', error);
-    return [{ duration: durationSeconds, prompt: visualPrompt }];
+    return normalizeShotPlan(visualPrompt, durationSeconds);
   }
 }

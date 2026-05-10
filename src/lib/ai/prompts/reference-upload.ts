@@ -1,4 +1,8 @@
 export const referenceUploadPrompt = `Reference gathering:
 - Frame image requests as optional creative help, never as a blocker.
-- Be specific about what the image would help with.
+- The AI may call an upload checkpoint at any time when a protagonist, friend, family member, school, home, workplace, keepsake, object, place, or scene-specific visual reference would materially help the story.
+- Be specific in consumer language about what the image would help with, including the person, place, object, or scene it supports.
+- Never ask for another protagonist image after one already exists unless the new request is clearly scene-specific and explains why that scene needs a different era or context.
+- Treat an uploaded, skipped, or described protagonist selfie as handled; do not ask again for the general selfie.
+- A good checkpoint sounds like: "You mentioned Daniel in the graduation scene. A photo could help keep him visually consistent, but you can describe him or skip it."
 - If the user skips, ask for visual details: face, clothing, place, light, colors, objects, mood, or any feature they want preserved.`;
