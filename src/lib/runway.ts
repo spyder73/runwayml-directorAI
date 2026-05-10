@@ -52,6 +52,8 @@ const runway = new RunwayML({
   apiKey: process.env.RUNWAYML_API_SECRET || '',
 });
 
+export const RUNWAY_REFERENCE_DATA_URI_MAX_LENGTH = 5_242_880;
+
 const runwayUploadCache = new Map<string, Promise<string>>();
 
 type TextToImageResource = {
@@ -68,7 +70,44 @@ type ImageToVideoResource = {
   ) => Promise<{ id: string; waitForTaskOutput?: (options?: { timeout?: number | null }) => Promise<TaskRetrieveResponse.Succeeded> }>;
 };
 
-export function createTextToImageTask(
+type DataUriReferenceUploader = (uri: string) => Promise<string>;
+
+function isOversizedReferenceDataUri(uri: string) {
+  return /^data:image\//i.test(uri) && uri.length > RUNWAY_REFERENCE_DATA_URI_MAX_LENGTH;
+}
+
+function imageExtensionForMimeType(mimeType: string) {
+  if (mimeType.includes('png')) return 'png';
+  if (mimeType.includes('webp')) return 'webp';
+  return 'jpg';
+}
+
+async function uploadDataUriReferenceForRunway(uri: string) {
+  const match = uri.match(/^data:([^;,]+);base64,(.*)$/i);
+  if (!match) {
+    throw new Error('Cannot upload non-base64 image reference data URI to Runway.');
+  }
+
+  const [, mimeType, base64] = match;
+  const buffer = Buffer.from(base64, 'base64');
+  const file = await toFile(buffer, `reference-${uuidv4()}.${imageExtensionForMimeType(mimeType)}`, { type: mimeType });
+  const upload = await runway.uploads.createEphemeral({ file }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
+  return upload.uri;
+}
+
+export async function prepareRunwayReferenceImages(
+  referenceImages?: RunwayReferenceImage[],
+  uploadReference: DataUriReferenceUploader = uploadDataUriReferenceForRunway,
+) {
+  if (!referenceImages?.length) return undefined;
+
+  return Promise.all(referenceImages.map(async (image) => {
+    if (!isOversizedReferenceDataUri(image.uri)) return image;
+    return { ...image, uri: await uploadReference(image.uri) };
+  }));
+}
+
+export async function createTextToImageTask(
   resource: TextToImageResource,
   params: {
     promptText: string;
@@ -77,12 +116,13 @@ export function createTextToImageTask(
     referenceImages?: RunwayReferenceImage[];
   },
 ) {
+  const referenceImages = await prepareRunwayReferenceImages(params.referenceImages);
   return resource.create({
     model: IMAGE_MODEL,
     promptText: params.promptText,
     quality: params.quality,
     ratio: params.ratio,
-    referenceImages: params.referenceImages?.length ? params.referenceImages : undefined,
+    referenceImages,
   }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
 }
 

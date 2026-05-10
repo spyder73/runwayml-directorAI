@@ -306,3 +306,27 @@ test('Runway image task helper preserves the SDK resource client binding', async
 
   assert.equal(task.id, 'task-1');
 });
+
+test('Runway image references upload oversized data URIs before task creation', async () => {
+  const {
+    prepareRunwayReferenceImages,
+    RUNWAY_REFERENCE_DATA_URI_MAX_LENGTH,
+  } = jiti('../src/lib/runway.ts');
+  const oversizedUri = `data:image/jpeg;base64,${'a'.repeat(RUNWAY_REFERENCE_DATA_URI_MAX_LENGTH)}`;
+  const smallUri = 'data:image/jpeg;base64,abc';
+  const uploadedUris = [];
+
+  const prepared = await prepareRunwayReferenceImages([
+    { tag: 'opening_frame', uri: oversizedUri },
+    { tag: 'self', uri: smallUri },
+  ], async (uri) => {
+    uploadedUris.push(uri);
+    return 'runway://uploaded-opening-frame';
+  });
+
+  assert.deepEqual(uploadedUris, [oversizedUri]);
+  assert.deepEqual(prepared, [
+    { tag: 'opening_frame', uri: 'runway://uploaded-opening-frame' },
+    { tag: 'self', uri: smallUri },
+  ]);
+});
