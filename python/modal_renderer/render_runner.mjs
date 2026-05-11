@@ -96,27 +96,44 @@ export function prepareManifestForRender(manifest) {
   };
 }
 
-async function linkFile(sourcePath, targetPath) {
+async function stageFile(sourcePath, targetPath) {
   const realSourcePath = await fs.realpath(sourcePath);
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.rm(targetPath, { force: true, recursive: true });
-  await fs.symlink(realSourcePath, targetPath);
+
+  try {
+    await fs.link(realSourcePath, targetPath);
+  } catch {
+    await fs.copyFile(realSourcePath, targetPath);
+  }
 }
 
-async function linkBasePublicEntries(basePublicDir, publicDir) {
+async function stageDirectory(sourceDir, targetDir) {
+  await fs.mkdir(targetDir, { recursive: true });
+  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+
+  await Promise.all(entries.map(async (entry) => {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const targetPath = path.join(targetDir, entry.name);
+    const stat = await fs.stat(sourcePath);
+
+    if (stat.isDirectory()) {
+      await stageDirectory(await fs.realpath(sourcePath), targetPath);
+      return;
+    }
+
+    if (stat.isFile()) {
+      await stageFile(sourcePath, targetPath);
+    }
+  }));
+}
+
+async function stageBasePublicEntries(basePublicDir, publicDir) {
   if (!(await pathExists(basePublicDir))) {
     return;
   }
 
-  const entries = await fs.readdir(basePublicDir, { withFileTypes: true });
-  await Promise.all(entries.map(async (entry) => {
-    const targetPath = path.join(publicDir, entry.name);
-    if (await pathExists(targetPath)) {
-      return;
-    }
-
-    await fs.symlink(await fs.realpath(path.join(basePublicDir, entry.name)), targetPath);
-  }));
+  await stageDirectory(basePublicDir, publicDir);
 }
 
 export async function stagePublicAssets({
@@ -126,7 +143,7 @@ export async function stagePublicAssets({
 }) {
   await fs.rm(publicDir, { recursive: true, force: true });
   await fs.mkdir(publicDir, { recursive: true });
-  await linkBasePublicEntries(basePublicDir, publicDir);
+  await stageBasePublicEntries(basePublicDir, publicDir);
 
   for (const asset of inputAssets) {
     const mountedPath = String(asset?.mountedPath || '');
@@ -139,7 +156,7 @@ export async function stagePublicAssets({
       throw new Error(`Modal input asset must be a file: ${mountedPath}`);
     }
 
-    await linkFile(mountedPath, publicAssetTarget(publicDir, asset?.publicPath));
+    await stageFile(mountedPath, publicAssetTarget(publicDir, asset?.publicPath));
   }
 
   return publicDir;

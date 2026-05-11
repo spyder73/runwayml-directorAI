@@ -105,7 +105,7 @@ test('Modal render request stages local media files into a mounted Volume manife
   assert.equal(request.manifest.renderOptions.crf, 20);
 });
 
-test('Modal render runner stages mounted Volume files as Remotion public assets', async () => {
+test('Modal render runner stages mounted Volume files as Remotion-servable public assets', async () => {
   const { stagePublicAssets } = await import('../python/modal_renderer/render_runner.mjs');
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'modal-render-public-'));
   const basePublicDir = path.join(tmp, 'base-public');
@@ -130,7 +130,8 @@ test('Modal render runner stages mounted Volume files as Remotion public assets'
 
   assert.equal(await fs.readFile(path.join(publicDir, 'base.txt'), 'utf8'), 'base-public');
   assert.equal(await fs.readFile(path.join(publicDir, 'modal-inputs/job-1/input-000.mp4'), 'utf8'), 'video-bytes');
-  assert.equal((await fs.lstat(path.join(publicDir, 'modal-inputs/job-1/input-000.mp4'))).isSymbolicLink(), true);
+  assert.equal((await fs.lstat(path.join(publicDir, 'base.txt'))).isSymbolicLink(), false);
+  assert.equal((await fs.lstat(path.join(publicDir, 'modal-inputs/job-1/input-000.mp4'))).isSymbolicLink(), false);
 
   await assert.rejects(
     () => stagePublicAssets({
