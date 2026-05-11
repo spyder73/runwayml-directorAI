@@ -1,4 +1,5 @@
 const runtimeExternalPackageIncludes = [
+  './node_modules/@bufbuild/protobuf/**/*',
   './node_modules/@datastructures-js/**/*',
   './node_modules/@ffprobe-installer/ffprobe/**/*',
   './node_modules/@livekit/**/*',
@@ -51,6 +52,7 @@ const nextConfig = {
     '@remotion/bundler',
     '@remotion/renderer',
     '@runwayml/avatars-node-rpc',
+    '@bufbuild/protobuf',
     '@datastructures-js/deque',
     '@livekit/mutex',
     '@livekit/rtc-node',
