@@ -5,13 +5,13 @@ limit_req_zone $binary_remote_addr zone=lifestory_generation:10m rate=20r/m;
 
 server {
   listen 80;
-  server_name your-new-domain.com www.your-new-domain.com;
+  server_name your-new-domain.com www.your-new-domain.com app.your-new-domain.com;
   return 301 https://$host$request_uri;
 }
 
 server {
   listen 443 ssl http2;
-  server_name your-new-domain.com www.your-new-domain.com;
+  server_name your-new-domain.com www.your-new-domain.com app.your-new-domain.com;
 
   client_max_body_size 25m;
 

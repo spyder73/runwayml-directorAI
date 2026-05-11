@@ -126,7 +126,7 @@ test('session UI exposes a settings cog and never hydrates raw saved keys into f
 });
 
 test('home page exposes a top-right settings cog after login', () => {
-  const source = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const source = readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /Settings/);
   assert.match(source, /SettingsModal/);

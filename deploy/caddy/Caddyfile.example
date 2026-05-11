@@ -1,4 +1,4 @@
-your-new-domain.com, www.your-new-domain.com {
+your-new-domain.com, www.your-new-domain.com, app.your-new-domain.com {
   request_body {
     max_size 25MB
   }

@@ -16,6 +16,7 @@ APP_DIR=/opt/lifestory
 REPO=https://github.com/spyder73/runwayml-directorAI.git
 BRANCH=production
 PUBLIC_URL=https://your-domain.com
+APP_URL=https://app.your-domain.com
 BACKUP_DIR=/opt/backups/lifestory
 ```
 
@@ -38,24 +39,20 @@ In Porkbun, open your domain DNS settings.
 Add or verify:
 
 ```txt
-Type  Host  Answer
-A     @     your-vps-ipv4
-A     www   your-vps-ipv4
+Type   Host  Answer
+A      @     your-vps-ipv4
+A      app   your-vps-ipv4
+CNAME  www   your-domain.com
 ```
 
 Only add `AAAA` records if the VPS has working IPv6.
 
-If you want the app on a subdomain, use this instead:
+The same container serves all three hostnames. The root and `www` domains show
+the public landing page. The `app` subdomain shows the authenticated studio.
+Set `APP_URL` to the app subdomain:
 
 ```txt
-Type  Host       Answer
-A     lifestory  your-vps-ipv4
-```
-
-Then your `APP_URL` will be:
-
-```txt
-https://lifestory.your-domain.com
+https://app.your-domain.com
 ```
 
 Wait for DNS to resolve before expecting Caddy/TLS to work:
@@ -63,6 +60,7 @@ Wait for DNS to resolve before expecting Caddy/TLS to work:
 ```bash
 dig +short your-domain.com
 dig +short www.your-domain.com
+dig +short app.your-domain.com
 ```
 
 ## 2. Porkbun SMTP Mailbox
@@ -233,7 +231,7 @@ Use this shape:
 
 ```env
 NODE_ENV=production
-APP_URL=https://your-domain.com
+APP_URL=https://app.your-domain.com
 SESSION_SECRET=paste-first-openssl-rand-base64-32-value
 CREDENTIAL_ENCRYPTION_KEY=paste-second-openssl-rand-base64-32-value
 
@@ -263,7 +261,8 @@ REMOTION_BUNDLE_CACHE=true
 
 Notes:
 
-- `APP_URL` must exactly match the public HTTPS URL users open in the browser.
+- `APP_URL` must exactly match the public HTTPS app URL users open for login,
+  registration, email verification, and the studio.
 - `SMTP_PASS` is the Porkbun mailbox password, not your Porkbun account password.
 - `REVIEWER_EMAIL` is an app login that is automatically seeded and confirmed.
 - `REVIEWER_PASSWORD` is only for logging into this app as the reviewer user.
@@ -402,7 +401,7 @@ If the reverse proxy is Caddy, add a site block like this.
 Preferred Docker network upstream:
 
 ```caddyfile
-your-domain.com, www.your-domain.com {
+your-domain.com, www.your-domain.com, app.your-domain.com {
   request_body {
     max_size 25MB
   }
@@ -425,7 +424,7 @@ your-domain.com, www.your-domain.com {
 Localhost fallback upstream:
 
 ```caddyfile
-your-domain.com, www.your-domain.com {
+your-domain.com, www.your-domain.com, app.your-domain.com {
   request_body {
     max_size 25MB
   }
@@ -492,7 +491,11 @@ Confirm public routing:
 ```bash
 curl -I https://your-domain.com
 curl -I https://www.your-domain.com
+curl -I https://app.your-domain.com
 ```
+
+The root and `www` checks should show the public landing page. The `app`
+subdomain should show the authenticated studio or redirect/login flow.
 
 Confirm the app container is healthy enough to answer logs:
 
@@ -515,7 +518,7 @@ The app should not bind directly to public `0.0.0.0:80` or `0.0.0.0:443`.
 Open the app URL in a browser:
 
 ```txt
-https://your-domain.com
+https://app.your-domain.com
 ```
 
 Register a new test user with an email address you can receive.
@@ -599,6 +602,7 @@ Useful command checks during acceptance:
 docker compose -p lifestory ps
 docker compose -p lifestory logs --tail=300 web
 curl -I https://your-domain.com
+curl -I https://app.your-domain.com
 sudo ss -tulpn | grep -E ':80|:443'
 ```
 
@@ -763,13 +767,15 @@ DNS:
 ```bash
 dig +short your-domain.com
 dig +short www.your-domain.com
+dig +short app.your-domain.com
 ```
 
 HTTPS:
 
 ```bash
 curl -I https://your-domain.com
-curl -vI https://your-domain.com
+curl -I https://app.your-domain.com
+curl -vI https://app.your-domain.com
 ```
 
 Disk usage:
@@ -782,7 +788,7 @@ du -sh /opt/backups/lifestory
 
 ## 23. Manual Setup Checklist
 
-- [ ] DNS A records point at the VPS.
+- [ ] DNS A records for the root and `app` hostnames point at the VPS.
 - [ ] Porkbun hosted mailbox exists for `no-reply@your-domain.com`.
 - [ ] Docker and Compose are installed.
 - [ ] Repo is cloned to `/opt/lifestory`.
@@ -797,7 +803,7 @@ du -sh /opt/backups/lifestory
 - [ ] `data/` exists and is `chmod 700`.
 - [ ] Docker `proxy` network exists, or localhost fallback is selected.
 - [ ] App starts with Compose project `lifestory`.
-- [ ] Existing Caddy/nginx routes the app domain to the correct upstream.
+- [ ] Existing Caddy/nginx routes the root, `www`, and `app` hostnames to the correct upstream.
 - [ ] HTTPS responds.
 - [ ] Email verification works.
 - [ ] Reviewer login works.

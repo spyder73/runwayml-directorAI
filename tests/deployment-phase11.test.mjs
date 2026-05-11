@@ -18,7 +18,7 @@ test('Phase 11 compose gives the shared proxy a stable app hostname without host
 test('Phase 11 Caddy example preserves SSE and upload behavior behind the shared proxy', () => {
   const caddyfile = readText('../deploy/caddy/Caddyfile.example');
 
-  assert.match(caddyfile, /your-new-domain\.com, www\.your-new-domain\.com/);
+  assert.match(caddyfile, /your-new-domain\.com, www\.your-new-domain\.com, app\.your-new-domain\.com/);
   assert.match(caddyfile, /request_body\s*\{\s*max_size 25MB\s*\}/);
   assert.match(caddyfile, /reverse_proxy \/api\/pipeline\/events\* lifestory-web:3000/);
   assert.match(caddyfile, /flush_interval -1/);
@@ -30,7 +30,7 @@ test('Phase 11 Caddy example preserves SSE and upload behavior behind the shared
 test('Phase 11 nginx example includes upload caps, SSE buffering disablement, and coarse limits', () => {
   const nginx = readText('../deploy/nginx/lifestory.conf.example');
 
-  assert.match(nginx, /server_name your-new-domain\.com www\.your-new-domain\.com/);
+  assert.match(nginx, /server_name your-new-domain\.com www\.your-new-domain\.com app\.your-new-domain\.com/);
   assert.match(nginx, /client_max_body_size 25m/);
   assert.match(nginx, /proxy_pass http:\/\/lifestory-web:3000/);
   assert.match(nginx, /location \/api\/pipeline\/events/);
@@ -46,7 +46,12 @@ test('Phase 11 reverse proxy handoff captures manual VPS steps', () => {
   const handoff = readText('../deploy/REVERSE_PROXY.md');
 
   for (const phrase of [
-    'Add an A record',
+    'Add A records',
+    'app.your-new-domain.com',
+    'root and `www`',
+    'public landing page',
+    '`app` subdomain',
+    'authenticated studio launcher',
     'AAAA',
     'docker ps',
     "sudo ss -tulpn | grep -E ':80|:443'",

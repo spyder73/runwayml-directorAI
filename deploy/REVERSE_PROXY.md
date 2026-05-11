@@ -4,9 +4,14 @@ These are manual VPS steps. The repo prepares compose and proxy examples, but th
 
 ## DNS
 
-- Add an A record for `your-new-domain.com` and `www.your-new-domain.com` pointing to the VPS IPv4.
+- Add A records for `your-new-domain.com` and `app.your-new-domain.com` pointing to the VPS IPv4.
+- Add `www.your-new-domain.com` as either an A record to the VPS IPv4 or a CNAME to `your-new-domain.com`.
 - Add an AAAA record only if the VPS has working IPv6.
 - Wait for propagation before requesting or renewing TLS certificates.
+
+The same Next.js container serves all three hostnames. The root and `www`
+domains render the public landing page. The `app` subdomain renders the
+authenticated studio launcher.
 
 ## Inspect The Current Proxy
 
@@ -31,7 +36,7 @@ docker compose up -d --build
 
 The production compose file exposes app port `3000` only to Docker networks and gives the app container the stable name `lifestory-web`.
 
-For Caddy, adapt `deploy/caddy/Caddyfile.example` into the existing Caddyfile and reload Caddy. Keep the SSE route separate so `/api/pipeline/events` streams with `flush_interval -1` and a one-hour read timeout.
+For Caddy, adapt `deploy/caddy/Caddyfile.example` into the existing Caddyfile and reload Caddy. Route `your-new-domain.com`, `www.your-new-domain.com`, and `app.your-new-domain.com` to the same upstream. Keep the SSE route separate so `/api/pipeline/events` streams with `flush_interval -1` and a one-hour read timeout.
 
 ## Localhost Fallback Path
 
@@ -69,7 +74,8 @@ After proxy reload:
 
 ```bash
 curl -I https://your-new-domain.com
-curl -N https://your-new-domain.com/api/pipeline/events
+curl -I https://app.your-new-domain.com
+curl -N https://app.your-new-domain.com/api/pipeline/events
 docker logs --tail=100 lifestory-web
 ```
 

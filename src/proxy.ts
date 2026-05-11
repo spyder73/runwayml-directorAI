@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_SESSION_COOKIE } from './lib/auth/cookies';
+import { appPublicUrl, isStudioHost } from './lib/host-routing';
 
 const authPages = new Set(['/login', '/register']);
 
 export function proxy(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const onStudioHost = isStudioHost(host);
   const hasSessionCookie = Boolean(req.cookies.get(AUTH_SESSION_COOKIE)?.value);
-  const isProtectedPage = pathname === '/' || pathname.startsWith('/session/');
+  const shouldLiveOnStudioHost = authPages.has(pathname) || pathname.startsWith('/session/');
+  const isProtectedPage = (pathname === '/' && onStudioHost) || pathname.startsWith('/session/');
+
+  if (!onStudioHost && shouldLiveOnStudioHost) {
+    const appUrl = new URL(pathname, appPublicUrl());
+    appUrl.search = req.nextUrl.search;
+    return NextResponse.redirect(appUrl);
+  }
 
   if (isProtectedPage && !hasSessionCookie) {
     const loginUrl = new URL('/login', req.url);

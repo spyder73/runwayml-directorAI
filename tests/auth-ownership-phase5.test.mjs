@@ -213,7 +213,7 @@ test('Phase 5 surfaces are wired through auth and SSE buffering stays disabled',
   assert.match(eventsSource, /X-Accel-Buffering/);
   assert.match(eventsSource, /no-cache, no-transform/);
 
-  const pageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const pageSource = readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
   assert.match(pageSource, /login\?next=/);
 
   const proxySource = readFileSync(new URL('../src/proxy.ts', import.meta.url), 'utf8');

@@ -37,7 +37,7 @@ test('Phase 10 production env example contains deployment placeholders only', ()
 
   for (const line of [
     'NODE_ENV=production',
-    'APP_URL=https://your-new-domain.com',
+    'APP_URL=https://app.your-new-domain.com',
     'SESSION_SECRET=generate-with-openssl-rand-base64-32',
     'CREDENTIAL_ENCRYPTION_KEY=generate-with-openssl-rand-base64-32',
     'MEDIA_STORAGE_DIR=/app/data/media',

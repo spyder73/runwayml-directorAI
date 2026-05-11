@@ -127,14 +127,14 @@ test('director route can revise a single generated sub-scene prompt', () => {
 });
 
 test('home page exposes a rehearsal memory seed entrypoint', () => {
-  const source = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /\/api\/pipeline\/demo/);
   assert.match(source, /Open rehearsal memory/);
 });
 
 test('home page checks whether live demo production is ready', () => {
-  const source = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /\/api\/pipeline\/readiness/);
   assert.match(source, /readiness\.userMessage/);
@@ -153,7 +153,7 @@ test('ambient fractal background is a client component with Escape Dust motion c
 });
 
 test('home and session pages share the ambient fractal background with tuned intensity', () => {
-  const homeSource = fs.readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const homeSource = fs.readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
   const sessionSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
 
   assert.match(homeSource, /AmbientFractalBackground/);
