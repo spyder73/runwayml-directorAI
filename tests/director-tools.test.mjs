@@ -107,6 +107,33 @@ test('profile bucket tool tolerates numeric age from model tool calls', () => {
   assert.equal(parsed.profile.age, '23');
 });
 
+test('profile bucket tool tolerates numeric relationship facts from model tool calls', () => {
+  const { updateProfileBucketSchema } = jiti('../src/lib/ai/tools.ts');
+
+  const parsed = updateProfileBucketSchema.parse({
+    entities: [{
+      type: 'friend',
+      displayName: 'Martin',
+      relationship: 12,
+      description: 'Festival friend',
+    }],
+    timelineEvents: [{
+      label: 'Friendship with Martin',
+      description: 'They have known each other for twelve years.',
+      era: 12,
+    }],
+    memoryCandidates: [{
+      title: 'Festival with Martin',
+      description: 'Going to festivals with Martin stands out.',
+      people: ['Martin', 12],
+    }],
+  });
+
+  assert.equal(parsed.entities[0].relationship, '12');
+  assert.equal(parsed.timelineEvents[0].era, '12');
+  assert.equal(parsed.memoryCandidates[0].people[1], '12');
+});
+
 test('LifeStory start is the only supported session mode and does not create an opening selfie request', () => {
   const fs = jiti('node:fs');
   const source = fs.readFileSync(new URL('../src/app/api/pipeline/start/route.ts', import.meta.url), 'utf8');

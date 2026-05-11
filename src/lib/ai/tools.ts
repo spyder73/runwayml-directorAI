@@ -1,46 +1,49 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 
-const optionalStringArray = z.array(z.string().min(1)).optional();
-const optionalAge = z.union([z.string(), z.number()]).transform(String).optional();
+const textValue = z.union([z.string(), z.number()])
+  .transform((value) => String(value).trim())
+  .pipe(z.string().min(1));
+const optionalText = textValue.optional();
+const optionalStringArray = z.array(textValue).optional();
 
 export const updateProfileBucketSchema = z.object({
-  directorReply: z.string().min(1).optional(),
+  directorReply: optionalText,
   profile: z.object({
-    protagonistName: z.string().optional(),
-    age: optionalAge,
-    profession: z.string().optional(),
-    currentLocation: z.string().optional(),
-    pronouns: z.string().optional(),
-    lifePhase: z.string().optional(),
-    emotionalTone: z.string().optional(),
-    visualDescription: z.string().optional(),
-    protagonistReferenceAssetId: z.string().optional(),
-    summary: z.string().optional(),
+    protagonistName: optionalText,
+    age: optionalText,
+    profession: optionalText,
+    currentLocation: optionalText,
+    pronouns: optionalText,
+    lifePhase: optionalText,
+    emotionalTone: optionalText,
+    visualDescription: optionalText,
+    protagonistReferenceAssetId: optionalText,
+    summary: optionalText,
     themes: optionalStringArray,
   }).optional(),
   entities: z.array(z.object({
-    id: z.string().optional(),
-    type: z.enum(['protagonist', 'person', 'family', 'friend', 'place', 'object', 'pet', 'school', 'workplace', 'keepsake']).or(z.string().min(1)),
-    displayName: z.string().min(1),
-    description: z.string().optional(),
-    relationship: z.string().optional(),
+    id: optionalText,
+    type: z.enum(['protagonist', 'person', 'family', 'friend', 'place', 'object', 'pet', 'school', 'workplace', 'keepsake']).or(textValue),
+    displayName: textValue,
+    description: optionalText,
+    relationship: optionalText,
     consentState: z.enum(['unknown', 'allowed', 'restricted', 'denied']).optional(),
-    referenceAssetId: z.string().optional(),
+    referenceAssetId: optionalText,
   })).optional(),
   timelineEvents: z.array(z.object({
-    label: z.string().min(1),
-    description: z.string().min(1),
-    era: z.string().optional(),
-    emotion: z.string().optional(),
+    label: textValue,
+    description: textValue,
+    era: optionalText,
+    emotion: optionalText,
   })).optional(),
   themes: optionalStringArray,
   memoryCandidates: z.array(z.object({
-    id: z.string().optional(),
-    title: z.string().min(1),
-    description: z.string().min(1),
-    emotionalPurpose: z.string().optional(),
-    visualSummary: z.string().optional(),
+    id: optionalText,
+    title: textValue,
+    description: textValue,
+    emotionalPurpose: optionalText,
+    visualSummary: optionalText,
     people: optionalStringArray,
     places: optionalStringArray,
     referencesNeeded: optionalStringArray,
