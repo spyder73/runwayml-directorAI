@@ -610,6 +610,65 @@ test('Runway video model can be configured from the environment', () => {
   assert.equal(getRunwayVideoModel({ RUNWAY_VIDEO_MODEL: 'gen4_aleph' }), DEFAULT_VIDEO_MODEL);
 });
 
+test('Runway image, audio, and video generation wait up to thirty minutes for task output', async () => {
+  const {
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+  } = jiti('../src/lib/production-config.ts');
+  const {
+    generateImageAsset,
+    generateSpeechAsset,
+    generateVideoAsset,
+  } = jiti('../src/lib/runway.ts');
+  const seenTimeouts = [];
+
+  const task = (id) => ({
+    id,
+    async waitForTaskOutput(options) {
+      seenTimeouts.push(options.timeout);
+      throw new Error(`stop-${id}`);
+    },
+  });
+  const runwayClient = {
+    textToImage: {
+      create: async () => task('image'),
+    },
+    textToSpeech: {
+      create: async () => task('audio'),
+    },
+    imageToVideo: {
+      create: async () => task('video'),
+    },
+  };
+
+  await assert.rejects(generateImageAsset({
+    promptText: 'A warm kitchen memory.',
+    quality: 'high',
+    ratio: '1920:1088',
+    sessionId: 'session-1',
+    runwayClient,
+  }), /stop-image/);
+  await assert.rejects(generateSpeechAsset({
+    promptText: 'Narration line.',
+    sessionId: 'session-1',
+    runwayClient,
+  }), /stop-audio/);
+  await assert.rejects(generateVideoAsset({
+    promptImageUrl: 'runway://asset',
+    promptText: 'The camera slowly drifts forward.',
+    ratio: '1280:720',
+    duration: 5,
+    sessionId: 'session-1',
+    runwayClient,
+  }), /stop-video/);
+
+  assert.equal(RUNWAY_TASK_WAIT_TIMEOUT_MS, 30 * 60 * 1000);
+  assert.deepEqual(seenTimeouts, [
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+  ]);
+});
+
 test('Runway video task helper normalizes Veo 3.1 Fast payload constraints', async () => {
   const {
     createImageToVideoTask,
