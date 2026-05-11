@@ -11,3 +11,11 @@ export const sceneOutlinePrompt = `Scene outline:
 - Use only as many scenes as the life story earns; prefer emotionally specific scenes over a generic chronology.
 - Ask for approval or comments after proposing the outline.
 - Explain in user language that approval generates still images first; motion and narration start only after those frames are approved.`;
+
+export const storySceneDiversityPrompt = `Scene diversity:
+- When a user describes a life chapter, identify the concrete parts that can be shown as distinct locations or action beats.
+- Do not statically render the whole chapter in one scenery when the story naturally moves through different places, actions, or relationships.
+- Prefer several short scenes that each show a specific part of the described experience over repeated angles on the same background.
+- Repeat a location only when the action or emotional beat materially changes there.
+- Keep narration compact enough that each generated scene can stay within its planned 2 to 10 second duration.
+- Use sub-scenes only where the motion pass genuinely needs them, not for repeated same background coverage.`;

@@ -153,15 +153,8 @@ function perspectiveKeys(text: string) {
   return keys;
 }
 
-function hasConcreteAngleReason(reason: string | undefined) {
-  if (!reason || reason.length < 16) return false;
-  return !/\b(?:same angle|same perspective|same view|continue|continuation|another shot)\b/i.test(reason);
-}
-
 function hasMeaningfulPerspectiveChange(previous: ProposedShotPlan, shot: ProposedShotPlan) {
   const reason = proposedAngleChangeReason(shot);
-  if (hasConcreteAngleReason(reason)) return true;
-
   const previousText = [
     cleanGeneratorPrompt(previous.prompt),
     cleanGeneratorPrompt(previous.referencePrompt || previous.reference_prompt),
@@ -172,6 +165,7 @@ function hasMeaningfulPerspectiveChange(previous: ProposedShotPlan, shot: Propos
     cleanGeneratorPrompt(shot.referencePrompt || shot.reference_prompt),
     proposedVisualStartState(shot),
     proposedCameraRole(shot),
+    reason,
   ].filter(Boolean).join(' ');
   const previousKeys = perspectiveKeys(previousText);
   const nextKeys = perspectiveKeys(nextText);
@@ -387,6 +381,8 @@ export async function planShots(visualPrompt: string, durationSeconds: number, o
 Your job is to decide if this scene should be one continuous shot or cut into multiple angles.
 Prefer one continuous shot whenever the scene is 10 seconds or shorter and one camera setup can express the whole visual beat.
 Only split a short scene when the next shot has a genuinely different perspective, camera distance, angle, or visual view. Do not split just to repeat the same action from the same setup.
+Treat coverage-style variations of the same background, including alternate frontal angles, as one shot rather than separate shots.
+If the visual description spans multiple physical locations, the outline should carry those as separate scenes; keep this shot plan focused on the current scene's visible action.
 For scenes longer than 10 seconds, split only as much as needed so every generated clip stays between 2 and 10 seconds.
 Each shot must have a specific duration (between 2 and 10 seconds), and the sum of all shot durations must exactly equal the total duration provided.
 For each shot, provide a slightly adjusted cinematic prompt to reflect the camera angle or action (e.g. "Close up of...", "Wide shot of...").

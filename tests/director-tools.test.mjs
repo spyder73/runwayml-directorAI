@@ -119,6 +119,22 @@ test('LifeStory outline prompt asks for missing stories and highlighted experien
   assert.match(prompt, /broad life coverage/i);
 });
 
+test('story outline prompt generalizes multi-part memories into distinct scenes', () => {
+  const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
+  const prompt = buildInterviewSystemPrompt({
+    status: 'INTERVIEW_DYNAMIC',
+    storyContext: 'Candidate scenes: A season where work, friendship, and a new city started to feel connected.',
+    uploadContext: '',
+    activeReferenceRequest: null,
+  });
+
+  assert.match(prompt, /life chapter/i);
+  assert.match(prompt, /distinct locations or action beats/i);
+  assert.match(prompt, /one scenery/i);
+  assert.match(prompt, /repeated.*same background/i);
+  assert.doesNotMatch(prompt, /Heidelberg|Kareem|German course|classroom|cafe/i);
+});
+
 test('director prompt turns approved treatments into scene outlines and asks for friend references', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const prompt = buildInterviewSystemPrompt({

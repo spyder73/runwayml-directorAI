@@ -69,6 +69,35 @@ test('shot planner collapses weak short splits without a new perspective', () =>
   assert.match(shots[0].prompt, /shop window/);
 });
 
+test('shot planner collapses same-background frontal coverage despite vague angle reasons', () => {
+  const { normalizeShotPlan } = jiti('../src/lib/shot_planner.ts');
+
+  const shots = normalizeShotPlan(
+    'Maya and Jonah laugh together outside the community college after class.',
+    9,
+    [
+      {
+        duration: 3,
+        prompt: 'Frontal shot of Maya and Jonah laughing together against the same campus courtyard background.',
+      },
+      {
+        duration: 3,
+        prompt: 'Another frontal angle of Maya and Jonah laughing together against the same campus courtyard background.',
+        angle_change_reason: 'The camera changes to another frontal angle to add variety.',
+      },
+      {
+        duration: 3,
+        prompt: 'A third frontal angle of Maya and Jonah laughing together against the same campus courtyard background.',
+        angle_change_reason: 'The camera changes to a different frontal angle for coverage.',
+      },
+    ],
+  );
+
+  assert.equal(shots.length, 1);
+  assert.equal(shots[0].duration, 9);
+  assert.match(shots[0].prompt, /community college/);
+});
+
 test('shot planner uses visible start state for accepted continuation frames', () => {
   const { normalizeShotPlan } = jiti('../src/lib/shot_planner.ts');
 

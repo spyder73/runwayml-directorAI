@@ -6,6 +6,7 @@ import { runFrameGenerationPhase } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
 import { buildDirectorContinuationPrompt } from './director-continuation';
 import { filmTreatmentReviewHandoff } from './treatment-reply';
+import { storySceneDiversityPrompt } from './ai/prompts/scene-outline';
 import {
   aiTools,
   addReferenceSubjectSchema,
@@ -233,14 +234,19 @@ export function buildFallbackSceneOutlineFromBucket(bucket: StoryBucket) {
   };
 }
 
-async function draftSceneOutlineAfterTreatmentApproval(sessionId: string) {
-  const bucket = loadStoryBucket(db, sessionId);
-  const prompt = [
+export function buildTreatmentApprovedOutlineDraftPrompt(bucket: StoryBucket) {
+  return [
     'Create a concise reviewable LifeStory scene outline from this approved film treatment and private story bucket.',
     'Each scene must be cinematic, emotionally specific, and ready for image/video generation.',
     'Return only the structured scene outline. Keep narratorText short.',
+    storySceneDiversityPrompt,
     formatStoryBucketForPrompt(bucket),
   ].join('\n\n');
+}
+
+async function draftSceneOutlineAfterTreatmentApproval(sessionId: string) {
+  const bucket = loadStoryBucket(db, sessionId);
+  const prompt = buildTreatmentApprovedOutlineDraftPrompt(bucket);
 
   try {
     const { object } = await generateObject({

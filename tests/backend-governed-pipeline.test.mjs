@@ -260,6 +260,45 @@ test('fallback treatment outline creates scene rows from the approved story buck
   assert.ok(outline.scenes[0].duration <= 10);
 });
 
+test('approved treatment outline draft prompt carries scene diversity guidance', () => {
+  const {
+    applyProfileBucketUpdate,
+    initializeStoryBucketTables,
+    loadStoryBucket,
+    proposeFilmTreatment,
+  } = jiti('../src/lib/story-bucket.ts');
+  const { buildTreatmentApprovedOutlineDraftPrompt } = jiti('../src/lib/pipeline.ts');
+
+  const db = createDb();
+  initializeStoryBucketTables(db);
+  proposeFilmTreatment(db, 'session-1', {
+    title: 'The Place Became Familiar',
+    emotionalThesis: 'Belonging arrived through a sequence of ordinary places.',
+    narrativeArc: 'nervous arrival to shared routine to quiet belonging',
+    visualMotif: 'thresholds, tables, and late afternoon light',
+    narratorStyle: 'warm and direct',
+    endingFeeling: 'belonging',
+  });
+  applyProfileBucketUpdate(db, 'session-1', {
+    memoryCandidates: [
+      {
+        title: 'Finding a rhythm',
+        description: 'Maya moved through a demanding class, a friendship routine, and the walk home that made the city feel less strange.',
+        emotionalPurpose: 'A new place became approachable through small repeated moments.',
+        visualSummary: 'A class space, a shared table, and an evening walk.',
+      },
+    ],
+  });
+
+  const prompt = buildTreatmentApprovedOutlineDraftPrompt(loadStoryBucket(db, 'session-1'));
+
+  assert.match(prompt, /life chapter/i);
+  assert.match(prompt, /distinct locations or action beats/i);
+  assert.match(prompt, /one scenery/i);
+  assert.match(prompt, /repeated.*same background/i);
+  assert.doesNotMatch(prompt, /Heidelberg|Kareem|German course|classroom|cafe/i);
+});
+
 test('new supporting people can trigger an optional reference upload checkpoint', () => {
   const {
     applyProfileBucketUpdate,
