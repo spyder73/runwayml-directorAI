@@ -46,9 +46,10 @@ export async function POST(req: NextRequest) {
       }
 
       lockSceneOutlineForProduction(db, body.sessionId);
-      broadcastSessionUpdate(body.sessionId, fullSessionUpdate(body.sessionId));
+      const update = fullSessionUpdate(body.sessionId);
+      broadcastSessionUpdate(body.sessionId, update);
       runAutomaticProductionPipeline(body.sessionId).catch(console.error);
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, ...update });
     }
 
     if (body.action === 'comment' || body.action === 'revise') {

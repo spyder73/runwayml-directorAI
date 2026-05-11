@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, use } from 'react';
+import { useCallback, useEffect, useRef, useState, use } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -16,6 +16,7 @@ import ReferenceUploadRequest from '@/components/session/ReferenceUploadRequest'
 import RenderEmailPrompt from '@/components/session/RenderEmailPrompt';
 import SceneOutlineReview from '@/components/session/SceneOutlineReview';
 import SettingsModal from '@/components/session/SettingsModal';
+import { shouldIgnoreStaleProductionUpdate } from '@/lib/session-update-guards';
 import type {
   ChatHistoryRow,
   MemoryCandidateRow,
@@ -23,6 +24,7 @@ import type {
   RenderProgressPayload,
   SceneOutlineRow,
   SceneRow,
+  SessionUpdatePayload,
   SessionRow,
   StoryBucket,
 } from '@/lib/types';
@@ -58,32 +60,68 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const outlineReviewRef = useRef<HTMLDivElement>(null);
   const productionProgressRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const sessionRef = useRef<SessionRow | null>(null);
+  const scenesRef = useRef<SceneRow[]>([]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    scenesRef.current = scenes;
+  }, [scenes]);
+
+  const applySessionUpdate = useCallback((data: SessionUpdatePayload) => {
+    if (shouldIgnoreStaleProductionUpdate({
+      currentSession: sessionRef.current,
+      currentScenes: scenesRef.current,
+      incomingSession: data.session,
+      incomingStatus: data.status,
+      incomingScenes: data.scenes,
+    })) {
+      return;
+    }
+
+    const incomingStatus = data.session?.status || data.status;
+
+    if (data.session) {
+      sessionRef.current = data.session;
+      setSession(data.session);
+      setSessionLoadError(null);
+    } else if (data.status) {
+      setSession((current) => {
+        if (!current) return current;
+        const next = { ...current, status: data.status! };
+        sessionRef.current = next;
+        return next;
+      });
+    }
+
+    if (data.scenes) {
+      scenesRef.current = data.scenes;
+      setScenes(data.scenes);
+    }
+    if (data.chat_history) setChatHistory(data.chat_history);
+    if (data.story_bucket) setStoryBucket(data.story_bucket);
+    if ('active_reference_request' in data) setActiveReferenceRequest(data.active_reference_request || null);
+    if ('render_progress' in data) setRenderProgress(isRenderProgressPayload(data.render_progress) ? data.render_progress : null);
+    if (data.error) setPipelineError(data.error);
+    if (incomingStatus && incomingStatus !== 'FAILED') setPipelineError(null);
+    if (incomingStatus && incomingStatus !== 'RENDERING') setRenderProgress(null);
+    if (data.chat_chunk) {
+      setChatHistory((current) => current.map((row, index) => {
+        const isTarget = row.id === data.chat_chunk!.id || (index === current.length - 1 && row.role === 'assistant');
+        return isTarget ? { ...row, content: row.content + data.chat_chunk!.text } : row;
+      }));
+    }
+  }, []);
 
   useEffect(() => {
     const eventSource = new EventSource(`/api/pipeline/events?sessionId=${sessionId}`);
 
     eventSource.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
-        if (data.session) {
-          setSession(data.session);
-          setSessionLoadError(null);
-        }
-        if (data.scenes) setScenes(data.scenes);
-        if (data.chat_history) setChatHistory(data.chat_history);
-        if (data.story_bucket) setStoryBucket(data.story_bucket);
-        if ('active_reference_request' in data) setActiveReferenceRequest(data.active_reference_request);
-        if ('render_progress' in data) setRenderProgress(isRenderProgressPayload(data.render_progress) ? data.render_progress : null);
-        if (data.error) setPipelineError(data.error);
-        if (data.status && data.status !== 'FAILED') setPipelineError(null);
-        const incomingStatus = data.session?.status || data.status;
-        if (incomingStatus && incomingStatus !== 'RENDERING') setRenderProgress(null);
-        if (data.chat_chunk) {
-          setChatHistory((current) => current.map((row, index) => {
-            const isTarget = row.id === data.chat_chunk.id || (index === current.length - 1 && row.role === 'assistant');
-            return isTarget ? { ...row, content: row.content + data.chat_chunk.text } : row;
-          }));
-        }
+        applySessionUpdate(JSON.parse(event.data) as SessionUpdatePayload);
       } catch (err) {
         console.error('Error parsing session update', err);
       }
@@ -95,7 +133,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     };
 
     return () => eventSource.close();
-  }, [sessionId]);
+  }, [applySessionUpdate, sessionId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -197,20 +235,26 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   };
 
   const handleLockOutline = async () => {
-    const previousSession = session;
+    const previousSession = sessionRef.current;
     setPipelineError(null);
-    setSession((current) => current ? { ...current, status: 'GENERATING_IMAGES' } : current);
+    setSession((current) => {
+      const next = current ? { ...current, status: 'GENERATING_IMAGES' as const } : current;
+      sessionRef.current = next;
+      return next;
+    });
     try {
       const response = await fetch('/api/pipeline/outline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, action: 'lock' }),
       });
-      const data = await response.json();
+      const data = await response.json() as SessionUpdatePayload & { success?: boolean };
       if (!response.ok) {
         throw new Error(data.error || 'Failed to approve the outline.');
       }
+      applySessionUpdate(data);
     } catch (error) {
+      sessionRef.current = previousSession;
       setSession(previousSession);
       setPipelineError(error instanceof Error ? error.message : 'Failed to approve the outline.');
     }
