@@ -67,25 +67,25 @@ function ScriptHistorySidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] }
   const visibleRows = chatHistory.slice(-20);
 
   return (
-    <aside className="hidden h-full min-h-0 flex-col border-l border-white/10 bg-[#08080b] lg:flex">
+    <aside className="hidden h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-white/10 bg-[#08080b] lg:flex">
       <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/42">Live script</p>
         <div className="h-2 w-2 animate-pulse rounded-full bg-amber-200/80" />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-5 pr-3" data-avatar-transcript-scroll>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden overscroll-contain p-5 pr-3" data-avatar-transcript-scroll>
         {visibleRows.length === 0 ? (
-          <p className="mt-auto border-t border-white/10 pt-4 font-mono text-xs leading-relaxed text-white/38">
+          <p className="mt-auto min-w-0 border-t border-white/10 pt-4 font-mono text-xs leading-relaxed text-white/38 [overflow-wrap:anywhere]">
             Waiting for the first line.
           </p>
         ) : (
           visibleRows.map((row) => {
             const isUser = row.role === 'user';
             return (
-              <article key={row.id} className="border-b border-white/8 pb-3 last:border-b-0">
+              <article key={row.id} className="min-w-0 border-b border-white/8 pb-3 last:border-b-0">
                 <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/34">
                   {isUser ? 'You' : 'Director'}
                 </p>
-                <p className={`line-clamp-3 font-mono text-xs leading-relaxed ${isUser ? 'text-white/76' : 'text-amber-100/72'}`}>
+                <p className={`line-clamp-3 min-w-0 font-mono text-xs leading-relaxed [overflow-wrap:anywhere] ${isUser ? 'text-white/76' : 'text-amber-100/72'}`}>
                   {formatScriptPreview(row.content)}
                 </p>
               </article>
@@ -108,18 +108,18 @@ function LiveTranscriptSidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] 
   }
 
   return (
-    <aside className="hidden h-full min-h-0 flex-col border-l border-white/10 bg-[#08080b] lg:flex">
+    <aside className="hidden h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-white/10 bg-[#08080b] lg:flex">
       <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/42">Live script</p>
         <div className="h-2 w-2 animate-pulse rounded-full bg-amber-200/80" />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-5 pr-3" data-avatar-transcript-scroll>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden overscroll-contain p-5 pr-3" data-avatar-transcript-scroll>
         {liveRows.map((entry) => (
-          <article key={entry.id} className="border-b border-white/8 pb-3 last:border-b-0">
+          <article key={entry.id} className="min-w-0 border-b border-white/8 pb-3 last:border-b-0">
             <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/34">
               Transcript
             </p>
-            <p className="line-clamp-3 font-mono text-xs leading-relaxed text-amber-100/72">
+            <p className="line-clamp-3 min-w-0 font-mono text-xs leading-relaxed text-amber-100/72 [overflow-wrap:anywhere]">
               {entry.text}
             </p>
           </article>
@@ -139,8 +139,8 @@ function DirectorCallFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 bg-black lg:grid-cols-[minmax(0,1.58fr)_minmax(300px,0.72fr)]">
-      <div className="relative min-h-0 overflow-hidden bg-black">
+    <div className="grid h-full min-h-0 min-w-0 grid-cols-1 overflow-hidden bg-black lg:grid-cols-[minmax(0,1fr)_minmax(300px,340px)]">
+      <div className="relative min-h-0 min-w-0 overflow-hidden bg-black">
         <div className="absolute inset-0 border-[10px] border-black" aria-hidden="true" />
         <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between border-b border-white/10 bg-black/72 px-4 py-3 backdrop-blur-md">
           <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.2em] text-white/54">

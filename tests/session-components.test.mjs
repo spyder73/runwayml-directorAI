@@ -294,6 +294,15 @@ test('voice session keeps avatar frame viewport-bound and scrolls transcript int
   assert.match(callSource, /overflow-y-auto/);
 });
 
+test('voice live script cannot resize the avatar video column', () => {
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+
+  assert.match(callSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,340px\)\]/);
+  assert.match(callSource, /min-w-0 flex-col overflow-hidden border-l/);
+  assert.match(callSource, /overflow-y-auto overflow-x-hidden/);
+  assert.match(callSource, /\[overflow-wrap:anywhere\]/);
+});
+
 test('voice session shows avatar connection progress and errors instead of a blank stage', () => {
   const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
 
