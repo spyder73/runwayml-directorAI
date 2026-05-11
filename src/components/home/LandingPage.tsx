@@ -113,20 +113,24 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
         </div>
       </section>
 
-      <section className="relative z-10 bg-[#0E1013] px-5 py-14 sm:px-8">
-        <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[0.74fr_1fr] md:items-center">
-          <div className="mx-auto w-full max-w-sm overflow-hidden rounded-lg border border-white/10 bg-black/40 shadow-[0_24px_80px_rgba(0,0,0,0.36)]">
-            <video
-              src="/landing/videos/Welcome.mp4"
-              className="aspect-[9/16] w-full bg-black object-cover"
-              autoPlay
-              muted
-              loop
-              playsInline
-              controls
-              preload="metadata"
-              aria-label="Welcome introduction to yourlifestory"
-            />
+      <section className="relative z-10 bg-[#0E1013] px-5 py-16 sm:px-8">
+        <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[minmax(20rem,34rem)_1fr] md:items-center">
+          <div className="mx-auto w-full max-w-[min(88vw,34rem)] bg-[linear-gradient(145deg,rgba(244,213,141,0.34),rgba(255,255,255,0.08)_36%,rgba(158,216,201,0.18))] p-px shadow-[0_28px_90px_rgba(0,0,0,0.46)]">
+            <div className="overflow-hidden border border-black/70 bg-black p-1">
+              <video
+                src="/landing/videos/Welcome.mp4"
+                width={1080}
+                height={1920}
+                className="aspect-[9/16] w-full bg-black object-contain"
+                autoPlay
+                muted
+                loop
+                playsInline
+                controls
+                preload="metadata"
+                aria-label="Welcome introduction to yourlifestory"
+              />
+            </div>
           </div>
           <div className="max-w-2xl">
             <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/62">Watch first</p>

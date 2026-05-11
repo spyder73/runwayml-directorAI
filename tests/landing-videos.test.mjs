@@ -6,6 +6,10 @@ test('public landing page embeds the welcome video near registration prompts', (
   const source = fs.readFileSync(new URL('../src/components/home/LandingPage.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /\/landing\/videos\/Welcome\.mp4/);
+  assert.match(source, /width=\{1080\}/);
+  assert.match(source, /height=\{1920\}/);
+  assert.match(source, /object-contain/);
+  assert.match(source, /max-w-\[min\(88vw,34rem\)\]/);
   assert.match(source, /autoPlay/);
   assert.match(source, /muted/);
   assert.match(source, /playsInline/);
