@@ -94,6 +94,19 @@ test('profile bucket tool accepts LifeStory current-life basics', () => {
   assert.equal(parsed.profile.currentLocation, 'Berlin');
 });
 
+test('profile bucket tool tolerates numeric age from model tool calls', () => {
+  const { updateProfileBucketSchema } = jiti('../src/lib/ai/tools.ts');
+
+  const parsed = updateProfileBucketSchema.parse({
+    profile: {
+      protagonistName: 'Dorian',
+      age: 23,
+    },
+  });
+
+  assert.equal(parsed.profile.age, '23');
+});
+
 test('LifeStory start is the only supported session mode and does not create an opening selfie request', () => {
   const fs = jiti('node:fs');
   const source = fs.readFileSync(new URL('../src/app/api/pipeline/start/route.ts', import.meta.url), 'utf8');
