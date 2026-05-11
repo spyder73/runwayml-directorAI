@@ -24,6 +24,7 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
+RUN test -d .next/standalone || (echo "Missing .next/standalone; ensure next.config.js sets output: 'standalone'." && exit 1)
 
 # Production image, copy all the files and run next
 FROM base AS runner

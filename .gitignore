@@ -51,6 +51,3 @@ docs/
 /public/uploads/
 /public/generated/
 /.superpowers/
-
-# extra
-next.config.js
