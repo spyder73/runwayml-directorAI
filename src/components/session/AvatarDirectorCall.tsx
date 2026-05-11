@@ -8,6 +8,7 @@ import {
   ControlBar,
   PageActions,
   useAvatarSession,
+  useAvatarStatus,
   useClientEvent,
   useTranscript,
 } from '@runwayml/avatars-react';
@@ -130,17 +131,13 @@ function LiveTranscriptSidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] 
 }
 
 function DirectorCallFrame({
-  chatHistory,
-  sidebar,
   children,
 }: {
-  chatHistory: ChatHistoryRow[];
-  sidebar?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <div className="grid h-full min-h-0 min-w-0 grid-cols-1 overflow-hidden bg-black lg:grid-cols-[minmax(0,1fr)_minmax(300px,340px)]">
-      <div className="relative min-h-0 min-w-0 overflow-hidden bg-black">
+    <div className="relative h-full min-h-0 min-w-0 overflow-hidden bg-black">
+      <div className="absolute inset-y-0 left-0 right-0 min-w-0 overflow-hidden bg-black lg:right-[340px]" data-avatar-video-shell>
         <div className="absolute inset-0 border-[10px] border-black" aria-hidden="true" />
         <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between border-b border-white/10 bg-black/72 px-4 py-3 backdrop-blur-md">
           <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.2em] text-white/54">
@@ -151,7 +148,47 @@ function DirectorCallFrame({
         </div>
         {children}
       </div>
-      {sidebar || <ScriptHistorySidebar chatHistory={chatHistory} />}
+    </div>
+  );
+}
+
+function DetachedTranscriptPanel({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="pointer-events-auto absolute inset-y-0 right-0 z-20 hidden w-[340px] min-w-0 overflow-hidden border-l border-white/10 bg-[#08080b] lg:block"
+      data-avatar-script-panel
+    >
+      {children}
+    </div>
+  );
+}
+
+function AvatarLoadingGraphic() {
+  return (
+    <div className="relative mx-auto h-20 w-20" aria-hidden="true">
+      <div className="avatar-loader-ring absolute inset-0 rounded-full border border-amber-100/25" />
+      <div className="avatar-loader-ring absolute inset-3 rounded-full border border-emerald-100/20" />
+      <div className="absolute inset-6 rounded-full bg-amber-100/10 shadow-[0_0_28px_rgba(253,230,138,0.22)]" />
+      <div className="avatar-loader-scan absolute left-1/2 top-1/2 h-px w-16 origin-left bg-gradient-to-r from-amber-100/80 to-transparent" />
+    </div>
+  );
+}
+
+function AvatarStageLoadingOverlay() {
+  const avatarStatus = useAvatarStatus();
+  if (avatarStatus.status === 'ready') return null;
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/72 px-6 text-center backdrop-blur-[2px]">
+      <div className="max-w-md pt-10">
+        <AvatarLoadingGraphic />
+        <p className="mt-6 font-mono text-[11px] uppercase tracking-[0.24em] text-amber-50/62">
+          Syncing video signal
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-white/58">
+          Nico is stepping into frame. The call is live as soon as the studio feed locks.
+        </p>
+      </div>
     </div>
   );
 }
@@ -166,11 +203,15 @@ function AvatarConnectionStatus({
   const isError = connection.status === 'error';
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center bg-[#141414] px-6 text-center">
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#10100f] px-6 text-center">
       <div className="max-w-md pt-10">
-        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full border border-white/12 bg-white/[0.04]">
-          <RefreshCw size={22} className={isError ? 'text-amber-100/75' : 'animate-spin text-emerald-200/75'} />
-        </div>
+        {isError ? (
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full border border-white/12 bg-white/[0.04]">
+            <RefreshCw size={22} className="text-amber-100/75" />
+          </div>
+        ) : (
+          <AvatarLoadingGraphic />
+        )}
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/42">
           {isError ? 'Could not start director call' : 'Preparing Nico'}
         </p>
@@ -339,9 +380,12 @@ export default function AvatarDirectorCall({
     >
       {connection.status !== 'ready' ? (
         <div className="h-full overflow-hidden rounded border border-black bg-black shadow-[0_26px_90px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.08)]">
-          <DirectorCallFrame chatHistory={chatHistory}>
+          <DirectorCallFrame>
             <AvatarConnectionStatus connection={connection} onRetry={restartCall} />
           </DirectorCallFrame>
+          <DetachedTranscriptPanel>
+            <ScriptHistorySidebar chatHistory={chatHistory} />
+          </DetachedTranscriptPanel>
         </div>
       ) : (
         <AvatarCall
@@ -354,16 +398,19 @@ export default function AvatarDirectorCall({
           className="h-full min-h-0 overflow-hidden rounded border border-black bg-black shadow-[0_26px_90px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.08)]"
           style={{ aspectRatio: 'auto' }}
         >
-          <DirectorCallFrame
-            chatHistory={chatHistory}
-            sidebar={<LiveTranscriptSidebar chatHistory={chatHistory} />}
-          >
-            <AvatarVideo className="absolute inset-0 h-full w-full object-cover" />
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0)_45%,rgba(0,0,0,0.74)_100%)]" />
-            <div className="absolute bottom-4 right-4 z-10">
-              <ControlBar showCamera={false} showScreenShare={false} className="!static !inset-auto !w-auto !bg-transparent !p-0 rounded-full border border-white/12 backdrop-blur-md" />
-            </div>
-          </DirectorCallFrame>
+          <div className="relative h-full min-h-0 overflow-hidden">
+            <DirectorCallFrame>
+              <AvatarVideo className="absolute inset-0 h-full w-full bg-black" data-avatar-video-fit="contain" />
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0)_45%,rgba(0,0,0,0.74)_100%)]" />
+              <AvatarStageLoadingOverlay />
+              <div className="absolute bottom-4 right-4 z-10">
+                <ControlBar showCamera={false} showScreenShare={false} className="!static !inset-auto !w-auto !bg-transparent !p-0 rounded-full border border-white/12 backdrop-blur-md" />
+              </div>
+            </DirectorCallFrame>
+            <DetachedTranscriptPanel>
+              <LiveTranscriptSidebar chatHistory={chatHistory} />
+            </DetachedTranscriptPanel>
+          </div>
 
           <PageActions />
           <AvatarClientEvents onLayout={setClientLayout} onShowUploadRequested={onShowUploadRequested} />

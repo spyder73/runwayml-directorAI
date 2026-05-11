@@ -297,10 +297,34 @@ test('voice session keeps avatar frame viewport-bound and scrolls transcript int
 test('voice live script cannot resize the avatar video column', () => {
   const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
 
-  assert.match(callSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,340px\)\]/);
-  assert.match(callSource, /min-w-0 flex-col overflow-hidden border-l/);
+  assert.match(callSource, /data-avatar-video-shell/);
+  assert.match(callSource, /data-avatar-script-panel/);
+  assert.match(callSource, /lg:right-\[340px\]/);
+  assert.doesNotMatch(callSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,340px\)\]/);
   assert.match(callSource, /overflow-y-auto overflow-x-hidden/);
   assert.match(callSource, /\[overflow-wrap:anywhere\]/);
+});
+
+test('voice avatar video never crops in as transcript content changes', () => {
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+  const cssSource = fs.readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
+
+  assert.match(callSource, /data-avatar-video-fit="contain"/);
+  assert.doesNotMatch(callSource, /object-cover/);
+  assert.match(cssSource, /\[data-avatar-video-fit="contain"\] video/);
+  assert.match(cssSource, /object-fit: contain !important/);
+});
+
+test('voice avatar player has an animated loading state', () => {
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+  const cssSource = fs.readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
+
+  assert.match(callSource, /useAvatarStatus/);
+  assert.match(callSource, /AvatarStageLoadingOverlay/);
+  assert.match(callSource, /Preparing Nico/);
+  assert.match(callSource, /Syncing video signal/);
+  assert.match(cssSource, /@keyframes avatar-loader-scan/);
+  assert.match(cssSource, /\.avatar-loader-ring/);
 });
 
 test('voice live script exposes a visible scrollbar affordance', () => {

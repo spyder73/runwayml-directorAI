@@ -38,6 +38,62 @@
     background: rgba(254, 243, 199, 0.65);
   }
 
+  [data-avatar-video-fit="contain"] {
+    background: #000;
+  }
+
+  [data-avatar-video-fit="contain"] video {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    object-fit: contain !important;
+    object-position: center center !important;
+  }
+
+  .avatar-loader-ring {
+    animation: avatar-loader-ring 2.4s ease-in-out infinite;
+  }
+
+  .avatar-loader-ring:nth-child(2) {
+    animation-delay: 0.35s;
+  }
+
+  .avatar-loader-scan {
+    animation: avatar-loader-scan 2.6s ease-in-out infinite;
+  }
+
+  @keyframes avatar-loader-ring {
+    0% {
+      opacity: 0.2;
+      transform: scale(0.72);
+    }
+    48% {
+      opacity: 0.85;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0.2;
+      transform: scale(1.22);
+    }
+  }
+
+  @keyframes avatar-loader-scan {
+    0% {
+      opacity: 0;
+      transform: rotate(0deg);
+    }
+    18% {
+      opacity: 0.85;
+    }
+    78% {
+      opacity: 0.7;
+    }
+    100% {
+      opacity: 0;
+      transform: rotate(360deg);
+    }
+  }
+
   .lifestory-aurora {
     background:
       radial-gradient(ellipse at 50% 24%, rgba(239, 219, 176, 0.13), transparent 35%),
@@ -143,7 +199,9 @@
   .lifestory-stage-rays,
   .lifestory-portal-ring,
   .lifestory-button-sheen,
-  .lifestory-icon-ring {
+  .lifestory-icon-ring,
+  .avatar-loader-ring,
+  .avatar-loader-scan {
     animation: none;
   }
 }
