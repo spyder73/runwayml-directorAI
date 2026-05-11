@@ -18,6 +18,7 @@ import { FINAL_IMAGE_QUALITY } from './production-config';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
 import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
 import { logMediaGeneration, type MediaGenerationLogDetails } from './media-logging';
+import { repairRunwayVideoPromptForValidation } from './video-prompt-repair';
 import {
   generateImageAsset,
   generateSpeechAsset,
@@ -545,14 +546,23 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
 }
 
 export function buildContinuityReferencePrompt(shot: ShotPlan, shotIndex: number) {
-  const basePrompt = cleanGeneratorPrompt(shot.referencePrompt)
+  const basePrompt = sanitizeContinuityReferencePrompt(cleanGeneratorPrompt(shot.referencePrompt)
     || referencePromptFromGeneratorText(shot.prompt)
     || cleanGeneratorPrompt(shot.visualStartState)
-    || cleanGeneratorPrompt(shot.prompt);
+    || cleanGeneratorPrompt(shot.prompt));
   if (shotIndex === 0 || basePrompt.includes(`@${OPENING_FRAME_REFERENCE_TAG}`)) {
     return basePrompt;
   }
   return `Using @${OPENING_FRAME_REFERENCE_TAG} as the visual reference, ${basePrompt}`;
+}
+
+function sanitizeContinuityReferencePrompt(promptText: string) {
+  return promptText
+    .replace(/@([a-zA-Z][a-zA-Z0-9_]*)/g, (match, tag: string) => (
+      tag === OPENING_FRAME_REFERENCE_TAG ? match : tag.replace(/_/g, ' ')
+    ))
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function generateContinuityReferenceImage(params: {
@@ -712,7 +722,24 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       writeShotPlanProgress(database, scene.id, shotPlan, session.id);
     }
 
-    const safePrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt, { openrouterApiKey }));
+    const moderatedPrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt, { openrouterApiKey }));
+    const repairedPrompt = await repairRunwayVideoPromptForValidation({
+      promptText: moderatedPrompt,
+      durationSeconds: shot.duration,
+      openrouterApiKey,
+    });
+    const safePrompt = repairedPrompt.promptText;
+    if (repairedPrompt.repaired) {
+      logMediaGeneration('scene_video_prompt_repaired', {
+        ...mediaTaskLogContext(session, task, scene),
+        mediaType: 'video',
+        shotIndex: shotIndex + 1,
+        shotCount: shots.length,
+        duration: shot.duration,
+        promptText: safePrompt,
+        error: repairedPrompt.validationError ? new Error(repairedPrompt.validationError) : undefined,
+      }, 'warn');
+    }
     assertRunwayVideoPrompt({
       promptText: safePrompt,
       durationSeconds: shot.duration,
