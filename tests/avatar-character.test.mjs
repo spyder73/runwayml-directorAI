@@ -39,6 +39,17 @@ test('avatar realtime session readiness waits long enough for cold production st
   assert.doesNotMatch(routeSource, /attempt < 24/);
 });
 
+test('avatar readiness polling records production diagnostics without secrets', () => {
+  const routeSource = fs.readFileSync(new URL('../src/app/api/avatar/session/route.ts', import.meta.url), 'utf8');
+
+  assert.match(routeSource, /eventType: 'runway_status'/);
+  assert.match(routeSource, /eventType: 'runway_ready_timeout'/);
+  assert.match(routeSource, /avatarCallSessionId/);
+  assert.match(routeSource, /runwaySessionId/);
+  assert.match(routeSource, /elapsedMs/);
+  assert.match(routeSource, /lastStatus/);
+});
+
 test('avatar logging redacts secrets and records tool events', () => {
   const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
   const {

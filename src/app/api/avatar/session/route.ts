@@ -24,6 +24,7 @@ type AvatarSessionRequest = {
 
 type AvatarRpcHandler = unknown;
 type AvatarRpcRuntime = typeof import('@runwayml/avatars-node-rpc');
+type AvatarReadySession = Awaited<ReturnType<RunwayML['realtimeSessions']['retrieve']>>;
 
 const DEFAULT_AVATAR_SESSION_READY_TIMEOUT_MS = 60_000;
 const configuredAvatarReadyTimeoutMs = Number.parseInt(process.env.RUNWAY_CHARACTER_SESSION_READY_TIMEOUT_MS || '', 10);
@@ -31,6 +32,7 @@ const AVATAR_SESSION_READY_TIMEOUT_MS = Number.isFinite(configuredAvatarReadyTim
   ? configuredAvatarReadyTimeoutMs
   : DEFAULT_AVATAR_SESSION_READY_TIMEOUT_MS;
 const AVATAR_SESSION_READY_POLL_MS = 1_000;
+const AVATAR_SESSION_STATUS_LOG_EVERY_ATTEMPTS = 10;
 
 const globalForAvatarRpc = globalThis as typeof globalThis & {
   __lifestoryAvatarRpcHandlers?: Map<string, AvatarRpcHandler>;
@@ -67,14 +69,58 @@ async function loadAvatarRpcRuntime() {
   };
 }
 
-async function waitForReadySession(client: RunwayML, runwaySessionId: string) {
+function recordRunwayStatus(input: {
+  avatarCallSessionId: string;
+  sessionId: string;
+  runwaySessionId: string;
+  eventType: 'runway_status' | 'runway_ready_timeout';
+  status: AvatarReadySession | { status: string; failure?: unknown };
+  attempt: number;
+  elapsedMs: number;
+}) {
+  recordAvatarCallEvent(db, {
+    avatarCallSessionId: input.avatarCallSessionId,
+    sessionId: input.sessionId,
+    runwaySessionId: input.runwaySessionId,
+    eventType: input.eventType,
+    payload: {
+      status: input.status.status,
+      failure: 'failure' in input.status ? input.status.failure : undefined,
+      attempt: input.attempt,
+      elapsedMs: input.elapsedMs,
+    },
+  });
+}
+
+async function waitForReadySession(
+  client: RunwayML,
+  runwaySessionId: string,
+  context: { avatarCallSessionId: string; sessionId: string },
+) {
+  const startedAt = Date.now();
   const deadline = Date.now() + AVATAR_SESSION_READY_TIMEOUT_MS;
   let lastStatus = 'UNKNOWN';
+  let lastLoggedStatus = 'UNKNOWN';
+  let attempt = 0;
 
   while (Date.now() < deadline) {
     const status = await client.realtimeSessions.retrieve(runwaySessionId);
+    attempt += 1;
     lastStatus = status.status;
+    const elapsedMs = Date.now() - startedAt;
     avatarDebugLog('runway_session_status', status);
+
+    if (status.status !== lastLoggedStatus || attempt === 1 || attempt % AVATAR_SESSION_STATUS_LOG_EVERY_ATTEMPTS === 0) {
+      recordRunwayStatus({
+        ...context,
+        runwaySessionId,
+        eventType: 'runway_status',
+        status,
+        attempt,
+        elapsedMs,
+      });
+      lastLoggedStatus = status.status;
+    }
 
     if (status.status === 'READY') return status;
     if (status.status === 'FAILED') {
@@ -87,7 +133,15 @@ async function waitForReadySession(client: RunwayML, runwaySessionId: string) {
     await new Promise((resolve) => setTimeout(resolve, AVATAR_SESSION_READY_POLL_MS));
   }
 
-  throw new Error(`Runway avatar session did not become ready within ${Math.round(AVATAR_SESSION_READY_TIMEOUT_MS / 1000)}s. Last status: ${lastStatus}.`);
+  recordRunwayStatus({
+    ...context,
+    runwaySessionId,
+    eventType: 'runway_ready_timeout',
+    status: { status: lastStatus },
+    attempt,
+    elapsedMs: Date.now() - startedAt,
+  });
+  throw new Error(`Runway avatar session ${runwaySessionId} did not become ready within ${Math.round(AVATAR_SESSION_READY_TIMEOUT_MS / 1000)}s. Last status: ${lastStatus}.`);
 }
 
 export async function POST(req: NextRequest) {
@@ -144,7 +198,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const ready = await waitForReadySession(client, runwaySessionId);
+    const ready = await waitForReadySession(client, runwaySessionId, {
+      avatarCallSessionId,
+      sessionId: session.id,
+    });
     db.prepare('UPDATE avatar_call_sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .run('READY', avatarCallSessionId);
 
@@ -243,6 +300,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ error: redactAvatarLogValue(message) }, { status: 500 });
+    return NextResponse.json({
+      error: redactAvatarLogValue(message),
+      runwaySessionId,
+      avatarCallSessionId,
+    }, { status: 500 });
   }
 }
