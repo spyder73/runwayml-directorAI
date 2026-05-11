@@ -112,44 +112,15 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
           </div>
         </div>
       </section>
-
-      <section className="relative z-10 bg-[#0A0A0E] px-5 py-20 sm:px-8 border-b border-white/5">
-        <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
-          <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/70 mb-4 text-center">
-            See the final cut
-          </p>
-          <h2 className="mb-10 text-center font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
-            What your story feels like.
-          </h2>
-          <div className="w-full border border-white/10 bg-black/50 p-1 shadow-2xl">
-            <div className="relative aspect-video overflow-hidden bg-black">
-              <video
-                src="/landing/videos/example.mp4"
-                width={1920}
-                height={1080}
-                className="absolute inset-0 w-full h-full object-cover"
-                autoPlay
-                muted
-                loop
-                playsInline
-                controls
-                preload="metadata"
-                aria-label="Example of a finished short film"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="relative z-10 bg-[#0E1013] px-5 py-16 sm:px-8">
-        <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[minmax(18rem,24rem)_1fr] md:items-center justify-center">
-          <div className="mx-auto w-full max-w-[24rem] border border-[#4A3420]/80 bg-black p-1 shadow-[0_28px_90px_rgba(0,0,0,0.46)]">
-            <div className="relative aspect-[9/16] overflow-hidden bg-black">
+        <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[minmax(20rem,38rem)_1fr] md:items-center">
+          <div className="mx-auto w-full max-w-[min(88vw,38rem)] border border-[#4A3420]/80 bg-black p-1 shadow-[0_28px_90px_rgba(0,0,0,0.46)]">
+            <div className="relative aspect-video overflow-hidden bg-black">
               <video
                 src="/landing/videos/Welcome.mp4"
                 width={1080}
                 height={1920}
-                className="absolute inset-0 w-full h-full object-cover"
+                className="absolute left-0 top-1/2 w-full -translate-y-1/2 bg-black"
                 autoPlay
                 muted
                 loop
@@ -160,13 +131,13 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
               />
             </div>
           </div>
-          <div className="max-w-2xl md:pl-8">
+          <div className="max-w-2xl">
             <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/62">Watch first</p>
             <h2 className="mt-4 font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
               Nico will show you where to begin.
             </h2>
             <p className="mt-5 text-lg leading-8 text-white/64">
-              It doesn&apos;t require perfect prompts or technical skill. Start with the welcome, create your account, and step into the studio when you are ready to talk.
+              Start with the welcome, then create your account and step into the studio when you are ready.
             </p>
             <Link
               href={`${appUrl}/register`}
@@ -236,6 +207,30 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
               </div>
             </article>
           ))}
+        </div>
+      </section>
+      <section className="relative z-10 bg-[#0A0A0E] px-5 py-20 sm:px-8 border-b border-white/5">
+        <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
+          <h2 className="mb-10 text-center font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
+            yourlifestory.io - Your Life as a Movie.
+          </h2>
+          <div className="w-full border border-white/10 bg-black/50 p-1 shadow-2xl">
+            <div className="relative aspect-video overflow-hidden bg-black">
+              <video
+                src="/landing/videos/example.mp4"
+                width={1920}
+                height={1080}
+                className="absolute inset-0 w-full h-full object-cover"
+                autoPlay
+                muted
+                loop
+                playsInline
+                controls
+                preload="metadata"
+                aria-label="Example of a finished short film"
+              />
+            </div>
+          </div>
         </div>
       </section>
 
