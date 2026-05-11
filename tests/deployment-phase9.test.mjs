@@ -73,5 +73,10 @@ test('Phase 9 standalone build carries LiveKit RPC logger dependencies', () => {
 
   assert.match(config, /@livekit\/rtc-node/);
   assert.match(config, /@runwayml\/avatars-node-rpc/);
+  assert.match(config, /@datastructures-js\/deque/);
+  assert.match(config, /@livekit\/mutex/);
+  assert.match(config, /@livekit\/typed-emitter/);
   assert.match(config, /pino/);
+  assert.match(config, /sonic-boom/);
+  assert.match(config, /thread-stream/);
 });
