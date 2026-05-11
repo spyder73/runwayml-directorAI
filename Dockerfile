@@ -22,6 +22,7 @@ COPY . .
 
 # Next.js telemetry is disabled
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV LIFESTORY_DB_PATH=:memory:
 
 RUN npm run build
 RUN test -d .next/standalone || (echo "Missing .next/standalone; ensure next.config.js sets output: 'standalone'." && exit 1)
