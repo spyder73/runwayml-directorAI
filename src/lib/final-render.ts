@@ -16,6 +16,10 @@ import {
   modalRenderConfig,
   runModalRenderBridge,
 } from './modal-render';
+import {
+  REMOTION_FPS,
+  totalFilmDurationInFrames,
+} from '../remotion/timing';
 import { getFinalRenderBackendForSession } from './providers/user-credentials';
 
 type AspectRatio = '16:9' | '9:16';
@@ -40,6 +44,7 @@ type RenderInput = {
   duration?: number;
   targetDuration?: number;
   tempo?: number;
+  effectiveDuration?: number;
 };
 
 type RemotionRenderClip = {
@@ -54,6 +59,7 @@ type RemotionRenderScene = {
   audio_playback_rate?: number;
   narrator_text: string;
   duration_in_frames: number;
+  narration_duration_in_frames?: number;
 };
 
 export type FinalRenderProgress = {
@@ -170,8 +176,6 @@ export function parseSceneVideoUrls(value: string | null) {
   return [value].filter((url) => url.trim().length > 0);
 }
 
-const FPS = 30;
-const BRANDED_OUTRO_DURATION_FRAMES = FPS * 3;
 const MAX_NARRATION_TEMPO = 1.12;
 const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
 const H264_MIN_CRF = 1;
@@ -242,6 +246,12 @@ function narrationTempo(audioDuration: number, targetDuration: number) {
   return Math.min(MAX_NARRATION_TEMPO, audioDuration / targetDuration);
 }
 
+function effectiveNarrationDuration(audioDuration: number, tempo: number | undefined) {
+  if (!Number.isFinite(audioDuration) || audioDuration <= 0) return 1;
+  if (!tempo || !Number.isFinite(tempo) || tempo <= 0) return audioDuration;
+  return audioDuration / tempo;
+}
+
 export function buildFinalRenderPlan(params: {
   sessionId: string;
   aspectRatio: AspectRatio;
@@ -289,33 +299,37 @@ export function buildFinalRenderPlan(params: {
       const resolved = resolveRenderInputUrl(scenePlan.scene.audio_url || '', params.database, params.sessionId);
       const audioDuration = scenePlan.scene.duration || scenePlan.videoDuration || 2;
       const targetDuration = scenePlan.videoDuration || audioDuration;
+      const tempo = narrationTempo(audioDuration, targetDuration);
       return {
         ...resolved,
         sceneId: scenePlan.scene.id,
         duration: audioDuration,
         targetDuration,
-        tempo: narrationTempo(audioDuration, targetDuration),
+        tempo,
+        effectiveDuration: effectiveNarrationDuration(audioDuration, tempo),
       };
     });
   const { width, height } = dimensionsForAspectRatio(params.aspectRatio);
   const remotionScenes = scenePlans.map((scenePlan) => {
-    const sceneDuration = scenePlan.videoDuration || scenePlan.scene.duration || 1;
-    const fallbackClipDuration = sceneDuration / Math.max(scenePlan.videoInputs.length, 1);
     const audioInput = audioInputs.find((input) => input.sceneId === scenePlan.scene.id);
+    const narrationDuration = audioInput?.effectiveDuration || scenePlan.scene.duration || scenePlan.videoDuration || 1;
+    const sceneDuration = Math.max(scenePlan.videoDuration || 0, narrationDuration, 1);
+    const fallbackClipDuration = sceneDuration / Math.max(scenePlan.videoInputs.length, 1);
 
     return {
       id: scenePlan.scene.id,
       clips: scenePlan.videoInputs.map((input) => ({
         url: input.remotionUrl,
-        duration_in_frames: Math.max(1, Math.ceil((input.duration || fallbackClipDuration) * FPS)),
+        duration_in_frames: Math.max(1, Math.ceil((input.duration || fallbackClipDuration) * REMOTION_FPS)),
       })),
       audio_url: audioInput?.remotionUrl || '',
       ...(audioInput?.tempo ? { audio_playback_rate: audioInput.tempo } : {}),
       narrator_text: scenePlan.scene.narrator_text,
-      duration_in_frames: Math.max(1, Math.ceil(sceneDuration * FPS)),
+      duration_in_frames: Math.max(1, Math.ceil(sceneDuration * REMOTION_FPS)),
+      narration_duration_in_frames: Math.max(1, Math.ceil(Math.min(narrationDuration, sceneDuration) * REMOTION_FPS)),
     };
   });
-  const totalDurationFrames = remotionScenes.reduce((total, scene) => total + scene.duration_in_frames, 0) + BRANDED_OUTRO_DURATION_FRAMES;
+  const totalDurationFrames = totalFilmDurationInFrames(remotionScenes);
 
   return {
     publicUrl,
@@ -328,7 +342,7 @@ export function buildFinalRenderPlan(params: {
       id: REMOTION_COMPOSITION_ID,
       width,
       height,
-      fps: FPS,
+      fps: REMOTION_FPS,
       durationInFrames: totalDurationFrames,
     },
     entryPoint: remotionEntryPoint(),

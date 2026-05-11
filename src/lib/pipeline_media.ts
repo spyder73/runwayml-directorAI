@@ -539,7 +539,7 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
         status = ?,
         last_failure = NULL
     WHERE id = ?
-  `).run(audioAsset.localUrl, Math.ceil(exactDuration), 'audio_ready', scene.id);
+  `).run(audioAsset.localUrl, exactDuration, 'audio_ready', scene.id);
   broadcastProgress(database, session.id);
 
   return audioAsset.localUrl;
@@ -811,7 +811,7 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
         status = ?,
         last_failure = NULL
     WHERE id = ?
-  `).run(outputAssetId, JSON.stringify(shotPlan), Math.ceil(exactDuration), 'completed', scene.id);
+  `).run(outputAssetId, JSON.stringify(shotPlan), exactDuration, 'completed', scene.id);
   logMediaGeneration('scene_video_db_updated', {
     ...mediaTaskLogContext(session, task, scene),
     mediaType: 'video',

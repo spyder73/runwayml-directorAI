@@ -528,6 +528,41 @@ test('final render plan gently speeds narration when it is longer than planned c
   assert.ok(plan.audioInputs[0].tempo && plan.audioInputs[0].tempo > 1);
   assert.equal(Number(plan.audioInputs[0].tempo.toFixed(3)), 1.067);
   assert.equal(Number(plan.remotionInputProps.scenes[0].audio_playback_rate?.toFixed(3)), 1.067);
+  assert.equal(plan.remotionInputProps.scenes[0].narration_duration_in_frames, 180);
+});
+
+test('final render plan times subtitles to exact narration instead of rounded sub-scene duration', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+
+  const plan = buildFinalRenderPlan({
+    sessionId: 'session-1',
+    aspectRatio: '16:9',
+    scenes: [
+      {
+        id: 'scene-1',
+        scene_index: 0,
+        narrator_text: 'The voice ends before the longer visual tail.',
+        video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4', '/generated/video/session-1/shot-2.mp4']),
+        shot_plan_json: JSON.stringify([{ duration: 4 }, { duration: 3 }]),
+        audio_url: '/generated/audio/session-1/scene-1.mp3',
+        duration: 6.2,
+      },
+    ],
+  });
+
+  assert.equal(plan.audioInputs[0].duration, 6.2);
+  assert.equal(plan.audioInputs[0].targetDuration, 7);
+  assert.equal(plan.audioInputs[0].tempo, undefined);
+  assert.equal(plan.remotionInputProps.scenes[0].duration_in_frames, 210);
+  assert.equal(plan.remotionInputProps.scenes[0].narration_duration_in_frames, 186);
+});
+
+test('pipeline preserves exact narration duration for final subtitle timing', () => {
+  const mediaSource = fs.readFileSync(new URL('../src/lib/pipeline_media.ts', import.meta.url), 'utf8');
+  const legacySource = fs.readFileSync(new URL('../src/lib/pipeline_final.ts', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(mediaSource, /Math\.ceil\(exactDuration\)/);
+  assert.doesNotMatch(legacySource, /Math\.ceil\(exactDuration\)/);
 });
 
 test('final render bundle resolver reuses one in-flight bundle', async () => {

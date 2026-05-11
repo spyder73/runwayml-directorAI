@@ -108,7 +108,7 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
       visual_prompt TEXT NOT NULL,
       image_prompt TEXT,
       video_prompt TEXT,
-      duration INTEGER,
+      duration REAL,
       scene_references TEXT,
       reference_image_url TEXT,
       video_url TEXT,
@@ -198,7 +198,7 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
 
   addColumnIfMissing(database, 'scenes', 'image_prompt', 'image_prompt TEXT');
   addColumnIfMissing(database, 'scenes', 'video_prompt', 'video_prompt TEXT');
-  addColumnIfMissing(database, 'scenes', 'duration', 'duration INTEGER');
+  addColumnIfMissing(database, 'scenes', 'duration', 'duration REAL');
   addColumnIfMissing(database, 'scenes', 'scene_references', 'scene_references TEXT');
   addColumnIfMissing(database, 'scenes', 'is_protagonist_visible', 'is_protagonist_visible BOOLEAN DEFAULT 1');
   addColumnIfMissing(database, 'scenes', 'title', 'title TEXT');

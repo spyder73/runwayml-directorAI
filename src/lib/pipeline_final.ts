@@ -250,7 +250,7 @@ export async function generateVideoAudioPhase(sessionId: string) {
           }
 
           db.prepare('UPDATE scenes SET audio_url = ?, duration = ?, status = ?, last_failure = NULL WHERE id = ?')
-            .run(audioUrl, Math.ceil(exactDuration), 'audio_ready', scene.id);
+            .run(audioUrl, exactDuration, 'audio_ready', scene.id);
           completeMediaTasksForScenePhase(db, {
             sessionId,
             sceneId: scene.id,
@@ -299,7 +299,7 @@ export async function generateVideoAudioPhase(sessionId: string) {
           }));
 
           db.prepare('UPDATE scenes SET video_url = ?, shot_plan_json = ?, duration = ?, status = ?, last_failure = NULL WHERE id = ?')
-            .run(JSON.stringify(videoUrls), JSON.stringify(shotPlan), Math.ceil(exactDuration), 'completed', scene.id);
+            .run(JSON.stringify(videoUrls), JSON.stringify(shotPlan), exactDuration, 'completed', scene.id);
           completeMediaTasksForScenePhase(db, {
             sessionId,
             sceneId: scene.id,
