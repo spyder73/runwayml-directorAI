@@ -135,7 +135,7 @@ test('start and readiness routes require confirmed auth and create user-owned se
   assert.equal(startedSession.user_id, 'owner');
   assert.equal(startedSession.mode, 'life_story');
   assert.equal(startedSession.interview_medium, 'voice');
-  assert.equal(startedSession.render_notification_email, 'owner@example.com');
+  assert.equal(startedSession.render_notification_email, null);
 
   assert.equal((await readinessRoute.GET(new Request('https://lifestory.example/api/pipeline/readiness'))).status, 401);
   assert.equal((await readinessRoute.GET(new Request('https://lifestory.example/api/pipeline/readiness', { headers: { cookie: unconfirmedCookie } }))).status, 403);

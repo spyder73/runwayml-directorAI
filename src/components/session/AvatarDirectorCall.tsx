@@ -203,7 +203,9 @@ function AvatarClientEvents({
 }) {
   useClientEvent('set_avatar_layout', (args) => {
     const layout = layoutFromEvent(args);
-    if (layout) onLayout(layout);
+    if (!layout) return;
+    if (layout === 'upload') onShowUploadRequested();
+    onLayout(layout);
   });
   useClientEvent('show_upload_dropzone', () => {
     onShowUploadRequested();
@@ -251,7 +253,6 @@ export default function AvatarDirectorCall({
     if (showUpload) return 'upload';
     if (hasReviewPanel && (clientLayout === 'review' || clientLayout === 'email' || clientLayout === 'docked')) return clientLayout;
     if (hasReviewPanel) return 'review';
-    if (clientLayout === 'docked') return 'docked';
     return docked ? 'docked' : 'stage';
   }, [clientLayout, docked, hasReviewPanel, showUpload]);
 
@@ -311,6 +312,10 @@ export default function AvatarDirectorCall({
     setCallKey((current) => current + 1);
   };
 
+  if (shouldEndForProduction && (callEnded || connection.status !== 'ready')) {
+    return null;
+  }
+
   if (callEnded && !shouldEndForProduction) {
     return (
       <section className="fixed left-1/2 top-24 z-20 w-[min(92vw,720px)] -translate-x-1/2 rounded border border-white/12 bg-black/88 p-4 text-white shadow-[0_20px_80px_rgba(0,0,0,0.55)]">
@@ -328,8 +333,9 @@ export default function AvatarDirectorCall({
 
   return (
     <section
-      className={`director-call fixed z-20 max-h-[calc(100dvh-2rem)] min-h-0 overflow-hidden transition-all duration-500 ${isDocked ? 'director-call--docked left-1/2 -translate-x-1/2' : ''} ${stageClass}`}
+      className={`director-call fixed z-20 max-h-[calc(100dvh-2rem)] min-h-0 overflow-hidden transition-transform duration-500 ${isDocked ? 'director-call--docked left-1/2 -translate-x-1/2' : ''} ${stageClass}`}
       data-avatar-target="director-call"
+      style={{ contain: 'layout paint size' }}
     >
       {connection.status !== 'ready' ? (
         <div className="h-full overflow-hidden rounded border border-black bg-black shadow-[0_26px_90px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.08)]">

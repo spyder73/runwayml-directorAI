@@ -262,11 +262,24 @@ test('voice upload client event can reveal the upload panel before the backend r
   assert.match(uploadSource, /Drop the reference here/);
 });
 
+test('voice upload layout requests also reveal the upload panel', () => {
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+
+  assert.match(callSource, /if \(layout === 'upload'\) onShowUploadRequested\(\)/);
+});
+
 test('voice upload layout releases after the upload panel is no longer visible', () => {
   const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
 
   assert.match(callSource, /clientLayout === 'upload' && showUpload/);
   assert.doesNotMatch(callSource, /if \(clientLayout !== 'stage'\) return clientLayout/);
+});
+
+test('voice avatar sizing ignores free-floating docked layout events', () => {
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(callSource, /if \(clientLayout === 'docked'\) return 'docked'/);
+  assert.match(callSource, /return docked \? 'docked' : 'stage'/);
 });
 
 test('voice session keeps avatar frame viewport-bound and scrolls transcript internally', () => {
@@ -311,6 +324,14 @@ test('voice production handoff prompts for render notification email', () => {
   assert.match(promptSource, /render_notification_email/);
 });
 
+test('voice production handoff hides draft and progress surfaces behind email handoff', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /showVoiceProductionHandoff/);
+  assert.match(pageSource, /VoiceProductionHandoff/);
+  assert.match(pageSource, /!showVoiceProductionHandoff &&/);
+});
+
 test('render notification email prompt is available after production handoff in text and voice', () => {
   const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
 
@@ -325,6 +346,7 @@ test('render completion email points users to a finished render page', () => {
   const pageSource = fs.readFileSync(new URL('../src/app/render/[id]/page.tsx', import.meta.url), 'utf8');
 
   assert.match(emailSource, /\/render\/\$\{encodeURIComponent\(sessionId\)\}/);
+  assert.match(emailSource, /Director's Cut website/);
   assert.match(notificationSource, /sessionId,/);
   assert.match(pageSource, /Your film is ready/);
   assert.match(pageSource, /final_video_url/);

@@ -166,7 +166,7 @@ function RenderProgressPanel({ progress, percent }: { progress: RenderProgressPa
 
       <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="border-l border-white/10 pl-3">
-          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/30">Rendered</p>
+          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/30">Rendered frames</p>
           <p className="mt-1 font-mono text-xs text-white/60">{renderedFrames} / {totalFrames}</p>
         </div>
         <div className="border-l border-white/10 pl-3">

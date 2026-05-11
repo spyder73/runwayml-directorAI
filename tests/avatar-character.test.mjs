@@ -222,7 +222,7 @@ test('avatar profile fallback asks the missing onboarding question after name an
   database.close();
 });
 
-test('avatar scene outline draft locks production and ends the call', async () => {
+test('avatar scene outline handoff locks production and ends the call', async () => {
   const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
   const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');
 
@@ -283,7 +283,8 @@ test('avatar scene outline draft locks production and ends the call', async () =
   assert.equal(result.ok, true);
   assert.equal(result.endCall, true);
   assert.equal(result.layout, 'email');
-  assert.match(result.directorReply, /I'll make sure to send you a draft of my idea\./);
+  assert.match(result.directorReply, /finished director's cut/i);
+  assert.doesNotMatch(result.directorReply, /draft/i);
   assert.equal(session.status, 'GENERATING_IMAGES');
   assert.equal(treatment.status, 'approved');
   assert.equal(scenes.length, 1);
@@ -316,7 +317,8 @@ test('avatar prompts and paste-ready docs preserve director behavior', () => {
   assert.match(knowledge, /Place images are low priority/i);
   assert.match(knowledge, /call propose_scene_outline once/i);
   assert.match(knowledge, /Do not call propose_film_treatment/i);
-  assert.match(knowledge, /I'll make sure to send you a draft of my idea/i);
+  assert.match(knowledge, /finished director's cut/i);
+  assert.doesNotMatch(knowledge, /draft of my idea/i);
   assert.match(knowledge, /end the call/i);
 
   for (const fileName of ['personality.md', 'start-script.md', 'knowledge.md']) {

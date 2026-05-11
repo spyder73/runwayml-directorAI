@@ -27,7 +27,16 @@ export async function POST(req: NextRequest) {
         id, user_id, status, story_text, aspect_ratio, mode, interview_medium, render_notification_email
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(sessionId, auth.user.id, 'INTERVIEW_ONBOARDING', '', aspectRatio, 'life_story', interviewMedium, auth.user.email);
+    `).run(
+      sessionId,
+      auth.user.id,
+      'INTERVIEW_ONBOARDING',
+      '',
+      aspectRatio,
+      'life_story',
+      interviewMedium,
+      interviewMedium === 'voice' ? null : auth.user.email,
+    );
 
     const msgId = uuidv4();
     db.prepare('INSERT INTO chat_history (id, session_id, role, content) VALUES (?, ?, ?, ?)')

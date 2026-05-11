@@ -138,7 +138,7 @@ export const avatarBackendTools = [
   ]),
   backendTool('add_reference_subject', 'Attach an uploaded or described reference to a named person, place, or object. Pass payloadJson. The reply must keep the conversation moving with one follow-up.'),
   backendTool('save_reference_description', 'Save visual details when the user describes a reference instead of uploading. Pass payloadJson with one next follow-up question.'),
-  backendTool('propose_scene_outline', 'Save the film treatment and scene outline in one final draft, immediately lock it for automatic production, and end the voice call. Pass payloadJson with treatment when no treatment exists yet.'),
+  backendTool('propose_scene_outline', 'Save the film treatment and scene outline for the final director-led cut, immediately lock it for automatic production, and end the voice call. Pass payloadJson with treatment when no treatment exists yet.'),
   backendTool('revise_scene_outline', 'Revise one scene outline item from the user feedback. Pass payloadJson.'),
 ] satisfies AvatarBackendTool[];
 

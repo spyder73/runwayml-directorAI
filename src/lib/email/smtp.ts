@@ -79,7 +79,7 @@ function buildFinalRenderMessage({ to, videoUrl }: { to: string; videoUrl: strin
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=utf-8',
     '',
-    'Your Lifestory film is ready.',
+    "Your Lifestory film is ready on the Director's Cut website.",
     '',
     videoUrl,
     '',

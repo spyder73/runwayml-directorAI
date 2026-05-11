@@ -143,7 +143,7 @@ type CreateAvatarRpcToolsInput = {
   productionRunner?: (sessionId: string, options: { database: SqliteDatabase }) => Promise<unknown>;
 };
 
-const AVATAR_DRAFT_HANDOFF_REPLY = "I'll make sure to send you a draft of my idea.";
+const AVATAR_RENDER_HANDOFF_REPLY = "Leave your email on the page, and I'll send the finished director's cut as soon as the render is ready.";
 const avatarSceneOutlinePayloadSchema = proposeSceneOutlineSchema.extend({
   treatment: filmTreatmentSchema.optional(),
 });
@@ -311,7 +311,7 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
         sceneCount: outline.length,
         createdScenes: result.createdScenes,
         endCall: true,
-        directorReply: AVATAR_DRAFT_HANDOFF_REPLY,
+        directorReply: AVATAR_RENDER_HANDOFF_REPLY,
         layout: 'email',
       };
     }),

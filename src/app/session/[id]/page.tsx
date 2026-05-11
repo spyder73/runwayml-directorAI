@@ -35,6 +35,23 @@ function isRenderProgressPayload(value: unknown): value is RenderProgressPayload
   return typeof progress === 'number' && Number.isFinite(progress);
 }
 
+function VoiceProductionHandoff({ email }: { email: string | null }) {
+  return (
+    <section className="mx-auto mt-10 flex w-full max-w-3xl flex-col items-center border-y border-white/10 bg-black/20 px-6 py-10 text-center shadow-[0_0_70px_rgba(253,230,138,0.08)] backdrop-blur-sm">
+      <p className="font-mono text-xs uppercase tracking-[0.35em] text-amber-100/45">Director handoff</p>
+      <h2 className="mt-4 font-serif text-3xl tracking-widest text-amber-50 md:text-4xl">
+        Nico has the cut from here
+      </h2>
+      <p className="mt-5 max-w-xl font-sans text-sm leading-7 text-white/58">
+        No review pass is needed. The studio is rendering the final director&apos;s cut, and the download page will arrive by email when it is ready.
+      </p>
+      <p className="mt-6 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45">
+        {email ? `Notification set for ${email}` : 'Add your email below to finish'}
+      </p>
+    </section>
+  );
+}
+
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const sessionId = resolvedParams.id;
@@ -429,6 +446,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     'RENDERING',
     'COMPLETED',
   ].includes(session.status);
+  const showVoiceProductionHandoff = isVoiceMode && shouldEndDirectorCall;
   const shouldOfferRenderNotificationEmail = shouldEndDirectorCall && !session.render_notification_email;
   const showRenderEmailPrompt = shouldOfferRenderNotificationEmail;
   const inputPlaceholder = showReferenceRequest
@@ -485,47 +503,57 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
             />
           )}
 
-          <div ref={treatmentReviewRef} className="scroll-mt-[22rem]" data-avatar-target="treatment-review">
-            <FilmTreatmentCard
-              treatment={storyBucket?.treatment || null}
-              isActionable={isVoiceMode ? false : hasTreatmentAwaitingDecision}
-              isBusy={isSending || isDraftingFilmShape}
-              isDrafting={isDraftingFilmShape}
-              onAccept={handleAcceptTreatment}
-              onRequestChanges={handleTreatmentRevision}
-            />
-          </div>
+          {showVoiceProductionHandoff && (
+            <div ref={productionProgressRef} className="scroll-mt-[22rem]" data-avatar-target="production-progress">
+              <VoiceProductionHandoff email={session.render_notification_email} />
+            </div>
+          )}
 
-          <MemorySketchCard
-            candidates={storyBucket?.memoryCandidates || []}
-            onOpenImage={setModalImage}
-            onFeedback={handleSketchFeedback}
-          />
+          {!showVoiceProductionHandoff && (
+            <>
+              <div ref={treatmentReviewRef} className="scroll-mt-[22rem]" data-avatar-target="treatment-review">
+                <FilmTreatmentCard
+                  treatment={storyBucket?.treatment || null}
+                  isActionable={isVoiceMode ? false : hasTreatmentAwaitingDecision}
+                  isBusy={isSending || isDraftingFilmShape}
+                  isDrafting={isDraftingFilmShape}
+                  onAccept={handleAcceptTreatment}
+                  onRequestChanges={handleTreatmentRevision}
+                />
+              </div>
 
-          <div ref={outlineReviewRef} className="scroll-mt-[22rem]" data-avatar-target="outline-review">
-            <SceneOutlineReview
-              scenes={storyBucket?.sceneOutline || []}
-              onComment={handleOutlineComment}
-              onLock={handleLockOutline}
-              isLocking={isLockingOutline}
-              approvalError={outlineApprovalError}
-              readOnly={isVoiceMode}
-            />
-          </div>
+              <MemorySketchCard
+                candidates={storyBucket?.memoryCandidates || []}
+                onOpenImage={setModalImage}
+                onFeedback={handleSketchFeedback}
+              />
 
-          <div ref={productionProgressRef} className="scroll-mt-[22rem]" data-avatar-target="production-progress">
-            <ProductionProgress
-              session={session}
-              scenes={scenes}
-              renderProgress={renderProgress}
-              pipelineError={pipelineError}
-              onRetry={handleRetryGeneration}
-              onApproveFrames={handleApproveFrames}
-              onFrameComment={handleFrameComment}
-              onRenderFinal={handleRenderFinal}
-              onOpenImage={setModalImage}
-            />
-          </div>
+              <div ref={outlineReviewRef} className="scroll-mt-[22rem]" data-avatar-target="outline-review">
+                <SceneOutlineReview
+                  scenes={storyBucket?.sceneOutline || []}
+                  onComment={handleOutlineComment}
+                  onLock={handleLockOutline}
+                  isLocking={isLockingOutline}
+                  approvalError={outlineApprovalError}
+                  readOnly={isVoiceMode}
+                />
+              </div>
+
+              <div ref={productionProgressRef} className="scroll-mt-[22rem]" data-avatar-target="production-progress">
+                <ProductionProgress
+                  session={session}
+                  scenes={scenes}
+                  renderProgress={renderProgress}
+                  pipelineError={pipelineError}
+                  onRetry={handleRetryGeneration}
+                  onApproveFrames={handleApproveFrames}
+                  onFrameComment={handleFrameComment}
+                  onRenderFinal={handleRenderFinal}
+                  onOpenImage={setModalImage}
+                />
+              </div>
+            </>
+          )}
 
           <div ref={chatEndRef} />
         </div>
