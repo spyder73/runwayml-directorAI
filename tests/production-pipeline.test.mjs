@@ -252,6 +252,29 @@ test('production references attach uploaded assets for plain named entities in t
   assert.match(references.promptText, /@carl/);
 });
 
+test('production references add exact tags for referenced assets before Runway prompt validation', () => {
+  const { lintRunwayImagePrompt } = jiti('../src/lib/prompt-lint.ts');
+  const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
+
+  const references = prepareSceneReferences({
+    promptText: 'Present-day Martin sitting at a desk studying thick law books, looking confused and slightly amused at his dog, Carl, sitting expectantly by his side in a warm home interior.',
+    sceneReferenceAssetIds: ['martin-upload', 'carl-upload'],
+    protagonistVisible: false,
+    assets: [
+      { id: 'martin-upload', local_url: '/uploads/martin.jpg', runway_uri: null, stable_tag: 'protagonist_mart', usage_permissions: 'allowed', target_type: 'protagonist', owner_entity_id: 'martin-entity', vision_description: 'Martin at his desk.' },
+      { id: 'carl-upload', local_url: '/uploads/carl.jpg', runway_uri: null, stable_tag: 'carl', usage_permissions: 'allowed', target_type: 'pet', owner_entity_id: 'carl-entity', vision_description: 'Carl sitting expectantly.' },
+    ],
+  });
+
+  assert.deepEqual(references.referenceImages.map((image) => image.tag), ['protagonist_mart', 'carl']);
+  assert.match(references.promptText, /@protagonist_mart/);
+  assert.match(references.promptText, /@carl/);
+  assert.equal(lintRunwayImagePrompt({
+    promptText: references.promptText,
+    referenceImages: references.referenceImages,
+  }).ok, true);
+});
+
 test('final render plan produces a real output path and Remotion inputs', () => {
   const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
 

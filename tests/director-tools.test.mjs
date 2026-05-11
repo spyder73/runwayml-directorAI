@@ -168,6 +168,9 @@ test('director prompt separates usable generation references from description-on
   assert.match(prompt, /Description-only references, not usable as generation @tags/i);
   assert.match(prompt, /Never place description-only/i);
   assert.match(prompt, /referenceAssetIds/i);
+  assert.match(prompt, /Image generation prompts must not say "provided reference image"/);
+  assert.match(prompt, /Video prompts may refer to the provided input\/reference image/);
+  assert.match(prompt, /exact @tag/);
   assert.match(prompt, /@dorian_3/);
   assert.match(pipelineSource, /canUseAsset/);
   assert.match(pipelineSource, /References usable for generation/);

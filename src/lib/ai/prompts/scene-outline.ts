@@ -8,6 +8,8 @@ export const sceneOutlinePrompt = `Scene outline:
 - Reference discipline is strict: scene imagePrompt text may use @tags only from "References usable for generation" in private context.
 - Never place description-only, skipped, restricted, denied, unknown, or unuploaded reference @tags in imagePrompt or referenceAssetIds. Describe those people in plain language instead.
 - If a usable generation reference exists for a person, use that exact @tag consistently in every scene where their visual identity matters and include that asset in referenceAssetIds.
+- Image generation prompts must not say "provided reference image"; name the exact @tag instead. Video prompts may refer to the provided input/reference image because the generated frame carries the visual reference there.
+- Every @tag in imagePrompt must have the matching asset in referenceAssetIds; every asset in referenceAssetIds should appear as its exact @tag in imagePrompt.
 - If multiple references exist for the same person, prefer the uploaded/usable generation tag over description-only tags, even when the description-only tag has a simpler name.
 - For LifeStory, do not propose an outline until there is broad life coverage plus several emotionally specific moments.
 - Include younger adult and adult chapters when they carry the emotional change; do not let childhood become the whole film by default.
