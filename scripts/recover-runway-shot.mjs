@@ -7,11 +7,15 @@ import Database from 'better-sqlite3';
 
 function usage() {
   return `Usage:
+  node scripts/recover-runway-shot.mjs --session-id SESSION --inspect
   node scripts/recover-runway-shot.mjs --session-id SESSION --scene-index 2 --shot-index 2 --runway-task-id TASK_ID
   node scripts/recover-runway-shot.mjs --session-id SESSION --scene-index 2 --shot-index 2 --media-asset-id MEDIA_ASSET_ID
+  node scripts/recover-runway-shot.mjs --session-id SESSION --batch-file recover-map.json
 
 Options:
   --session-id        LifeStory session id.
+  --inspect           List incomplete sub-scenes and recent video media assets.
+  --batch-file        JSON file containing recovery entries.
   --scene-id         Scene database id. Use this instead of --scene-index if you prefer.
   --scene-index      1-based scene number shown in the UI.
   --shot-index       1-based sub-scene number shown in the UI.
@@ -34,7 +38,7 @@ function parseArgs(argv) {
       throw new Error(`Unexpected argument: ${item}`);
     }
     const key = item.slice(2);
-    if (key === 'dry-run') {
+    if (key === 'dry-run' || key === 'inspect') {
       args[key] = true;
       continue;
     }
@@ -62,6 +66,14 @@ function optionalPositiveIndex(args, key) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
     throw new Error(`--${key} must be a 1-based integer.`);
+  }
+  return parsed - 1;
+}
+
+function positiveIndexFromValue(value, label) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${label} must be a 1-based integer.`);
   }
   return parsed - 1;
 }
@@ -215,6 +227,79 @@ function parseShotPlan(scene) {
   return parsed;
 }
 
+function incompleteShotRows(database, sessionId) {
+  const scenes = database.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId);
+  const rows = [];
+
+  for (const scene of scenes) {
+    let shotPlan = [];
+    try {
+      shotPlan = parseShotPlan(scene);
+    } catch {
+      shotPlan = [];
+    }
+
+    shotPlan.forEach((shot, index) => {
+      const hasUrl = typeof shot?.url === 'string' && shot.url.trim();
+      const status = typeof shot?.status === 'string' ? shot.status : 'unknown';
+      if (hasUrl && status === 'succeeded') return;
+      rows.push({
+        scene,
+        shot,
+        shotIndex: index,
+        status,
+        hasUrl: Boolean(hasUrl),
+      });
+    });
+  }
+
+  return rows;
+}
+
+function inspectSession(database, sessionId) {
+  const session = database.prepare('SELECT id, status FROM sessions WHERE id = ?').get(sessionId);
+  if (!session) throw new Error(`Session ${sessionId} was not found.`);
+
+  console.log(`Session ${sessionId}`);
+  console.log(`Status: ${session.status}`);
+
+  const incompleteRows = incompleteShotRows(database, sessionId);
+  if (!incompleteRows.length) {
+    console.log('No incomplete sub-scenes found.');
+  } else {
+    console.log('Incomplete sub-scenes:');
+    for (const row of incompleteRows) {
+      const reference = row.shot?.reference_image_url ? ` reference=${row.shot.reference_image_url}` : '';
+      const urlState = row.hasUrl ? 'url=present' : 'url=missing';
+      console.log(`- Scene ${row.scene.scene_index + 1} (${row.scene.id}), sub-scene ${row.shotIndex + 1}: status=${row.status} ${urlState}${reference}`);
+    }
+  }
+
+  let assets = [];
+  try {
+    assets = database.prepare(`
+      SELECT id, file_path, byte_size, created_at
+      FROM media_assets
+      WHERE session_id = ? AND kind = 'video'
+      ORDER BY created_at DESC
+      LIMIT 20
+    `).all(sessionId);
+  } catch {
+    assets = database.prepare(`
+      SELECT id, file_path, byte_size, NULL AS created_at
+      FROM media_assets
+      WHERE session_id = ? AND kind = 'video'
+      LIMIT 20
+    `).all(sessionId);
+  }
+  if (assets.length) {
+    console.log('Recent video media assets:');
+    for (const asset of assets) {
+      console.log(`- ${asset.id} bytes=${asset.byte_size ?? 'unknown'} created=${asset.created_at ?? 'unknown'} path=${asset.file_path}`);
+    }
+  }
+}
+
 async function persistVideoAsset(database, args, sessionId, outputUrl) {
   const response = await fetch(outputUrl);
   if (!response.ok) {
@@ -315,13 +400,10 @@ function markRecoveredShot(database, sessionId, scene, shotIndex, localUrl) {
   };
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const sessionId = requireArg(args, 'session-id');
+async function recoverShot(database, args, sessionId) {
   const shotIndex = optionalPositiveIndex(args, 'shot-index');
   if (shotIndex === undefined) throw new Error('Missing --shot-index');
 
-  const database = new Database(databasePath(args));
   const scene = readScene(database, sessionId, args);
   const existingLocalUrl = localUrlFromExistingAsset(database, sessionId, args);
   const outputUrl = existingLocalUrl ? null : await retrieveRunwayOutputUrl(args, database, sessionId);
@@ -338,7 +420,7 @@ async function main() {
   if (args['dry-run']) {
     console.log('Dry run: no files or DB rows were changed.');
     console.log(`Existing shot status: ${JSON.stringify(existingShotPlan[shotIndex] || null)}`);
-    return;
+    return { recovered: false, dryRun: true };
   }
 
   const asset = existingLocalUrl ? null : await persistVideoAsset(database, args, sessionId, outputUrl);
@@ -352,6 +434,86 @@ async function main() {
   }
   console.log(`Scene complete: ${result.sceneComplete ? 'yes' : 'no'}`);
   console.log(`All scenes done: ${result.allScenesDone ? 'yes' : 'no'}`);
+  return { recovered: true, result };
+}
+
+function normalizeBatchItem(item, index) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`Batch item ${index + 1} must be an object.`);
+  }
+
+  const sceneId = item.sceneId ?? item['scene-id'];
+  const sceneIndex = item.sceneIndex ?? item['scene-index'];
+  const shotIndex = item.shotIndex ?? item['shot-index'];
+  const runwayTaskId = item.runwayTaskId ?? item.taskId ?? item['runway-task-id'];
+  const outputUrl = item.outputUrl ?? item['output-url'];
+  const mediaAssetId = item.mediaAssetId ?? item['media-asset-id'];
+  const localUrl = item.localUrl ?? item['local-url'];
+
+  if (!sceneId && sceneIndex === undefined) {
+    throw new Error(`Batch item ${index + 1} needs sceneId or sceneIndex.`);
+  }
+  if (shotIndex === undefined) {
+    throw new Error(`Batch item ${index + 1} needs shotIndex.`);
+  }
+  if (!runwayTaskId && !outputUrl && !mediaAssetId && !localUrl) {
+    throw new Error(`Batch item ${index + 1} needs runwayTaskId, outputUrl, mediaAssetId, or localUrl.`);
+  }
+
+  return {
+    ...(sceneId ? { 'scene-id': String(sceneId) } : { 'scene-index': String(positiveIndexFromValue(sceneIndex, `Batch item ${index + 1} sceneIndex`) + 1) }),
+    'shot-index': String(positiveIndexFromValue(shotIndex, `Batch item ${index + 1} shotIndex`) + 1),
+    ...(runwayTaskId ? { 'runway-task-id': String(runwayTaskId) } : {}),
+    ...(outputUrl ? { 'output-url': String(outputUrl) } : {}),
+    ...(mediaAssetId ? { 'media-asset-id': String(mediaAssetId) } : {}),
+    ...(localUrl ? { 'local-url': String(localUrl) } : {}),
+  };
+}
+
+async function runBatch(database, args, sessionId) {
+  const batchFile = requireArg(args, 'batch-file');
+  const content = await fs.readFile(batchFile, 'utf8');
+  const parsed = JSON.parse(content);
+  if (!Array.isArray(parsed)) {
+    throw new Error('--batch-file must contain a JSON array.');
+  }
+
+  let recovered = 0;
+  let dryRuns = 0;
+  for (const [index, item] of parsed.entries()) {
+    console.log(`Batch item ${index + 1}/${parsed.length}`);
+    const itemArgs = {
+      ...args,
+      ...normalizeBatchItem(item, index),
+    };
+    const result = await recoverShot(database, itemArgs, sessionId);
+    if (result.recovered) recovered += 1;
+    if (result.dryRun) dryRuns += 1;
+  }
+
+  if (args['dry-run']) {
+    console.log(`Dry-ran ${dryRuns} shot${dryRuns === 1 ? '' : 's'}.`);
+  } else {
+    console.log(`Recovered ${recovered} shot${recovered === 1 ? '' : 's'}.`);
+  }
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const sessionId = requireArg(args, 'session-id');
+  const database = new Database(databasePath(args));
+
+  if (args.inspect) {
+    inspectSession(database, sessionId);
+    return;
+  }
+
+  if (args['batch-file']) {
+    await runBatch(database, args, sessionId);
+    return;
+  }
+
+  await recoverShot(database, args, sessionId);
 }
 
 main().catch((error) => {
