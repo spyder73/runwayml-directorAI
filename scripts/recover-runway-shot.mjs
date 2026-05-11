@@ -4,7 +4,6 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import Database from 'better-sqlite3';
-import RunwayML from '@runwayml/sdk';
 
 function usage() {
   return `Usage:
@@ -151,8 +150,17 @@ async function retrieveRunwayOutputUrl(args, database, sessionId) {
   if (args['output-url']) return args['output-url'];
   const taskId = requireArg(args, 'runway-task-id');
   const apiKey = readRunwayKey(database, sessionId, args['runway-api-key']);
-  const client = new RunwayML({ apiKey });
-  const task = await client.tasks.retrieve(taskId);
+  const baseUrl = process.env.RUNWAYML_BASE_URL || 'https://api.dev.runwayml.com';
+  const response = await fetch(`${baseUrl.replace(/\/+$/g, '')}/v1/tasks/${encodeURIComponent(taskId)}`, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'X-Runway-Version': '2024-11-06',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to retrieve Runway task ${taskId}: ${response.status} ${response.statusText}`);
+  }
+  const task = await response.json();
 
   if (task.status !== 'SUCCEEDED') {
     throw new Error(`Runway task ${taskId} is ${task.status}, not SUCCEEDED.`);
