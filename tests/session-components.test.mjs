@@ -56,6 +56,15 @@ test('chat composer removes general image upload and keeps text clear of the sen
   assert.match(source, /ReferenceUploadRequest/);
 });
 
+test('text interview chat shows uploaded images at readable size', () => {
+  const source = fs.readFileSync(new URL('../src/components/session/InterviewChat.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /w-\[min\(72vw,36rem\)\]/);
+  assert.match(source, /aspect-\[4\/3\]/);
+  assert.match(source, /object-contain/);
+  assert.match(source, /Uploaded reference/);
+});
+
 test('production progress exposes frame approval before motion generation', () => {
   const source = fs.readFileSync(new URL('../src/components/session/ProductionProgress.tsx', import.meta.url), 'utf8');
   const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
@@ -193,6 +202,13 @@ test('voice session renders Runway avatar stage without webcam and docks around 
   assert.match(callSource, /connectPromiseRef/);
   assert.match(callSource, /set_avatar_layout/);
   assert.match(callSource, /director-call--docked/);
+  assert.match(callSource, /splitVisibleMessageContent/);
+  assert.match(callSource, /formatScriptPreview/);
+  assert.match(callSource, /Image uploaded\./);
+  assert.doesNotMatch(callSource, /\{row\.content\}/);
+  assert.match(callSource, /!static/);
+  assert.match(callSource, /!bg-transparent/);
+  assert.match(callSource, /!p-0/);
 });
 
 test('voice review panels are director-led without manual approval buttons', () => {

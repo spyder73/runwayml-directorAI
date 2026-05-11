@@ -11,6 +11,7 @@ import {
   useTranscript,
 } from '@runwayml/avatars-react';
 import { PhoneCall, RefreshCw } from 'lucide-react';
+import { splitVisibleMessageContent } from '@/lib/chat-display';
 import type { ChatHistoryRow } from '@/lib/types';
 
 type AvatarDirectorCallProps = {
@@ -37,6 +38,17 @@ function layoutFromEvent(value: unknown): LayoutMode | null {
   return layout === 'stage' || layout === 'docked' || layout === 'upload' || layout === 'review' || layout === 'email'
     ? layout
     : null;
+}
+
+function formatScriptPreview(content: string) {
+  const visibleParts = splitVisibleMessageContent(content);
+  const preview = visibleParts
+    .map((part) => part.type === 'image' ? 'Image uploaded.' : part.text)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return preview || 'Image uploaded.';
 }
 
 function TranscriptOverlay() {
@@ -86,7 +98,7 @@ function ConversationTracker({ chatHistory }: { chatHistory: ChatHistoryRow[] })
                   {isUser ? 'You' : 'Director'}
                 </p>
                 <p className={`line-clamp-3 font-mono text-xs leading-relaxed ${isUser ? 'text-white/76' : 'text-amber-100/72'}`}>
-                  {row.content}
+                  {formatScriptPreview(row.content)}
                 </p>
               </article>
             );
@@ -219,7 +231,7 @@ export default function AvatarDirectorCall({
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0)_45%,rgba(0,0,0,0.74)_100%)]" />
             <TranscriptOverlay />
             <div className="absolute bottom-4 right-4 z-10">
-              <ControlBar showCamera={false} showScreenShare={false} className="rounded-full border border-white/12 bg-black/72 px-3 py-2 backdrop-blur-md" />
+              <ControlBar showCamera={false} showScreenShare={false} className="!static !inset-auto !w-auto !bg-transparent !p-0 rounded-full border border-white/12 backdrop-blur-md" />
             </div>
           </div>
           <ConversationTracker chatHistory={chatHistory} />
