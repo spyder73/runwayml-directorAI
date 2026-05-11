@@ -9,9 +9,11 @@ type SceneOutlineReviewProps = {
   onComment: (scene: SceneOutlineRow, comment: string) => void;
   onLock: () => void;
   readOnly?: boolean;
+  isLocking?: boolean;
+  approvalError?: string | null;
 };
 
-export default function SceneOutlineReview({ scenes, onComment, onLock, readOnly = false }: SceneOutlineReviewProps) {
+export default function SceneOutlineReview({ scenes, onComment, onLock, readOnly = false, isLocking = false, approvalError = null }: SceneOutlineReviewProps) {
   const [comments, setComments] = useState<Record<string, string>>({});
   const unlocked = scenes.filter((scene) => scene.status !== 'locked');
 
@@ -65,15 +67,27 @@ export default function SceneOutlineReview({ scenes, onComment, onLock, readOnly
         ))}
       </div>
 
-      {!readOnly && <div className="mt-8 flex justify-center">
-        <button
-          type="button"
-          onClick={onLock}
-          className="inline-flex items-center gap-3 rounded-full bg-white px-8 py-4 font-mono text-xs font-bold uppercase tracking-widest text-black shadow-[0_0_30px_rgba(255,255,255,0.25)] transition-colors hover:bg-amber-100"
-        >
-          <Check size={18} /> Approve outline and start production
-        </button>
-      </div>}
+      {!readOnly && (
+        <div className="mt-8 flex flex-col items-center gap-4">
+          {approvalError && (
+            <div
+              aria-live="polite"
+              className="w-full max-w-2xl rounded-lg border border-red-400/30 bg-red-950/30 p-4 text-center shadow-[0_0_35px_rgba(248,113,113,0.12)]"
+            >
+              <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-red-100/70">Could not start production</p>
+              <p className="mt-2 font-sans text-sm leading-relaxed text-red-50/80">{approvalError}</p>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onLock}
+            disabled={isLocking}
+            className="inline-flex items-center gap-3 rounded-full bg-white px-8 py-4 font-mono text-xs font-bold uppercase tracking-widest text-black shadow-[0_0_30px_rgba(255,255,255,0.25)] transition-colors hover:bg-amber-100 disabled:cursor-wait disabled:bg-white/50 disabled:text-black/60"
+          >
+            <Check size={18} /> {isLocking ? 'Starting production...' : 'Approve outline and start production'}
+          </button>
+        </div>
+      )}
     </section>
   );
 }

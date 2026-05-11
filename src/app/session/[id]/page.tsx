@@ -49,6 +49,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDraftingOutline, setIsDraftingOutline] = useState(false);
+  const [isLockingOutline, setIsLockingOutline] = useState(false);
+  const [outlineApprovalError, setOutlineApprovalError] = useState<string | null>(null);
   const [isSavingRenderEmail, setIsSavingRenderEmail] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [renderProgress, setRenderProgress] = useState<RenderProgressPayload | null>(null);
@@ -108,6 +110,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     if ('render_progress' in data) setRenderProgress(isRenderProgressPayload(data.render_progress) ? data.render_progress : null);
     if (data.error) setPipelineError(data.error);
     if (incomingStatus && incomingStatus !== 'FAILED') setPipelineError(null);
+    if (incomingStatus && incomingStatus !== 'OUTLINE_REVIEW') setOutlineApprovalError(null);
     if (incomingStatus && incomingStatus !== 'RENDERING') setRenderProgress(null);
     if (data.chat_chunk) {
       setChatHistory((current) => current.map((row, index) => {
@@ -240,8 +243,11 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   };
 
   const handleLockOutline = async () => {
+    if (isLockingOutline) return;
     const previousSession = sessionRef.current;
     setPipelineError(null);
+    setOutlineApprovalError(null);
+    setIsLockingOutline(true);
     setSession((current) => {
       const next = current ? { ...current, status: 'GENERATING_IMAGES' as const } : current;
       sessionRef.current = next;
@@ -261,7 +267,9 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     } catch (error) {
       sessionRef.current = previousSession;
       setSession(previousSession);
-      setPipelineError(error instanceof Error ? error.message : 'Failed to approve the outline.');
+      setOutlineApprovalError(error instanceof Error ? error.message : 'Failed to approve the outline.');
+    } finally {
+      setIsLockingOutline(false);
     }
   };
 
@@ -411,7 +419,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const hasOutlineAwaitingDecision = Boolean(hasUnlockedOutline && session.status === 'OUTLINE_REVIEW' && !showReferenceRequest);
   const hasSceneOutline = (storyBucket?.sceneOutline.length || 0) > 0;
   const isDraftingFilmShape = isDraftingOutline && !hasSceneOutline && !showReferenceRequest && !pipelineError && !productionStarted;
-  const freeChatDisabled = isUploading || isSending || isDraftingFilmShape || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision;
+  const freeChatDisabled = isUploading || isSending || isLockingOutline || isDraftingFilmShape || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision;
   const callShouldDock = showReferenceRequest || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision || productionStarted;
   const shouldEndDirectorCall = [
     'GENERATING_IMAGES',
@@ -499,6 +507,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
               scenes={storyBucket?.sceneOutline || []}
               onComment={handleOutlineComment}
               onLock={handleLockOutline}
+              isLocking={isLockingOutline}
+              approvalError={outlineApprovalError}
               readOnly={isVoiceMode}
             />
           </div>

@@ -77,6 +77,18 @@ test('production progress exposes frame approval before motion generation', () =
   assert.match(pageSource, /\/api\/pipeline\/synthesize/);
 });
 
+test('outline approval failures remain visible in the outline review panel', () => {
+  const source = fs.readFileSync(new URL('../src/components/session/SceneOutlineReview.tsx', import.meta.url), 'utf8');
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /approvalError\?: string \| null/);
+  assert.match(source, /Could not start production/i);
+  assert.match(source, /aria-live="polite"/);
+  assert.match(pageSource, /const \[outlineApprovalError, setOutlineApprovalError\]/);
+  assert.match(pageSource, /approvalError=\{outlineApprovalError\}/);
+  assert.match(pageSource, /setOutlineApprovalError\(error instanceof Error \? error\.message : 'Failed to approve the outline\.'\)/);
+});
+
 test('production progress exposes unit retry controls for failed scene work', () => {
   const source = fs.readFileSync(new URL('../src/components/session/ProductionProgress.tsx', import.meta.url), 'utf8');
 
