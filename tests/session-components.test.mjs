@@ -303,6 +303,15 @@ test('voice live script cannot resize the avatar video column', () => {
   assert.match(callSource, /\[overflow-wrap:anywhere\]/);
 });
 
+test('voice live script exposes a visible scrollbar affordance', () => {
+  const cssSource = fs.readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
+
+  assert.match(cssSource, /\[data-avatar-transcript-scroll\]/);
+  assert.match(cssSource, /scrollbar-gutter: stable/);
+  assert.match(cssSource, /scrollbar-width: thin/);
+  assert.match(cssSource, /::-webkit-scrollbar-thumb/);
+});
+
 test('voice session shows avatar connection progress and errors instead of a blank stage', () => {
   const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
 

@@ -14,6 +14,30 @@
 }
 
 @layer components {
+  [data-avatar-transcript-scroll] {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(251, 191, 36, 0.55) rgba(255, 255, 255, 0.08);
+  }
+
+  [data-avatar-transcript-scroll]::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  [data-avatar-transcript-scroll]::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  [data-avatar-transcript-scroll]::-webkit-scrollbar-thumb {
+    border: 2px solid rgba(8, 8, 11, 0.9);
+    border-radius: 999px;
+    background: rgba(251, 191, 36, 0.45);
+  }
+
+  [data-avatar-transcript-scroll]::-webkit-scrollbar-thumb:hover {
+    background: rgba(254, 243, 199, 0.65);
+  }
+
   .lifestory-aurora {
     background:
       radial-gradient(ellipse at 50% 24%, rgba(239, 219, 176, 0.13), transparent 35%),
