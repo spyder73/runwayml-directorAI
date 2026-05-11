@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  AvatarCall,
+  AvatarSession,
   AvatarVideo,
   ControlBar,
   PageActions,
@@ -388,34 +388,38 @@ export default function AvatarDirectorCall({
           </DetachedTranscriptPanel>
         </div>
       ) : (
-        <AvatarCall
+        <div
           key={`${callKey}-${connection.credentials.sessionId}`}
-          avatarId={avatarId}
-          credentials={connection.credentials}
-          video={false}
-          onEnd={() => setCallEnded(true)}
-          onError={(error) => console.error('Director call error', error)}
+          data-avatar-call=""
+          data-avatar-id={avatarId}
           className="h-full min-h-0 overflow-hidden rounded border border-black bg-black shadow-[0_26px_90px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.08)]"
           style={{ aspectRatio: 'auto' }}
         >
-          <div className="relative h-full min-h-0 overflow-hidden">
-            <DirectorCallFrame>
-              <AvatarVideo className="absolute inset-0 h-full w-full bg-black" data-avatar-video-fit="contain" />
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0)_45%,rgba(0,0,0,0.74)_100%)]" />
-              <AvatarStageLoadingOverlay />
-              <div className="absolute bottom-4 right-4 z-10">
-                <ControlBar showCamera={false} showScreenShare={false} className="!static !inset-auto !w-auto !bg-transparent !p-0 rounded-full border border-white/12 backdrop-blur-md" />
-              </div>
-            </DirectorCallFrame>
-            <DetachedTranscriptPanel>
-              <LiveTranscriptSidebar chatHistory={chatHistory} />
-            </DetachedTranscriptPanel>
-          </div>
+          <AvatarSession
+            credentials={connection.credentials}
+            video={false}
+            onEnd={() => setCallEnded(true)}
+            onError={(error) => console.error('Director call error', error)}
+          >
+            <div className="relative h-full min-h-0 overflow-hidden">
+              <DirectorCallFrame>
+                <AvatarVideo className="absolute inset-0 h-full w-full bg-black" data-avatar-video-fit="contain" />
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0)_45%,rgba(0,0,0,0.74)_100%)]" />
+                <AvatarStageLoadingOverlay />
+                <div className="absolute bottom-4 right-4 z-10">
+                  <ControlBar showCamera={false} showScreenShare={false} className="!static !inset-auto !w-auto !bg-transparent !p-0 rounded-full border border-white/12 backdrop-blur-md" />
+                </div>
+              </DirectorCallFrame>
+              <DetachedTranscriptPanel>
+                <LiveTranscriptSidebar chatHistory={chatHistory} />
+              </DetachedTranscriptPanel>
+            </div>
 
-          <PageActions />
-          <AvatarClientEvents onLayout={setClientLayout} onShowUploadRequested={onShowUploadRequested} />
-          <AutoEndOnProduction shouldEnd={shouldEndForProduction} />
-        </AvatarCall>
+            <PageActions />
+            <AvatarClientEvents onLayout={setClientLayout} onShowUploadRequested={onShowUploadRequested} />
+            <AutoEndOnProduction shouldEnd={shouldEndForProduction} />
+          </AvatarSession>
+        </div>
       )}
     </section>
   );

@@ -230,7 +230,8 @@ test('voice session renders Runway avatar stage without webcam and docks around 
   assert.match(pageSource, /useSearchParams/);
   assert.match(pageSource, /isVoiceMode/);
   assert.match(pageSource, /AvatarDirectorCall/);
-  assert.match(callSource, /AvatarCall/);
+  assert.match(callSource, /AvatarSession/);
+  assert.doesNotMatch(callSource, /<AvatarCall/);
   assert.match(callSource, /video=\{false\}/);
   assert.match(callSource, /PageActions/);
   assert.match(callSource, /useTranscript/);
@@ -320,6 +321,8 @@ test('voice avatar player has an animated loading state', () => {
   const cssSource = fs.readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 
   assert.match(callSource, /useAvatarStatus/);
+  assert.match(callSource, /credentials=\{connection\.credentials\}/);
+  assert.match(callSource, /data-avatar-call/);
   assert.match(callSource, /AvatarStageLoadingOverlay/);
   assert.match(callSource, /Preparing Nico/);
   assert.match(callSource, /Syncing video signal/);
