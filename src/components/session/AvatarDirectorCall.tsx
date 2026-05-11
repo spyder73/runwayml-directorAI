@@ -391,6 +391,7 @@ export default function AvatarDirectorCall({
         <div
           key={`${callKey}-${connection.credentials.sessionId}`}
           data-avatar-call=""
+          data-avatar-custom-call=""
           data-avatar-id={avatarId}
           className="h-full min-h-0 overflow-hidden rounded border border-black bg-black shadow-[0_26px_90px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.08)]"
           style={{ aspectRatio: 'auto' }}

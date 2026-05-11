@@ -323,9 +323,13 @@ test('voice avatar player has an animated loading state', () => {
   assert.match(callSource, /useAvatarStatus/);
   assert.match(callSource, /credentials=\{connection\.credentials\}/);
   assert.match(callSource, /data-avatar-call/);
+  assert.match(callSource, /data-avatar-custom-call/);
   assert.match(callSource, /AvatarStageLoadingOverlay/);
   assert.match(callSource, /Preparing Nico/);
   assert.match(callSource, /Syncing video signal/);
+  assert.match(cssSource, /\[data-avatar-custom-call\] > div/);
+  assert.match(cssSource, /flex: 1 1 auto/);
+  assert.match(cssSource, /height: 100%/);
   assert.match(cssSource, /@keyframes avatar-loader-scan/);
   assert.match(cssSource, /\.avatar-loader-ring/);
 });
