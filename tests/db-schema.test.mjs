@@ -54,6 +54,15 @@ test('production schema creates auth, credentials, settings, media, and ownershi
   const sessionColumns = columnNames(db, 'sessions');
   assert.equal(sessionColumns.has('user_id'), true);
   assert.equal(sessionColumns.has('final_video_media_asset_id'), true);
+  assert.equal(sessionColumns.has('interview_medium'), true);
+  assert.equal(sessionColumns.has('render_notification_email'), true);
+
+  for (const tableName of [
+    'avatar_call_sessions',
+    'avatar_call_events',
+  ]) {
+    assert.equal(tables.has(tableName), true, `missing table ${tableName}`);
+  }
 
   assert.deepEqual([...columnNames(db, 'users')].sort(), [
     'created_at',
@@ -86,8 +95,11 @@ test('production schema creates auth, credentials, settings, media, and ownershi
 
   db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run('user-1', 'reviewer@example.com', 'hash');
   db.prepare('INSERT INTO user_settings (user_id) VALUES (?)').run('user-1');
-  const settings = db.prepare('SELECT runway_concurrency_mode FROM user_settings WHERE user_id = ?').get('user-1');
+  assert.equal(columnNames(db, 'user_settings').has('runway_video_model'), true);
+
+  const settings = db.prepare('SELECT runway_concurrency_mode, runway_video_model FROM user_settings WHERE user_id = ?').get('user-1');
   assert.equal(settings.runway_concurrency_mode, 'serial');
+  assert.equal(settings.runway_video_model, 'gen4_turbo');
 
   db.close();
 });
@@ -118,12 +130,16 @@ test('production schema preserves pre-auth sessions with null ownership columns'
   const sessionColumns = columnNames(db, 'sessions');
   assert.equal(sessionColumns.has('user_id'), true);
   assert.equal(sessionColumns.has('final_video_media_asset_id'), true);
+  assert.equal(sessionColumns.has('interview_medium'), true);
+  assert.equal(sessionColumns.has('render_notification_email'), true);
 
-  const legacySession = db.prepare('SELECT user_id, final_video_media_asset_id FROM sessions WHERE id = ?')
+  const legacySession = db.prepare('SELECT user_id, final_video_media_asset_id, interview_medium, render_notification_email FROM sessions WHERE id = ?')
     .get('legacy-session');
   assert.deepEqual(legacySession, {
     user_id: null,
     final_video_media_asset_id: null,
+    interview_medium: 'text',
+    render_notification_email: null,
   });
 
   db.close();

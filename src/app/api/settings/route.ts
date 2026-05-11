@@ -4,6 +4,7 @@ import { AUTH_SESSION_COOKIE, findAuthSessionByToken, readSessionTokenFromCookie
 import {
   getUserSettings,
   InvalidRunwayConcurrencyModeError,
+  InvalidRunwayVideoModelError,
   updateUserSettings,
   type UpdateUserSettingsInput,
 } from '../../../lib/user-settings';
@@ -47,6 +48,10 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json(updateUserSettings(db, auth.userId, await readSettingsPayload(req)));
   } catch (error) {
     if (error instanceof InvalidRunwayConcurrencyModeError) {
+      return jsonError(error.message, 400);
+    }
+
+    if (error instanceof InvalidRunwayVideoModelError) {
       return jsonError(error.message, 400);
     }
 

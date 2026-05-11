@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
-import type { RunwayConcurrencyMode, UserApiCredentialsRow, UserSettingsRow } from '@/lib/types';
+import type { RunwayConcurrencyMode, RunwayVideoModel, UserApiCredentialsRow, UserSettingsRow } from '@/lib/types';
 import { encryptCredential } from './crypto/credentials';
+import { normalizeRunwayVideoModel, isRunwayVideoModel } from './production-config';
 
 type SqliteDatabase = Database.Database;
 
@@ -8,18 +9,27 @@ export type UserSettingsSummary = {
   openrouterKeySaved: boolean;
   runwayKeySaved: boolean;
   runwayConcurrencyMode: RunwayConcurrencyMode;
+  runwayVideoModel: RunwayVideoModel;
 };
 
 export type UpdateUserSettingsInput = {
   openrouterApiKey?: unknown;
   runwayApiKey?: unknown;
   runwayConcurrencyMode?: unknown;
+  runwayVideoModel?: unknown;
 };
 
 export class InvalidRunwayConcurrencyModeError extends Error {
   constructor() {
     super('Runway concurrency mode must be serial or parallel.');
     this.name = 'InvalidRunwayConcurrencyModeError';
+  }
+}
+
+export class InvalidRunwayVideoModelError extends Error {
+  constructor() {
+    super('Runway video model must be gen4_turbo or veo3.1_fast.');
+    this.name = 'InvalidRunwayVideoModelError';
   }
 }
 
@@ -71,6 +81,7 @@ export function getUserSettings(database: SqliteDatabase, userId: string): UserS
       credentials?.runway_key_tag,
     ),
     runwayConcurrencyMode: settings.runway_concurrency_mode,
+    runwayVideoModel: normalizeRunwayVideoModel(settings.runway_video_model),
   };
 }
 
@@ -87,6 +98,18 @@ export function updateUserSettings(database: SqliteDatabase, userId: string, inp
       SET runway_concurrency_mode = ?, updated_at = CURRENT_TIMESTAMP
       WHERE user_id = ?
     `).run(input.runwayConcurrencyMode, userId);
+  }
+
+  if (input.runwayVideoModel !== undefined && input.runwayVideoModel !== null) {
+    if (!isRunwayVideoModel(input.runwayVideoModel)) {
+      throw new InvalidRunwayVideoModelError();
+    }
+
+    database.prepare(`
+      UPDATE user_settings
+      SET runway_video_model = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `).run(input.runwayVideoModel, userId);
   }
 
   const openrouterApiKey = normalizeOptionalApiKey(input.openrouterApiKey);

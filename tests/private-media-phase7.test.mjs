@@ -176,6 +176,79 @@ test('Runway persistence writes generated assets outside public and returns medi
   });
 });
 
+test('Runway video uploads media API prompt images with a real filename extension', async () => {
+  await withMediaStorageDir(async () => {
+    const db = createProductionDb();
+    insertUser(db);
+    insertSession(db);
+    const {
+      createMediaAssetForSession,
+      createPrivateMediaFilePath,
+      mediaAssetUrl,
+    } = jiti('../src/lib/media-assets.ts');
+    const { generateVideoAsset } = jiti('../src/lib/runway.ts');
+    const imageFile = createPrivateMediaFilePath({
+      scope: 'generated',
+      kind: 'image',
+      sessionId: 'session-1',
+      id: 'aba22b75-f36e-4a71-9187-30d0882e28e6',
+      extension: 'jpg',
+    });
+    await writePrivateFile(imageFile);
+    const imageAsset = createMediaAssetForSession(db, {
+      id: 'aba22b75-f36e-4a71-9187-30d0882e28e6',
+      sessionId: 'session-1',
+      kind: 'image',
+      filePath: imageFile.relativePath,
+      mimeType: 'image/jpeg',
+      byteSize: 10,
+      originalName: null,
+    });
+    let uploadedFileName = '';
+    let uploadedFileType = '';
+    const runwayClient = {
+      uploads: {
+        createEphemeral: async ({ file }) => {
+          uploadedFileName = file.name;
+          uploadedFileType = file.type;
+          return { uri: 'runway://uploaded-frame' };
+        },
+      },
+      imageToVideo: {
+        create: async (body) => {
+          assert.equal(body.promptImage[0].uri, 'runway://uploaded-frame');
+          return {
+            id: 'video-task-1',
+            waitForTaskOutput: async () => ({ output: ['https://runway.example/video.mp4'] }),
+          };
+        },
+      },
+    };
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(Buffer.from('private-video'), {
+      status: 200,
+      headers: { 'content-type': 'video/mp4' },
+    });
+
+    try {
+      await generateVideoAsset({
+        promptImageUrl: mediaAssetUrl(imageAsset.id),
+        promptText: 'The camera slowly drifts toward the festival lights.',
+        ratio: '1280:720',
+        duration: 5,
+        sessionId: 'session-1',
+        runwayClient,
+        database: db,
+      });
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+
+    assert.match(uploadedFileName, /\.jpg$/);
+    assert.equal(uploadedFileType, 'image/jpeg');
+  });
+});
+
 test('Final render plan resolves media API URLs to local Remotion-readable file URLs', async () => {
   await withMediaStorageDir(async (mediaDir) => {
     const db = createProductionDb();

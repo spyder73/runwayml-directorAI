@@ -19,6 +19,8 @@
     "@remotion/player": "^4.0.459",
     "@remotion/renderer": "^4.0.459",
     "@remotion/transitions": "^4.0.459",
+    "@runwayml/avatars-node-rpc": "^0.1.0",
+    "@runwayml/avatars-react": "^0.15.0",
     "@runwayml/sdk": "^3.20.0",
     "ai": "^6.0.176",
     "better-sqlite3": "^12.9.0",

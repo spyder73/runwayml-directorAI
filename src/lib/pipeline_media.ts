@@ -1,8 +1,7 @@
 import type Database from 'better-sqlite3';
-import { getAudioDurationInSeconds } from 'get-audio-duration';
 import path from 'path';
 import db from './db';
-import { renderFinalFilm, type FinalRenderProgress } from './final-render';
+import type { FinalRenderProgress } from './final-render';
 import {
   completeMediaTask,
   failMediaTask,
@@ -32,14 +31,23 @@ import {
 import { cleanGeneratorPrompt, planShots, referencePromptFromGeneratorText, type ShotPlan } from './shot_planner';
 import { broadcastSessionUpdate } from './sse';
 import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './types';
+import { notifyFinalRenderReady } from './final-render-notification';
 import {
   createRunwayClientForSession,
   getRunwayConcurrencyModeForSession,
+  getRunwayVideoModelForSession,
   requireOpenRouterApiKeyForSession,
   safeCredentialErrorMessage,
 } from './providers/user-credentials';
 
 type SqliteDatabase = Database.Database;
+
+const externalImport = new Function('specifier', 'return import(specifier)') as <T>(specifier: string) => Promise<T>;
+
+async function getAudioDurationInSeconds(audioPath: string) {
+  const { getAudioDurationInSeconds: readAudioDuration } = await externalImport<typeof import('get-audio-duration')>('get-audio-duration');
+  return readAudioDuration(audioPath);
+}
 
 export type MediaTaskExecutor = (params: {
   database: SqliteDatabase;
@@ -353,6 +361,16 @@ function syncSessionProgress(
   const frameTasks = tasks.filter((task) => task.kind === 'generate_scene_frame');
   const mediaTasks = tasks.filter((task) => task.kind === 'generate_narration' || task.kind === 'generate_video_shot');
   const renderTask = tasks.find((task) => task.kind === 'render_final');
+
+  if (includeRender && renderTask?.status === 'succeeded') {
+    setSessionStatus(database, sessionId, 'COMPLETED', renderTask.output_asset_id || session.final_video_url || null);
+    return;
+  }
+
+  if (includeRender && renderTask?.status === 'running') {
+    setSessionStatus(database, sessionId, 'RENDERING');
+    return;
+  }
 
   if (frameTasks.some((task) => task.status !== 'succeeded')) {
     setSessionStatus(database, sessionId, 'GENERATING_IMAGES');
@@ -723,6 +741,7 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
         sessionId: session.id,
         runwayClient,
         database,
+        videoModel: getRunwayVideoModelForSession(database, session),
         logContext: {
           ...mediaTaskLogContext(session, task, scene),
           shotIndex: shotIndex + 1,
@@ -797,6 +816,7 @@ async function executeRenderTask(params: { database: SqliteDatabase; task: Media
     throw new Error(`Final render is not ready: ${renderGuard.reasons.join('; ')}`);
   }
 
+  const { renderFinalFilm } = await import('./final-render');
   const rendered = await renderFinalFilm({
     sessionId: session.id,
     aspectRatio: session.aspect_ratio,
@@ -806,6 +826,9 @@ async function executeRenderTask(params: { database: SqliteDatabase; task: Media
 
   completeRenderProgress(database, session.id);
   setSessionStatus(database, session.id, 'COMPLETED', rendered.publicUrl);
+  notifyFinalRenderReady(database, session.id, rendered.publicUrl).catch((error) => {
+    console.error('Failed to send final render email', error);
+  });
   broadcastProgress(database, session.id);
 
   return rendered.publicUrl;
@@ -933,6 +956,19 @@ export async function runFrameGenerationPhase(sessionId: string, options: Omit<M
     includeRender: false,
     onlyKinds: ['generate_scene_frame'],
     completionMode: 'frames',
+  });
+}
+
+export async function runAutomaticProductionPipeline(
+  sessionId: string,
+  options: Omit<MediaTaskRunnerOptions, 'includeRender' | 'onlyKinds' | 'completionMode'> = {},
+) {
+  await runFrameGenerationPhase(sessionId, options);
+  await runFinalAssetsPhase(sessionId, options);
+  return runMediaTaskRunner(sessionId, {
+    ...options,
+    includeRender: true,
+    onlyKinds: ['render_final'],
   });
 }
 

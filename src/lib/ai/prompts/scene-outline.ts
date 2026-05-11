@@ -6,6 +6,7 @@ export const sceneOutlinePrompt = `Scene outline:
 - If the user asks to change the treatment, call propose_film_treatment with the revised treatment instead of moving to scenes.
 - Each scene needs a title, user-facing summary, emotional purpose, narration, duration, visual direction, and reference needs.
 - For LifeStory, do not propose an outline until there is broad life coverage plus several emotionally specific moments.
+- Include younger adult and adult chapters when they carry the emotional change; do not let childhood become the whole film by default.
 - Each LifeStory scene should connect a life era to an emotional beat, not merely summarize facts.
 - Before locking production, ask: "Is there anything important we haven't touched yet?" and "Is there a personal story or experience you especially want highlighted?"
 - Use only as many scenes as the life story earns; prefer emotionally specific scenes over a generic chronology.

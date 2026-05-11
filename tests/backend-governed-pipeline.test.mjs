@@ -131,6 +131,19 @@ test('bounded OpenRouter helper calls declare explicit output token caps', () =>
   assert.match(shotPlannerSource, /MAX_SHOT_PLAN_REPAIR_OUTPUT_TOKENS/);
 });
 
+test('LifeStory prompts cover childhood briefly and emphasize young adult and adult chapters', () => {
+  const profilePrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/life-story-profile.ts', import.meta.url), 'utf8');
+  const deepPrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/life-story-deep-interview.ts', import.meta.url), 'utf8');
+  const outlinePrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/scene-outline.ts', import.meta.url), 'utf8');
+
+  assert.match(profilePrompt, /childhood/i);
+  assert.match(profilePrompt, /young adult/i);
+  assert.match(profilePrompt, /adulthood/i);
+  assert.match(deepPrompt, /do not omit childhood/i);
+  assert.match(deepPrompt, /do not dwell/i);
+  assert.match(outlinePrompt, /younger adult/i);
+});
+
 test('cost estimator uses gpt_image_2 low sketches and high final frames', () => {
   const { estimateProductionCost } = jiti('../src/lib/cost-estimator.ts');
 
@@ -568,6 +581,78 @@ test('media task runner executes dependency-ready production tasks and leaves re
     ['render_final', 'queued', null],
   ]);
   assert.equal(db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1').status, 'PREVIEW_READY');
+});
+
+test('automatic production pipeline runs frames, final assets, and render', async () => {
+  const {
+    createMediaTask,
+    initializeMediaTaskTables,
+  } = jiti('../src/lib/media-tasks.ts');
+  const { runAutomaticProductionPipeline } = jiti('../src/lib/pipeline_media.ts');
+
+  const db = createDb();
+  initializeMediaTaskTables(db);
+
+  const frame = createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_scene_frame',
+    provider: 'runway',
+  });
+  const narration = createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_narration',
+    provider: 'runway',
+  });
+  const video = createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_video_shot',
+    provider: 'runway',
+    dependsOnTaskIds: [frame.id, narration.id],
+  });
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    kind: 'render_final',
+    provider: 'local',
+    dependsOnTaskIds: [video.id],
+  });
+
+  const executed = [];
+  await runAutomaticProductionPipeline('session-1', {
+    database: db,
+    executors: {
+      generate_scene_frame: async () => {
+        executed.push('frame');
+        return 'frame-url';
+      },
+      generate_narration: async () => {
+        executed.push('narration');
+        return 'audio-url';
+      },
+      generate_video_shot: async () => {
+        executed.push('video');
+        return 'video-url';
+      },
+      render_final: async () => {
+        executed.push('render');
+        return 'final-url';
+      },
+    },
+  });
+
+  const tasks = db.prepare('SELECT kind, status, output_asset_id FROM media_tasks ORDER BY created_at ASC').all();
+  const session = db.prepare('SELECT status, final_video_url FROM sessions WHERE id = ?').get('session-1');
+  assert.deepEqual(new Set(executed), new Set(['frame', 'narration', 'video', 'render']));
+  assert.deepEqual(tasks.map((task) => [task.kind, task.status, task.output_asset_id]), [
+    ['generate_scene_frame', 'succeeded', 'frame-url'],
+    ['generate_narration', 'succeeded', 'audio-url'],
+    ['generate_video_shot', 'succeeded', 'video-url'],
+    ['render_final', 'succeeded', 'final-url'],
+  ]);
+  assert.equal(session.status, 'COMPLETED');
+  assert.equal(session.final_video_url, 'final-url');
 });
 
 test('media task runner defaults to serial runway task execution', async () => {

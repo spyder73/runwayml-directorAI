@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import type { RunwayConcurrencyMode } from '@/lib/types';
+import type { RunwayConcurrencyMode, RunwayVideoModel } from '@/lib/types';
 
 type SettingsSummary = {
   openrouterKeySaved: boolean;
   runwayKeySaved: boolean;
   runwayConcurrencyMode: RunwayConcurrencyMode;
+  runwayVideoModel: RunwayVideoModel;
 };
 
 type SettingsModalProps = {
@@ -21,6 +22,7 @@ const DEFAULT_SETTINGS: SettingsSummary = {
   openrouterKeySaved: false,
   runwayKeySaved: false,
   runwayConcurrencyMode: 'serial',
+  runwayVideoModel: 'gen4_turbo',
 };
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -28,6 +30,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [openrouterApiKey, setOpenrouterApiKey] = useState('');
   const [runwayApiKey, setRunwayApiKey] = useState('');
   const [runwayConcurrencyMode, setRunwayConcurrencyMode] = useState<RunwayConcurrencyMode>('serial');
+  const [runwayVideoModel, setRunwayVideoModel] = useState<RunwayVideoModel>('gen4_turbo');
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +48,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         if (cancelled) return;
         setSummary(nextSummary);
         setRunwayConcurrencyMode(nextSummary.runwayConcurrencyMode);
+        setRunwayVideoModel(nextSummary.runwayVideoModel);
         setStatus('idle');
       })
       .catch((loadError) => {
@@ -75,7 +79,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       openrouterApiKey?: string;
       runwayApiKey?: string;
       runwayConcurrencyMode: RunwayConcurrencyMode;
-    } = { runwayConcurrencyMode };
+      runwayVideoModel: RunwayVideoModel;
+    } = { runwayConcurrencyMode, runwayVideoModel };
 
     if (openrouterApiKey.trim()) payload.openrouterApiKey = openrouterApiKey.trim();
     if (runwayApiKey.trim()) payload.runwayApiKey = runwayApiKey.trim();
@@ -95,6 +100,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       const nextSummary = await response.json() as SettingsSummary;
       setSummary(nextSummary);
       setRunwayConcurrencyMode(nextSummary.runwayConcurrencyMode);
+      setRunwayVideoModel(nextSummary.runwayVideoModel);
       setOpenrouterApiKey('');
       setRunwayApiKey('');
       setStatus('saved');
@@ -164,6 +170,9 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
 
           <div>
             <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/45">Runway mode</span>
+            <p className="mt-2 text-sm leading-6 text-white/50">
+              Sequential generates images and videos step by step, which helps when Runway throttles too many parallel requests. Parallel starts eligible jobs together and can be faster when your Runway account has capacity.
+            </p>
             <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg border border-white/10 bg-black/30 p-1">
               {(['serial', 'parallel'] as const).map((mode) => (
                 <button
@@ -176,7 +185,27 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       : 'text-white/55 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  {mode}
+                  {mode === 'serial' ? 'Sequential' : 'Parallel'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/45">Runway video model</span>
+            <div className="mt-2 grid grid-cols-2 gap-2 rounded-lg border border-white/10 bg-black/30 p-1">
+              {(['gen4_turbo', 'veo3.1_fast'] as const).map((model) => (
+                <button
+                  key={model}
+                  type="button"
+                  onClick={() => setRunwayVideoModel(model)}
+                  className={`rounded-md px-3 py-2 font-mono text-xs transition-colors ${
+                    runwayVideoModel === model
+                      ? 'bg-white text-black'
+                      : 'text-white/55 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {model}
                 </button>
               ))}
             </div>

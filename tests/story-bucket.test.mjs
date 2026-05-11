@@ -439,6 +439,79 @@ test('locking an outline resolves prompt-only entity tags to usable owned refere
   assert.doesNotMatch(scene.image_prompt, /@kareem\b/);
 });
 
+test('locking an outline resolves plain named entities to usable owned reference images', () => {
+  const db = createDb();
+  addTreatment(db);
+
+  applyProfileBucketUpdate(db, 'session-1', {
+    profile: {
+      protagonistName: 'Martin',
+    },
+    entities: [
+      {
+        id: 'dorian-entity',
+        type: 'friend',
+        displayName: 'Dorian',
+        relationship: 'friend',
+        consentState: 'allowed',
+      },
+      {
+        id: 'carl-entity',
+        type: 'pet',
+        displayName: 'Carl',
+        relationship: 'dog',
+        consentState: 'allowed',
+      },
+    ],
+  });
+
+  const martin = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/martin.jpg',
+    stableTag: 'protagonist_mart',
+    targetType: 'protagonist',
+    targetLabel: 'Martin',
+    usagePermissions: 'allowed',
+  });
+  const dorian = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/dorian.jpg',
+    stableTag: 'dorian',
+    targetType: 'friend',
+    targetLabel: 'Dorian',
+    ownerEntityId: 'dorian-entity',
+    usagePermissions: 'allowed',
+  });
+  const carl = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/carl.jpg',
+    stableTag: 'carl',
+    targetType: 'pet',
+    targetLabel: 'Carl',
+    ownerEntityId: 'carl-entity',
+    usagePermissions: 'allowed',
+  });
+
+  proposeSceneOutline(db, 'session-1', {
+    scenes: [
+      {
+        title: 'Festival arrival',
+        summary: 'Martin arrives with Dorian while Carl reacts to the lights.',
+        narratorText: 'The lights made everyone seem awake at once.',
+        imagePrompt: 'Martin and his friend Dorian arrive at a trance festival while Carl watches the lights.',
+        videoPrompt: 'The camera slowly follows them into the sea of lights.',
+        duration: 7,
+        referenceNeeds: [],
+        referenceAssetIds: [],
+        protagonistVisible: true,
+      },
+    ],
+  });
+
+  lockSceneOutlineForProduction(db, 'session-1');
+  const scene = db.prepare('SELECT * FROM scenes WHERE session_id = ?').get('session-1');
+
+  assert.deepEqual(JSON.parse(scene.scene_references), [martin.id, dorian.id, carl.id]);
+  assert.deepEqual(JSON.parse(scene.reference_tags), ['protagonist_mart', 'dorian', 'carl']);
+});
+
 test('locking an outline rejects references owned by denied-consent entities', () => {
   const db = createDb();
   addTreatment(db);

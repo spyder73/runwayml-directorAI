@@ -49,7 +49,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
 
       <nav className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
         <Link href="/" className="font-serif text-2xl font-light tracking-wide text-white/92">
-          Lifestory
+          yourlifestory
         </Link>
         <div className="flex items-center gap-3">
           <Link
@@ -86,7 +86,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
             Meet Nico Hale
           </p>
           <h1 className="max-w-4xl font-serif text-6xl font-light leading-[0.92] tracking-normal text-white sm:text-7xl lg:text-8xl">
-            Lifestory
+            yourlifestory
           </h1>
           <p className="mt-6 max-w-2xl font-serif text-3xl font-light leading-tight text-white/92 sm:text-4xl">
             {heroIntroLine}
@@ -131,7 +131,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
               The room matters. So does the person asking the questions.
             </h2>
             <p className="mt-6 text-lg leading-8 text-white/62">
-              Nico is the steady presence inside Lifestory: part interviewer, part film editor,
+              Nico is the steady presence inside yourlifestory: part interviewer, part film editor,
               part patient listener. He helps you find the thread in the stories that feel too
               good to leave in a camera roll.
             </p>
@@ -198,7 +198,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
             </h2>
             <p className="mt-6 text-lg leading-8 text-white/62">
               Make the short film you wish already existed. Start with a few real details,
-              then let Lifestory help you shape them into something your people can gather around.
+              then let yourlifestory help you shape them into something your people can gather around.
             </p>
             <Link
               href={`${appUrl}/register`}

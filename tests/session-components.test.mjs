@@ -40,9 +40,20 @@ test('reference upload checkpoint hides the composer until describing or resolve
   const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /const isReferenceDescribeDraft = showReferenceRequest && message\.trim\(\)\.length > 0;/);
-  assert.match(source, /const showComposer = !showReferenceRequest \|\| isReferenceDescribeDraft;/);
+  assert.match(source, /const showComposer = \(!isVoiceMode && !showReferenceRequest\) \|\| isReferenceDescribeDraft;/);
+  assert.doesNotMatch(source, /clearData\(\)/);
   assert.match(source, /\{!isReferenceDescribeDraft && \(\s*<ReferenceUploadRequest/);
   assert.match(source, /\{showComposer && \(\s*<form/);
+});
+
+test('chat composer removes general image upload and keeps text clear of the send button', () => {
+  const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(source, /Camera,/);
+  assert.doesNotMatch(source, /<Camera/);
+  assert.doesNotMatch(source, /aria-label="Add image"/);
+  assert.match(source, /pl-5 pr-24/);
+  assert.match(source, /ReferenceUploadRequest/);
 });
 
 test('production progress exposes frame approval before motion generation', () => {
@@ -130,11 +141,86 @@ test('home page exposes only the LifeStory start entrypoint', () => {
   const source = fs.readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /Describe Your Life Story/);
+  assert.match(source, /Nico Hale/);
+  assert.match(source, /Hey, I'm Nico Hale, your content director/);
+  assert.match(source, /AI content director/);
+  assert.match(source, /\/landing\/director-studio/);
   assert.match(source, /handleStart\(\)/);
   assert.doesNotMatch(source, /handleStart\('single_memory'\)/);
   assert.doesNotMatch(source, /Generate a Video of a Memory/);
   assert.doesNotMatch(source, /\/api\/pipeline\/demo/);
   assert.doesNotMatch(source, /Open rehearsal memory/);
+});
+
+test('frontend brand copy uses yourlifestory in visible surfaces', () => {
+  const sources = [
+    '../src/components/home/LandingPage.tsx',
+    '../src/components/home/StudioHome.tsx',
+    '../src/app/session/[id]/page.tsx',
+    '../src/app/login/page.tsx',
+    '../src/app/register/page.tsx',
+    '../src/app/verify-email/page.tsx',
+    '../src/app/layout.tsx',
+  ].map((filePath) => fs.readFileSync(new URL(filePath, import.meta.url), 'utf8')).join('\n');
+
+  assert.match(sources, /yourlifestory/);
+  assert.doesNotMatch(sources, /let Lifestory/);
+  assert.doesNotMatch(sources, />Lifestory</);
+  assert.doesNotMatch(sources, /title:\s*"Lifestory\.ai"/);
+});
+
+test('home page lets users choose voice or text interview medium', () => {
+  const source = fs.readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /Call the Director/);
+  assert.match(source, /Communicate via text/);
+  assert.match(source, /interviewMedium: 'voice'/);
+  assert.match(source, /interviewMedium: 'text'/);
+  assert.match(source, /mode=voice/);
+});
+
+test('voice session renders Runway avatar stage without webcam and docks around workflow panels', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /useSearchParams/);
+  assert.match(pageSource, /isVoiceMode/);
+  assert.match(pageSource, /AvatarDirectorCall/);
+  assert.match(callSource, /AvatarCall/);
+  assert.match(callSource, /video=\{false\}/);
+  assert.match(callSource, /PageActions/);
+  assert.match(callSource, /useTranscript/);
+  assert.match(callSource, /connectPromiseRef/);
+  assert.match(callSource, /set_avatar_layout/);
+  assert.match(callSource, /director-call--docked/);
+});
+
+test('voice review panels are director-led without manual approval buttons', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+  const outlineSource = fs.readFileSync(new URL('../src/components/session/SceneOutlineReview.tsx', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /isVoiceMode \? false : hasTreatmentAwaitingDecision/);
+  assert.match(pageSource, /readOnly=\{isVoiceMode\}/);
+  assert.match(outlineSource, /readOnly\?: boolean/);
+  assert.match(outlineSource, /!readOnly &&/);
+});
+
+test('voice production handoff prompts for render notification email', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+  const promptSource = fs.readFileSync(new URL('../src/components/session/RenderEmailPrompt.tsx', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /RenderEmailPrompt/);
+  assert.match(pageSource, /\/api\/pipeline\/render-email/);
+  assert.match(promptSource, /Where should I send the rendered film/);
+  assert.match(promptSource, /render_notification_email/);
+});
+
+test('render notification email prompt is available after production handoff in text and voice', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /const showRenderEmailPrompt = shouldOfferRenderNotificationEmail/);
+  assert.match(pageSource, /!session\.render_notification_email/);
+  assert.doesNotMatch(pageSource, /const showRenderEmailPrompt = isVoiceMode && shouldEndDirectorCall/);
 });
 
 test('home page checks whether live demo production is ready', () => {

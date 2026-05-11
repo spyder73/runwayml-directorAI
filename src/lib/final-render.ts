@@ -1,5 +1,3 @@
-import { bundle } from '@remotion/bundler';
-import { type Concurrency, type X264Preset, renderMedia, selectComposition } from '@remotion/renderer';
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
@@ -91,6 +89,33 @@ type RemotionRenderEnv = {
   REMOTION_CRF?: string;
   REMOTION_RENDER_QUALITY?: string;
 };
+type RemotionConcurrency = number | string | null;
+type RemotionX264Preset =
+  | 'ultrafast'
+  | 'superfast'
+  | 'veryfast'
+  | 'faster'
+  | 'fast'
+  | 'medium'
+  | 'slow'
+  | 'slower'
+  | 'veryslow'
+  | 'placebo';
+
+const externalImport = new Function('specifier', 'return import(specifier)') as <T>(specifier: string) => Promise<T>;
+
+async function loadRemotionBundler() {
+  return externalImport<typeof import('@remotion/bundler')>('@remotion/bundler');
+}
+
+async function loadRemotionRenderer() {
+  return externalImport<typeof import('@remotion/renderer')>('@remotion/renderer');
+}
+
+async function defaultRemotionBundle(options: RemotionBundleOptions) {
+  const { bundle } = await loadRemotionBundler();
+  return bundle(options);
+}
 
 function normalizePublicUrl(url: string) {
   const trimmed = url.trim();
@@ -322,7 +347,7 @@ function shouldEnableRemotionBundleCache() {
   return process.env.REMOTION_BUNDLE_CACHE === 'true';
 }
 
-function remotionRenderConcurrency(): Concurrency {
+function remotionRenderConcurrency(): RemotionConcurrency {
   const configured = process.env.REMOTION_CONCURRENCY?.trim() || '';
   if (!configured) return null;
   const numeric = Number(configured);
@@ -334,7 +359,7 @@ function remotionRenderTimeout() {
   return Number.isFinite(configured) && configured > 0 ? configured : undefined;
 }
 
-function remotionX264Preset(): X264Preset {
+function remotionX264Preset(): RemotionX264Preset {
   const configured = process.env.REMOTION_X264_PRESET;
   if (
     configured === 'ultrafast' ||
@@ -371,7 +396,7 @@ export function resolveRemotionCrf(env: RemotionRenderEnv = process.env) {
   return 20;
 }
 
-export function createRemotionBundleResolver(bundleFn: RemotionBundleFn = bundle) {
+export function createRemotionBundleResolver(bundleFn: RemotionBundleFn = defaultRemotionBundle) {
   let bundlePromise: Promise<string> | null = null;
   let bundledEntryPoint: string | null = null;
 
@@ -418,6 +443,7 @@ function reportFinalRenderProgress(plan: FinalRenderPlan, progress: FinalRenderP
 }
 
 async function runRemotionRender(plan: FinalRenderPlan) {
+  const { renderMedia, selectComposition } = await loadRemotionRenderer();
   const serveUrl = await resolveRemotionBundle(plan);
   const browserExecutable = remotionBrowserExecutable() || undefined;
   const concurrency = remotionRenderConcurrency();

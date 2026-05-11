@@ -65,6 +65,7 @@ test('settings route summarizes saved keys, encrypts updates, and rejects invali
     openrouterKeySaved: false,
     runwayKeySaved: false,
     runwayConcurrencyMode: 'serial',
+    runwayVideoModel: 'gen4_turbo',
   });
 
   const saved = await route.PUT(new Request('https://lifestory.example/api/settings', {
@@ -74,6 +75,7 @@ test('settings route summarizes saved keys, encrypts updates, and rejects invali
       openrouterApiKey: 'openrouter-user-key',
       runwayApiKey: 'runway-user-key',
       runwayConcurrencyMode: 'parallel',
+      runwayVideoModel: 'veo3.1_fast',
     }),
   }));
   assert.equal(saved.status, 200);
@@ -82,6 +84,7 @@ test('settings route summarizes saved keys, encrypts updates, and rejects invali
     openrouterKeySaved: true,
     runwayKeySaved: true,
     runwayConcurrencyMode: 'parallel',
+    runwayVideoModel: 'veo3.1_fast',
   });
   assert.equal(JSON.stringify(savedJson).includes('openrouter-user-key'), false);
   assert.equal(JSON.stringify(savedJson).includes('runway-user-key'), false);
@@ -106,6 +109,13 @@ test('settings route summarizes saved keys, encrypts updates, and rejects invali
     body: JSON.stringify({ runwayConcurrencyMode: 'turbo' }),
   }));
   assert.equal(invalidMode.status, 400);
+
+  const invalidModel = await route.PUT(new Request('https://lifestory.example/api/settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ runwayVideoModel: 'gen4_aleph' }),
+  }));
+  assert.equal(invalidModel.status, 400);
 });
 
 test('session UI exposes a settings cog and never hydrates raw saved keys into fields', () => {
@@ -120,6 +130,12 @@ test('session UI exposes a settings cog and never hydrates raw saved keys into f
   assert.match(modalSource, /openrouterApiKey/);
   assert.match(modalSource, /runwayApiKey/);
   assert.match(modalSource, /runwayConcurrencyMode/);
+  assert.match(modalSource, /runwayVideoModel/);
+  assert.match(modalSource, /Sequential/);
+  assert.match(modalSource, /step by step/);
+  assert.match(modalSource, /throttle/i);
+  assert.match(modalSource, /veo3\.1_fast/);
+  assert.match(modalSource, /gen4_turbo/);
   assert.match(modalSource, /user-supplied keys/i);
   assert.doesNotMatch(modalSource, /value=\{summary\.openrouter/i);
   assert.doesNotMatch(modalSource, /value=\{summary\.runway/i);

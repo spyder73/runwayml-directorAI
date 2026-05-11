@@ -8,10 +8,16 @@ export type SendVerificationEmailInput = {
   token: string;
 };
 
+export type SendFinalRenderEmailInput = {
+  to: string;
+  videoUrl: string;
+};
+
 export type SendEmailResult = {
   sent: boolean;
   reason?: string;
   verifyUrl?: string;
+  videoUrl?: string;
 };
 
 function appUrl() {
@@ -20,6 +26,11 @@ function appUrl() {
 
 export function buildVerificationUrl(token: string) {
   return `${appUrl()}/verify-email?token=${encodeURIComponent(token)}`;
+}
+
+export function buildFinalRenderUrl(videoUrl: string) {
+  if (/^https?:\/\//i.test(videoUrl)) return videoUrl;
+  return `${appUrl()}${videoUrl.startsWith('/') ? videoUrl : `/${videoUrl}`}`;
 }
 
 function smtpHostConfigured() {
@@ -40,7 +51,7 @@ function dotStuff(message: string) {
     .join('\r\n');
 }
 
-function buildMessage({ to, verifyUrl }: { to: string; verifyUrl: string }) {
+function buildVerificationMessage({ to, verifyUrl }: { to: string; verifyUrl: string }) {
   const from = process.env.SMTP_FROM || 'Lifestory <no-reply@localhost>';
   return [
     `From: ${from}`,
@@ -54,6 +65,23 @@ function buildMessage({ to, verifyUrl }: { to: string; verifyUrl: string }) {
     verifyUrl,
     '',
     'If you did not create this account, you can ignore this email.',
+  ].join('\r\n');
+}
+
+function buildFinalRenderMessage({ to, videoUrl }: { to: string; videoUrl: string }) {
+  const from = process.env.SMTP_FROM || 'Lifestory <no-reply@localhost>';
+  return [
+    `From: ${from}`,
+    `To: ${to}`,
+    'Subject: Your Lifestory film is ready',
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    'Your Lifestory film is ready.',
+    '',
+    videoUrl,
+    '',
+    'Thank you for making it with Nico and the LifeStory studio.',
   ].join('\r\n');
 }
 
@@ -171,8 +199,23 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput): 
 
   const result = await sendSmtpMail({
     to: input.to,
-    message: buildMessage({ to: input.to, verifyUrl }),
+    message: buildVerificationMessage({ to: input.to, verifyUrl }),
   });
 
   return { ...result, verifyUrl };
+}
+
+export async function sendFinalRenderEmail(input: SendFinalRenderEmailInput): Promise<SendEmailResult> {
+  const videoUrl = buildFinalRenderUrl(input.videoUrl);
+
+  if (!smtpHostConfigured()) {
+    return { sent: false, reason: 'SMTP not configured', videoUrl };
+  }
+
+  const result = await sendSmtpMail({
+    to: input.to,
+    message: buildFinalRenderMessage({ to: input.to, videoUrl }),
+  });
+
+  return { ...result, videoUrl };
 }

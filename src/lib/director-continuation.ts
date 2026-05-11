@@ -20,3 +20,18 @@ Requirements:
 - Keep the tone warm, cinematic, curious, and specific.
 - Do not mention private notes, storage, tools, or implementation details.`;
 }
+
+export function ensureProactiveDirectorReply(
+  reply: string | null | undefined,
+  options: { fallbackQuestion: string },
+) {
+  const trimmedReply = reply?.trim();
+  const fallbackQuestion = options.fallbackQuestion.trim();
+
+  if (!trimmedReply) return fallbackQuestion;
+  if (/[?？]/.test(trimmedReply)) return trimmedReply;
+  if (!fallbackQuestion) return trimmedReply;
+
+  const normalizedReply = /[.!]$/.test(trimmedReply) ? trimmedReply : `${trimmedReply}.`;
+  return `${normalizedReply} ${fallbackQuestion}`;
+}

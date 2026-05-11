@@ -1,6 +1,7 @@
 export type AspectRatio = '16:9' | '9:16';
 
 export type SessionMode = 'life_story';
+export type InterviewMedium = 'text' | 'voice';
 
 export type SessionStatus =
   | 'INTERVIEW_ONBOARDING'
@@ -21,6 +22,7 @@ export type SessionStatus =
 export interface SessionRow {
   id: string;
   mode: SessionMode;
+  interview_medium: InterviewMedium;
   status: SessionStatus;
   story_text: string;
   aspect_ratio: AspectRatio;
@@ -31,8 +33,36 @@ export interface SessionRow {
   final_video_url: string | null;
   user_id: string | null;
   final_video_media_asset_id: string | null;
+  render_notification_email: string | null;
+  render_notification_sent_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AvatarCallSessionRow {
+  id: string;
+  session_id: string;
+  runway_session_id: string;
+  status: string;
+  transcript_json: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AvatarCallEventRow {
+  id: string;
+  avatar_call_session_id: string | null;
+  session_id: string;
+  runway_session_id: string | null;
+  event_type: string;
+  tool_name: string | null;
+  duration_ms: number | null;
+  payload_json: string | null;
+  error_message: string | null;
+  created_at: string;
 }
 
 export interface UserRow {
@@ -75,10 +105,12 @@ export interface UserApiCredentialsRow {
 }
 
 export type RunwayConcurrencyMode = 'serial' | 'parallel';
+export type RunwayVideoModel = 'gen4_turbo' | 'veo3.1_fast';
 
 export interface UserSettingsRow {
   user_id: string;
   runway_concurrency_mode: RunwayConcurrencyMode;
+  runway_video_model: RunwayVideoModel;
   created_at: string;
   updated_at: string;
 }

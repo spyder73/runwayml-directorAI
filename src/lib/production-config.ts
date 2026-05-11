@@ -1,19 +1,29 @@
-import type { SessionMode } from './types';
+import type { RunwayVideoModel, SessionMode } from './types';
 
 export const IMAGE_MODEL = 'gpt_image_2' as const;
 export const SKETCH_IMAGE_QUALITY = 'low' as const;
 export const FINAL_IMAGE_QUALITY = 'high' as const;
-export const DEFAULT_VIDEO_MODEL = 'gen4_turbo' as const;
+export const DEFAULT_VIDEO_MODEL: RunwayVideoModel = 'gen4_turbo';
+export const RUNWAY_VIDEO_MODELS: readonly RunwayVideoModel[] = ['gen4_turbo', 'veo3.1_fast'];
 export const VIDEO_MODEL = DEFAULT_VIDEO_MODEL;
 export const NARRATION_MODEL = 'eleven_multilingual_v2' as const;
 
 type VideoModelEnv = Record<string, string | undefined>;
 
-export function getRunwayVideoModel(env: VideoModelEnv = process.env) {
-  return env.RUNWAY_VIDEO_MODEL?.trim()
-    || env.VIDEO_MODEL?.trim()
-    || env.video_model?.trim()
-    || DEFAULT_VIDEO_MODEL;
+export function isRunwayVideoModel(value: unknown): value is RunwayVideoModel {
+  return value === 'gen4_turbo' || value === 'veo3.1_fast';
+}
+
+export function normalizeRunwayVideoModel(value: unknown, fallback: RunwayVideoModel = DEFAULT_VIDEO_MODEL): RunwayVideoModel {
+  return isRunwayVideoModel(value) ? value : fallback;
+}
+
+export function getRunwayVideoModel(env: VideoModelEnv = process.env): RunwayVideoModel {
+  return normalizeRunwayVideoModel(
+    env.RUNWAY_VIDEO_MODEL?.trim()
+      || env.VIDEO_MODEL?.trim()
+      || env.video_model?.trim(),
+  );
 }
 
 export const RUNWAY_CREDIT_COSTS = {

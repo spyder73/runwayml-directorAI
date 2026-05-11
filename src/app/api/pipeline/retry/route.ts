@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { startFinalRenderWithLock } from '@/lib/locks';
-import { runFinalAssetsPhase, runFinalRenderPhase, runFrameGenerationPhase } from '@/lib/pipeline_media';
+import { runAutomaticProductionPipeline, runFinalRenderPhase } from '@/lib/pipeline_media';
 import { GENERATION_RATE_LIMIT, RENDER_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import { requeueMediaTasks, resetFailedMediaTasks, type MediaTaskKind } from '@/lib/media-tasks';
@@ -122,9 +122,7 @@ export async function POST(req: Request) {
       scenes: db.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC').all(sessionId) as SceneRow[],
     });
 
-    const runner = needsImages ? runFrameGenerationPhase : runFinalAssetsPhase;
-
-    runner(sessionId).catch(console.error);
+    runAutomaticProductionPipeline(sessionId).catch(console.error);
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

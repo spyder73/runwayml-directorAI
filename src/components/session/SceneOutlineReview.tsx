@@ -8,9 +8,10 @@ type SceneOutlineReviewProps = {
   scenes: SceneOutlineRow[];
   onComment: (scene: SceneOutlineRow, comment: string) => void;
   onLock: () => void;
+  readOnly?: boolean;
 };
 
-export default function SceneOutlineReview({ scenes, onComment, onLock }: SceneOutlineReviewProps) {
+export default function SceneOutlineReview({ scenes, onComment, onLock, readOnly = false }: SceneOutlineReviewProps) {
   const [comments, setComments] = useState<Record<string, string>>({});
   const unlocked = scenes.filter((scene) => scene.status !== 'locked');
 
@@ -38,39 +39,41 @@ export default function SceneOutlineReview({ scenes, onComment, onLock }: SceneO
               <span className="rounded-full border border-white/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-white/45">{scene.duration}s</span>
             </div>
             <p className="mt-4 border-l border-amber-200/30 pl-4 font-serif text-lg italic leading-relaxed text-amber-50/80">{scene.narrator_text}</p>
-            <div className="mt-4 flex flex-col gap-3 md:flex-row">
-              <input
-                value={comments[scene.id] || ''}
-                onChange={(event) => setComments((current) => ({ ...current, [scene.id]: event.target.value }))}
-                placeholder="Leave a note for this scene..."
-                className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-4 py-3 font-sans text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-200/40"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const comment = comments[scene.id]?.trim();
-                  if (!comment) return;
-                  onComment(scene, comment);
-                  setComments((current) => ({ ...current, [scene.id]: '' }));
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-5 py-3 font-mono text-xs uppercase tracking-widest text-white/70 transition-colors hover:bg-white/10"
-              >
-                <MessageSquare size={15} /> Add note
-              </button>
-            </div>
+            {!readOnly && (
+              <div className="mt-4 flex flex-col gap-3 md:flex-row">
+                <input
+                  value={comments[scene.id] || ''}
+                  onChange={(event) => setComments((current) => ({ ...current, [scene.id]: event.target.value }))}
+                  placeholder="Leave a note for this scene..."
+                  className="min-w-0 flex-1 rounded-full border border-white/10 bg-black/30 px-4 py-3 font-sans text-sm text-white outline-none placeholder:text-white/30 focus:border-amber-200/40"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const comment = comments[scene.id]?.trim();
+                    if (!comment) return;
+                    onComment(scene, comment);
+                    setComments((current) => ({ ...current, [scene.id]: '' }));
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-5 py-3 font-mono text-xs uppercase tracking-widest text-white/70 transition-colors hover:bg-white/10"
+                >
+                  <MessageSquare size={15} /> Add note
+                </button>
+              </div>
+            )}
           </article>
         ))}
       </div>
 
-      <div className="mt-8 flex justify-center">
+      {!readOnly && <div className="mt-8 flex justify-center">
         <button
           type="button"
           onClick={onLock}
           className="inline-flex items-center gap-3 rounded-full bg-white px-8 py-4 font-mono text-xs font-bold uppercase tracking-widest text-black shadow-[0_0_30px_rgba(255,255,255,0.25)] transition-colors hover:bg-amber-100"
         >
-          <Check size={18} /> Approve outline and generate stills
+          <Check size={18} /> Approve outline and start production
         </button>
-      </div>
+      </div>}
     </section>
   );
 }

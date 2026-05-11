@@ -29,6 +29,10 @@ type ReferenceEntityLike = {
 const TAG_PATTERN = /^[a-z][a-z0-9_]{2,15}$/;
 const TAG_CAPTURE_PATTERN = /@([a-zA-Z][a-zA-Z0-9_]*)/g;
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function canUseAsset(asset: ReferenceAssetLike) {
   return asset.usage_permissions === 'allowed' && TAG_PATTERN.test(asset.stable_tag) && Boolean(asset.runway_uri || asset.local_url);
 }
@@ -59,6 +63,12 @@ export function extractPromptReferenceTags(promptText: string) {
 
 function promptIncludesTag(promptText: string, tag: string) {
   return new RegExp(`(^|\\s)@${tag}(?=\\s|[.,;:!?)]|$)`).test(promptText);
+}
+
+function promptMentionsEntity(promptText: string, displayName: string) {
+  const trimmed = displayName.trim();
+  if (!trimmed) return false;
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(trimmed)}(?=$|[^a-z0-9])`, 'i').test(promptText);
 }
 
 function findUsableOwnedAsset(assets: ReferenceAssetLike[], entityId: string, excludedAssetId?: string) {
@@ -106,6 +116,17 @@ export function resolveReferenceAssetToken(
   return ownedAsset || entityAsset;
 }
 
+export function resolvePromptMentionedReferenceAssets(
+  promptText: string,
+  assets: ReferenceAssetLike[],
+  entities: ReferenceEntityLike[] = [],
+) {
+  return entities
+    .filter((entity) => promptMentionsEntity(promptText, entity.display_name))
+    .map((entity) => resolveReferenceAssetToken(entity.id, assets, entities))
+    .filter((asset): asset is ReferenceAssetLike => Boolean(asset));
+}
+
 export function rewritePromptReferenceTags(promptText: string, replacements: Map<string, string>) {
   if (!replacements.size) return promptText;
   return promptText.replace(TAG_CAPTURE_PATTERN, (match, tag: string) => {
@@ -150,13 +171,14 @@ export function prepareSceneReferences(params: {
       return asset;
     })
     .filter((asset): asset is ReferenceAssetLike => Boolean(asset));
+  const mentionedEntityAssets = resolvePromptMentionedReferenceAssets(params.promptText, params.assets, params.entities);
 
   const rewrittenPromptText = rewritePromptReferenceTags(params.promptText, promptTagReplacements);
 
   const selectedAssets: ReferenceAssetLike[] = [];
   const seen = new Set<string>();
 
-  for (const asset of [...protagonistAssets, ...requestedAssets, ...promptReferencedAssets]) {
+  for (const asset of [...protagonistAssets, ...requestedAssets, ...promptReferencedAssets, ...mentionedEntityAssets]) {
     if (seen.has(asset.id) || !canUseAsset(asset)) continue;
     selectedAssets.push(asset);
     seen.add(asset.id);

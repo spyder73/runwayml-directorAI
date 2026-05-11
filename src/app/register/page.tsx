@@ -20,7 +20,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Reg
     <main className="min-h-screen bg-[#0A0A0F] text-white flex items-center justify-center px-6">
       <section className="w-full max-w-sm space-y-8">
         <div className="space-y-3 text-center">
-          <h1 className="text-4xl font-serif font-light tracking-wide">Lifestory</h1>
+          <h1 className="text-4xl font-serif font-light tracking-wide">yourlifestory</h1>
           <p className="font-mono text-xs uppercase tracking-[0.32em] text-white/45">Create account</p>
         </div>
 

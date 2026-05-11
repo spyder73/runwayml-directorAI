@@ -2,9 +2,9 @@ import db from './db';
 import { broadcastSessionUpdate } from './sse';
 import { generateObject, generateText, streamText } from 'ai';
 import { v4 as uuidv4 } from 'uuid';
-import { runFrameGenerationPhase } from './pipeline_media';
+import { runAutomaticProductionPipeline } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
-import { buildDirectorContinuationPrompt } from './director-continuation';
+import { buildDirectorContinuationPrompt, ensureProactiveDirectorReply } from './director-continuation';
 import { filmTreatmentReviewHandoff } from './treatment-reply';
 import { storySceneDiversityPrompt } from './ai/prompts/scene-outline';
 import {
@@ -53,6 +53,7 @@ import {
 const MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS = 8192;
 const MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS = 1200;
 const MAX_DIRECTOR_TOOL_OUTPUT_TOKENS = 8192;
+const DEFAULT_INTERVIEW_FOLLOW_UP = 'What should we explore next for the film?';
 
 function safeInterviewErrorMessage(error: unknown) {
   if (isMissingUserCredentialError(error)) return MISSING_BYOK_MESSAGE;
@@ -394,7 +395,10 @@ export async function processInterviewTurn(sessionId: string) {
            advanceInterviewStatus(session, updatedBucket);
            const selfiePrompt = maybeRequestLifeStorySelfie(session, updatedBucket);
            const supportingReferenceRequest = maybeCreateSupportingReferenceUploadRequest(db, sessionId, args.entities);
-           finalReply = selfiePrompt || supportingReferenceRequest?.prompt_text || text || args.directorReply || finalReply;
+           const nextReply = selfiePrompt || supportingReferenceRequest?.prompt_text || text || args.directorReply || finalReply;
+           finalReply = selfiePrompt || supportingReferenceRequest
+             ? nextReply
+             : ensureProactiveDirectorReply(nextReply, { fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP });
         } else if (call.toolName === 'request_reference_upload') {
            const args = requestReferenceUploadSchema.parse(call.input);
            const request = createReferenceUploadRequest(db, sessionId, args);
@@ -404,13 +408,18 @@ export async function processInterviewTurn(sessionId: string) {
         } else if (call.toolName === 'add_reference_subject') {
            const args = addReferenceSubjectSchema.parse(call.input);
            const result = addReferenceSubject(db, sessionId, args);
-           finalReply = text || args.directorReply || `I will remember ${args.displayName} as @${result.referenceAsset.stable_tag} for future scenes.`;
+           finalReply = ensureProactiveDirectorReply(
+             text || args.directorReply || `I will remember ${args.displayName} as @${result.referenceAsset.stable_tag} for future scenes.`,
+             { fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP },
+           );
         } else if (call.toolName === 'save_reference_description') {
            const args = saveReferenceDescriptionSchema.parse(call.input);
            saveReferenceDescription(db, sessionId, args);
            db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
              .run('INTERVIEW_DYNAMIC', sessionId);
-           finalReply = text || args.directorReply || finalReply;
+           finalReply = ensureProactiveDirectorReply(text || args.directorReply || finalReply, {
+             fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP,
+           });
         } else if (call.toolName === 'generate_memory_sketch') {
            const args = memorySketchSchema.parse(call.input);
            if (args.protagonistVisible !== false && !hasProtagonistReferenceDecision(db, sessionId)) {
@@ -537,10 +546,9 @@ export async function processInterviewTurn(sessionId: string) {
            lockSceneOutlineSchema.parse(call.input);
            lockSceneOutlineForProduction(db, sessionId);
 
-            // Fire off phase 1 of generation (Images only)
-            runFrameGenerationPhase(sessionId).catch(console.error);
+            runAutomaticProductionPipeline(sessionId).catch(console.error);
 
-            const productionMessage = "Perfect. I am moving from outline into production now. You will see each scene come to life as the cut takes shape.";
+            const productionMessage = "Perfect. I am moving from outline into production now. You will see each scene come to life as the cut takes shape, and the final render will start automatically.";
             finalReply = text ? `${text}\n\n${productionMessage}` : productionMessage;
         }
       }
