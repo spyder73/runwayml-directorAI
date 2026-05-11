@@ -35,6 +35,53 @@ function isRenderProgressPayload(value: unknown): value is RenderProgressPayload
   return typeof progress === 'number' && Number.isFinite(progress);
 }
 
+type UploadReferenceSummary = {
+  targetLabel?: string | null;
+  stableTag?: string | null;
+};
+
+type UploadResponse = {
+  error?: string;
+  uploadedReferences?: UploadReferenceSummary[];
+};
+
+type VoiceUploadNotice = {
+  id: string;
+  message: string;
+};
+
+function uniqueText(values: Array<string | null | undefined>) {
+  const output: string[] = [];
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed && !output.includes(trimmed)) output.push(trimmed);
+  }
+  return output;
+}
+
+function createVoiceUploadNoticeId() {
+  return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function buildVoiceUploadNoticeMessage({
+  count,
+  fallbackLabel,
+  references,
+}: {
+  count: number;
+  fallbackLabel: string;
+  references: UploadReferenceSummary[];
+}) {
+  const labels = uniqueText(references.map((reference) => reference.targetLabel));
+  const tags = uniqueText(references.map((reference) => reference.stableTag))
+    .map((tag) => tag.startsWith('@') ? tag : `@${tag}`);
+  const subject = labels.length > 0 ? labels.join(', ') : fallbackLabel;
+  const imageLabel = count === 1 ? 'the image' : `${count} images`;
+  const savedTagText = tags.length > 0 ? ` Saved reference ${tags.join(', ')}.` : '';
+
+  return `I uploaded ${imageLabel} for ${subject}.${savedTagText} Please continue the interview with your next question.`;
+}
+
 function VoiceProductionHandoff({ email }: { email: string | null }) {
   return (
     <section className="mx-auto mt-10 flex w-full max-w-3xl flex-col items-center border-y border-white/10 bg-black/20 px-6 py-10 text-center shadow-[0_0_70px_rgba(253,230,138,0.08)] backdrop-blur-sm">
@@ -62,6 +109,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [storyBucket, setStoryBucket] = useState<StoryBucket | null>(null);
   const [activeReferenceRequest, setActiveReferenceRequest] = useState<ReferenceUploadRequestRow | null>(null);
   const [forceShowVoiceUpload, setForceShowVoiceUpload] = useState(false);
+  const [voiceUploadNotice, setVoiceUploadNotice] = useState<VoiceUploadNotice | null>(null);
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -233,6 +281,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     if (!files || files.length === 0) return;
     setIsUploading(true);
 
+    const fileCount = files.length;
+    const voiceMode = searchParams.get('mode') === 'voice' || session?.interview_medium === 'voice';
+    const fallbackLabel = activeReferenceRequest?.target_label
+      || (session?.status === 'AWAITING_SELFIE' ? 'your selfie' : 'the reference Nico asked for');
     const formData = new FormData();
     formData.append('sessionId', sessionId);
     for (let i = 0; i < files.length; i += 1) {
@@ -240,7 +292,21 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     }
 
     try {
-      await fetch('/api/pipeline/upload', { method: 'POST', body: formData });
+      const response = await fetch('/api/pipeline/upload', { method: 'POST', body: formData });
+      const data = await response.json().catch(() => ({})) as UploadResponse;
+      if (!response.ok) {
+        throw new Error(data.error || 'Upload failed.');
+      }
+      if (voiceMode) {
+        setVoiceUploadNotice({
+          id: createVoiceUploadNoticeId(),
+          message: buildVoiceUploadNoticeMessage({
+            count: fileCount,
+            fallbackLabel,
+            references: data.uploadedReferences || [],
+          }),
+        });
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -471,6 +537,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           showUpload={showReferenceRequest}
           hasReviewPanel={hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision || productionStarted}
           shouldEndForProduction={shouldEndDirectorCall}
+          voiceUploadNotice={voiceUploadNotice}
           onShowUploadRequested={() => setForceShowVoiceUpload(true)}
         />
       )}

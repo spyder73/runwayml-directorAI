@@ -60,6 +60,12 @@ export async function POST(req: NextRequest) {
     }
 
     const uploadedPaths: string[] = [];
+    const uploadedReferences: Array<{
+      path: string;
+      targetType: string;
+      targetLabel: string;
+      stableTag: string;
+    }> = [];
     const activeRequest = getActiveReferenceRequest(db, sessionId);
     const visionModel = files.length > 0 ? openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite') : null;
 
@@ -119,7 +125,7 @@ export async function POST(req: NextRequest) {
 
       const targetType = activeRequest?.target_type || (session.status === 'AWAITING_SELFIE' ? 'protagonist' : 'reference');
       const targetLabel = activeRequest?.target_label || (targetType === 'protagonist' ? 'protagonist' : 'reference');
-      createReferenceAsset(db, sessionId, {
+      const referenceAsset = createReferenceAsset(db, sessionId, {
         localUrl: filePath,
         targetType,
         targetLabel,
@@ -129,6 +135,12 @@ export async function POST(req: NextRequest) {
       });
         
       uploadedPaths.push(filePath);
+      uploadedReferences.push({
+        path: filePath,
+        targetType,
+        targetLabel,
+        stableTag: referenceAsset.stable_tag,
+      });
     }
 
     if (uploadedPaths.length > 0) {
@@ -155,10 +167,12 @@ export async function POST(req: NextRequest) {
          active_reference_request: getActiveReferenceRequest(db, sessionId) || null,
        });
        
-       processInterviewTurn(sessionId).catch(console.error);
+       if (session.interview_medium !== 'voice') {
+         processInterviewTurn(sessionId).catch(console.error);
+       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, uploadedReferences });
   } catch (error: unknown) {
     const guardResponse = authGuardResponse(error);
     if (guardResponse) return guardResponse;

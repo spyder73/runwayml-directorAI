@@ -269,6 +269,22 @@ test('voice upload layout requests also reveal the upload panel', () => {
   assert.match(callSource, /if \(layout === 'upload'\) onShowUploadRequested\(\)/);
 });
 
+test('voice uploads notify the live avatar room after a reference lands', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+  const uploadRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/upload/route.ts', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /voiceUploadNotice/);
+  assert.match(pageSource, /setVoiceUploadNotice/);
+  assert.match(pageSource, /voiceUploadNotice=\{voiceUploadNotice\}/);
+  assert.match(callSource, /useRoomContext/);
+  assert.match(callSource, /AvatarUploadNoticeBridge/);
+  assert.match(callSource, /localParticipant\.sendText/);
+  assert.match(callSource, /topic: 'lk\.chat'/);
+  assert.match(uploadRouteSource, /uploadedReferences/);
+  assert.match(uploadRouteSource, /session\.interview_medium !== 'voice'/);
+});
+
 test('voice upload layout releases after the upload panel is no longer visible', () => {
   const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
 

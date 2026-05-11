@@ -12,9 +12,15 @@ import {
   useClientEvent,
   useTranscript,
 } from '@runwayml/avatars-react';
+import { useRoomContext } from '@livekit/components-react';
 import { PhoneCall, RefreshCw } from 'lucide-react';
 import { splitVisibleMessageContent } from '@/lib/chat-display';
 import type { ChatHistoryRow } from '@/lib/types';
+
+type AvatarUploadNotice = {
+  id: string;
+  message: string;
+};
 
 type AvatarDirectorCallProps = {
   sessionId: string;
@@ -23,6 +29,7 @@ type AvatarDirectorCallProps = {
   showUpload: boolean;
   hasReviewPanel: boolean;
   shouldEndForProduction: boolean;
+  voiceUploadNotice: AvatarUploadNotice | null;
   onShowUploadRequested: () => void;
 };
 
@@ -269,6 +276,26 @@ function AutoEndOnProduction({ shouldEnd }: { shouldEnd: boolean }) {
   return null;
 }
 
+function AvatarUploadNoticeBridge({ notice }: { notice: AvatarUploadNotice | null }) {
+  const room = useRoomContext();
+  const { state } = useAvatarSession();
+  const sentNoticeIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!notice || state !== 'active' || sentNoticeIdRef.current === notice.id) return;
+
+    sentNoticeIdRef.current = notice.id;
+    room.localParticipant.sendText(notice.message, {
+      topic: 'lk.chat',
+      attributes: { source: 'lifestory-reference-upload' },
+    }).catch((error) => {
+      console.error('Failed to notify avatar about uploaded reference', error);
+    });
+  }, [notice, room, state]);
+
+  return null;
+}
+
 export default function AvatarDirectorCall({
   sessionId,
   chatHistory,
@@ -276,6 +303,7 @@ export default function AvatarDirectorCall({
   showUpload,
   hasReviewPanel,
   shouldEndForProduction,
+  voiceUploadNotice,
   onShowUploadRequested,
 }: AvatarDirectorCallProps) {
   const [clientLayout, setClientLayout] = useState<LayoutMode>('stage');
@@ -418,6 +446,7 @@ export default function AvatarDirectorCall({
 
             <PageActions />
             <AvatarClientEvents onLayout={setClientLayout} onShowUploadRequested={onShowUploadRequested} />
+            <AvatarUploadNoticeBridge notice={voiceUploadNotice} />
             <AutoEndOnProduction shouldEnd={shouldEndForProduction} />
           </AvatarSession>
         </div>
