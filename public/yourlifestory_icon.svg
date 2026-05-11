@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-labelledby="title desc">
+  <title id="title">yourlifestory.io icon</title>
+  <desc id="desc">Square app icon with a cream circular badge, stylized navy lowercase y, gold dot, and quill pen.</desc>
+  <defs>
+    <radialGradient id="badge" cx="50%" cy="45%" r="58%">
+      <stop offset="0%" stop-color="#fff8ef"/>
+      <stop offset="72%" stop-color="#f3e7d8"/>
+      <stop offset="100%" stop-color="#eadbca"/>
+    </radialGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#0b2233" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#ffffff"/>
+
+  <circle cx="512" cy="512" r="455" fill="url(#badge)" stroke="#ffffff" stroke-width="18" filter="url(#softShadow)"/>
+
+  <!-- gold dot -->
+  <circle cx="360" cy="315" r="31" fill="#b88742"/>
+
+  <!-- stylized y -->
+  <path fill="#10283a" d="
+    M292 373
+    C292 361 303 354 320 354
+    L445 354
+    C462 354 473 361 473 373
+    C473 385 462 391 445 391
+    L422 391
+    L520 612
+    L617 391
+    L594 391
+    C577 391 566 385 566 373
+    C566 361 577 354 594 354
+    L696 354
+    C713 354 724 361 724 373
+    C724 385 713 391 696 391
+    L676 391
+    L548 679
+    C529 722 507 760 483 793
+    C452 835 415 858 373 862
+    C331 866 302 852 286 820
+    C268 785 274 748 303 709
+    C331 672 374 654 432 656
+    C463 657 492 663 519 674
+    L410 391
+    L320 391
+    C303 391 292 385 292 373
+    Z
+
+    M500 716
+    C477 707 454 703 430 703
+    C393 702 365 713 346 737
+    C327 761 323 783 333 802
+    C342 820 358 828 381 826
+    C409 824 435 808 458 779
+    C475 757 489 736 500 716
+    Z"/>
+
+  <!-- flowing tail into pen -->
+  <path d="M477 680 C555 686 616 665 671 603 C685 588 697 588 704 599 C711 610 706 623 692 638 C628 706 554 731 468 722" fill="none" stroke="#10283a" stroke-width="23" stroke-linecap="round"/>
+
+  <!-- pen nib -->
+  <path fill="#b88742" d="M673 593 L726 624 L710 690 L652 724 L634 660 Z"/>
+  <path fill="#f5efe5" d="M676 641 C688 646 695 658 691 671 C688 683 675 690 663 686 C651 682 644 669 648 657 C652 645 664 637 676 641 Z"/>
+  <path d="M670 664 L642 715" stroke="#f5efe5" stroke-width="7" stroke-linecap="round"/>
+  <path fill="#b88742" d="M696 596 L744 622 L736 646 L684 619 Z"/>
+
+  <!-- feather -->
+  <path fill="#10283a" d="
+    M722 578
+    C722 493 765 421 851 359
+    C876 341 897 318 910 288
+    C930 379 904 468 831 536
+    C796 568 759 584 722 578
+    Z"/>
+  <path fill="#10283a" d="M755 515 C797 501 832 477 862 443 C835 449 809 448 783 439 C797 472 787 496 755 515 Z" opacity="0.96"/>
+  <path fill="#10283a" d="M725 570 C775 552 820 521 858 478 C829 493 802 498 777 492 C765 525 748 551 725 570 Z" opacity="0.96"/>
+  <path d="M733 575 C782 508 835 443 896 352" stroke="#f5efe5" stroke-width="11" stroke-linecap="round"/>
+</svg>

@@ -22,6 +22,9 @@ const cormorantGaramond = Cormorant_Garamond({
 export const metadata: Metadata = {
   title: "yourlifestory",
   description: "A cinematic memoir studio for turning real memories into a short film.",
+  icons: {
+    icon: "/yourlifestory_icon.svg",
+  },
 };
 
 export default function RootLayout({
