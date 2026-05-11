@@ -67,7 +67,7 @@ function retryUnitForScene(scene: SceneRow): { unit: RetryUnit; label: string } 
     return { unit: 'audio', label: 'Retry narration' };
   }
   if (scene.status === 'video_failed') {
-    return { unit: 'video', label: 'Retry motion' };
+    return { unit: 'video', label: 'Repair + retry' };
   }
   return null;
 }
@@ -146,7 +146,7 @@ export default function ProductionProgress({ session, scenes, renderProgress, pi
     if (session.status === 'AWAITING_APPROVAL') return { eyebrow: 'Frame review', title: 'Approve the stills', body: 'Look over the scene images. If they feel right, I will turn them into narration and motion next.' };
     if (session.status === 'GENERATING_FINAL_ASSETS') return { eyebrow: 'Second pass', title: 'Filming and narration', body: 'The approved frames are becoming moving scenes with voiceover.' };
     if (isRecoverableFailedPreview) return { eyebrow: 'Preview ready', title: "The Director's Cut", body: 'All generated scenes are complete. You can prepare the final film from here.' };
-    if (session.status === 'FAILED') return { eyebrow: 'Production paused', title: 'One scene needs another pass', body: 'Retry the scene that needs another pass to continue from the missing piece.' };
+    if (session.status === 'FAILED') return { eyebrow: 'Production paused', title: 'One scene needs another pass', body: 'Use the retry button on the scene image that needs another pass.' };
     if (session.status === 'PREVIEW_READY') return { eyebrow: 'Preview ready', title: "The Director's Cut", body: 'Your generated scenes are ready to watch.' };
     if (session.status === 'RENDERING') return { eyebrow: 'Final pass', title: 'Preparing your film', body: 'The preview is becoming the final downloadable video.' };
     return { eyebrow: 'Complete', title: 'Your film is ready', body: 'The final cut is ready to download.' };
@@ -192,13 +192,6 @@ export default function ProductionProgress({ session, scenes, renderProgress, pi
             <div className="flex-1">
               <p className="font-mono text-xs uppercase tracking-[0.25em] text-red-100/70">Paused</p>
               <p className="mt-2 font-sans text-sm leading-relaxed text-red-50/80">{safeProductionPauseMessage(pipelineError)}</p>
-              <button
-                type="button"
-                onClick={() => onRetry()}
-                className="mt-4 inline-flex items-center gap-2 rounded-full border border-red-100/30 bg-white/10 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-red-50 transition-colors hover:bg-red-100 hover:text-black"
-              >
-                <RefreshCw size={13} /> Retry missing piece
-              </button>
             </div>
           </div>
         </div>

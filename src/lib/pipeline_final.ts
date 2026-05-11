@@ -6,7 +6,8 @@ import { getAudioDurationInSeconds } from 'get-audio-duration';
 import path from 'path';
 import { planShots } from './shot_planner';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
-import { assertRunwayImagePrompt, assertRunwayVideoPrompt } from './prompt-lint';
+import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
+import { repairRunwayVideoPromptForValidation } from './video-prompt-repair';
 import { FINAL_IMAGE_QUALITY } from './production-config';
 import {
   completeMediaTasksForScenePhase,
@@ -268,7 +269,13 @@ export async function generateVideoAudioPhase(sessionId: string) {
           const videoUrls: string[] = [];
 
           for (const shot of shots) {
-            const safePrompt = await ensureSafePrompt(shot.prompt, { openrouterApiKey });
+            const moderatedPrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt, { openrouterApiKey }));
+            const repairedPrompt = await repairRunwayVideoPromptForValidation({
+              promptText: moderatedPrompt,
+              durationSeconds: shot.duration,
+              openrouterApiKey,
+            });
+            const safePrompt = repairedPrompt.promptText;
             assertRunwayVideoPrompt({
               promptText: safePrompt,
               durationSeconds: shot.duration,

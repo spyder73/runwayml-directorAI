@@ -109,6 +109,25 @@ test('video prompt repair adds camera motion before runway validation', () => {
   assert.match(promptText, /camera/i);
 });
 
+test('video prompt repair uses validation errors to remove reference tags before retry', async () => {
+  const { repairRunwayVideoPromptForValidation } = jiti('../src/lib/video-prompt-repair.ts');
+
+  const repaired = await repairRunwayVideoPromptForValidation({
+    promptText: 'Dorian and Martin laugh together at a festival. Use @protagonist_dori and @martin as references.',
+    durationSeconds: 6,
+    validationError: 'Video prompt failed validation: Video motion prompts should not contain @tag references.',
+    openrouterApiKey: 'test-key',
+    generateRepairText: async ({ validationError }) => {
+      assert.match(validationError, /@tag references/);
+      return 'The camera drifts through the festival crowd as Dorian and Martin laugh together, holding on their easy friendship and warm movement.';
+    },
+  });
+
+  assert.equal(repaired.repaired, true);
+  assert.doesNotMatch(repaired.promptText, /@protagonist_dori|@martin/);
+  assert.match(repaired.promptText, /camera|drifts|laugh/i);
+});
+
 test('prompt moderation caps output tokens before OpenRouter receives the request', () => {
   const source = fs.readFileSync(new URL('../src/lib/moderation.ts', import.meta.url), 'utf8');
 
@@ -121,6 +140,7 @@ test('bounded OpenRouter helper calls declare explicit output token caps', () =>
   const directorRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/director/route.ts', import.meta.url), 'utf8');
   const uploadRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/upload/route.ts', import.meta.url), 'utf8');
   const shotPlannerSource = fs.readFileSync(new URL('../src/lib/shot_planner.ts', import.meta.url), 'utf8');
+  const videoPromptRepairSource = fs.readFileSync(new URL('../src/lib/video-prompt-repair.ts', import.meta.url), 'utf8');
 
   assert.match(pipelineSource, /MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS/);
   assert.match(pipelineSource, /MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS/);
@@ -129,6 +149,7 @@ test('bounded OpenRouter helper calls declare explicit output token caps', () =>
   assert.match(uploadRouteSource, /MAX_VISION_DESCRIPTION_OUTPUT_TOKENS/);
   assert.match(shotPlannerSource, /MAX_SHOT_PLAN_OUTPUT_TOKENS/);
   assert.match(shotPlannerSource, /MAX_SHOT_PLAN_REPAIR_OUTPUT_TOKENS/);
+  assert.match(videoPromptRepairSource, /MAX_VIDEO_PROMPT_REPAIR_OUTPUT_TOKENS/);
 });
 
 test('LifeStory prompts cover childhood briefly and emphasize young adult and adult chapters', () => {

@@ -18,6 +18,7 @@ import { FINAL_IMAGE_QUALITY } from './production-config';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
 import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
 import { logMediaGeneration, type MediaGenerationLogDetails } from './media-logging';
+import { repairRunwayVideoPromptForValidation } from './video-prompt-repair';
 import {
   generateImageAsset,
   generateSpeechAsset,
@@ -712,7 +713,24 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
       writeShotPlanProgress(database, scene.id, shotPlan, session.id);
     }
 
-    const safePrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt, { openrouterApiKey }));
+    const moderatedPrompt = ensureRunwayVideoPromptMotion(await ensureSafePrompt(shot.prompt, { openrouterApiKey }));
+    const repairedPrompt = await repairRunwayVideoPromptForValidation({
+      promptText: moderatedPrompt,
+      durationSeconds: shot.duration,
+      openrouterApiKey,
+    });
+    const safePrompt = repairedPrompt.promptText;
+    if (repairedPrompt.repaired) {
+      logMediaGeneration('scene_video_prompt_repaired', {
+        ...mediaTaskLogContext(session, task, scene),
+        mediaType: 'video',
+        shotIndex: shotIndex + 1,
+        shotCount: shots.length,
+        duration: shot.duration,
+        promptText: safePrompt,
+        error: repairedPrompt.validationError ? new Error(repairedPrompt.validationError) : undefined,
+      }, 'warn');
+    }
     assertRunwayVideoPrompt({
       promptText: safePrompt,
       durationSeconds: shot.duration,

@@ -89,13 +89,13 @@ test('outline approval failures remain visible in the outline review panel', () 
   assert.match(pageSource, /setOutlineApprovalError\(error instanceof Error \? error\.message : 'Failed to approve the outline\.'\)/);
 });
 
-test('production progress exposes unit retry controls for failed scene work', () => {
+test('production progress exposes one scene-level retry control for failed work', () => {
   const source = fs.readFileSync(new URL('../src/components/session/ProductionProgress.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /Retry frame/);
   assert.match(source, /Retry narration/);
-  assert.match(source, /Retry motion/);
-  assert.match(source, /Retry missing piece/);
+  assert.match(source, /Repair \+ retry/);
+  assert.doesNotMatch(source, /Retry missing piece/);
   assert.doesNotMatch(source, /Nothing has been replaced with pretend media/);
   assert.match(source, /onRetry\(retry\.unit, scene\.id\)/);
 });
