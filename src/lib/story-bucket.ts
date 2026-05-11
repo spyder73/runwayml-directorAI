@@ -22,6 +22,10 @@ import {
 
 type SqliteDatabase = Database.Database;
 
+function sceneOutlineConsentChecksEnabled() {
+  return process.env.LIFESTORY_CONSENT_CHECKS_ENABLED === 'true';
+}
+
 type ProfileUpdate = {
   protagonistName?: string;
   age?: string;
@@ -1195,11 +1199,14 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
   const treatment = getFilmTreatment(database, sessionId);
   const referenceAssets = database.prepare('SELECT * FROM reference_assets WHERE session_id = ?').all(sessionId) as ReferenceAssetRow[];
   const storyEntities = database.prepare('SELECT * FROM story_entities WHERE session_id = ?').all(sessionId) as StoryEntityRow[];
-  const consentIssues = sceneOutlineConsentIssues({
-    outlineRows,
-    assets: referenceAssets,
-    entities: storyEntities,
-  });
+  const consentChecksEnabled = sceneOutlineConsentChecksEnabled();
+  const consentIssues = consentChecksEnabled
+    ? sceneOutlineConsentIssues({
+      outlineRows,
+      assets: referenceAssets,
+      entities: storyEntities,
+    })
+    : [];
 
   if (!outlineRows.length) {
     throw new Error('Scene outline must be proposed before production can start.');
@@ -1246,7 +1253,7 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
         entities: storyEntities,
       });
       const selectedAssets = resolvedReferences.selectedAssets;
-      const blockedAsset = selectedAssets.find((asset) => asset.usage_permissions !== 'allowed');
+      const blockedAsset = consentChecksEnabled ? selectedAssets.find((asset) => asset.usage_permissions !== 'allowed') : undefined;
       if (blockedAsset) {
         throw new Error(`Reference @${blockedAsset.stable_tag} is not approved for generation.`);
       }

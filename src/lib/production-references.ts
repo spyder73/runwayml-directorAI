@@ -135,6 +135,13 @@ export function rewritePromptReferenceTags(promptText: string, replacements: Map
   });
 }
 
+function stripPromptReferenceTags(promptText: string, tags: Set<string>) {
+  if (!tags.size) return promptText;
+  return promptText.replace(TAG_CAPTURE_PATTERN, (match, tag: string) => (
+    tags.has(normalizeReferenceTag(tag)) ? tag : match
+  ));
+}
+
 export function parseReferenceAssetIds(value: string | null | undefined) {
   if (!value) return [];
   try {
@@ -162,18 +169,25 @@ export function prepareSceneReferences(params: {
     : [];
 
   const promptTagReplacements = new Map<string, string>();
+  const unusablePromptTags = new Set<string>();
   const promptReferencedAssets = extractPromptReferenceTags(params.promptText)
     .map((tag) => {
       const asset = resolveReferenceAssetToken(tag, params.assets, params.entities);
       if (asset && normalizeReferenceTag(tag) !== asset.stable_tag) {
         promptTagReplacements.set(normalizeReferenceTag(tag), asset.stable_tag);
       }
+      if (asset && !canUseAsset(asset)) {
+        unusablePromptTags.add(normalizeReferenceTag(tag));
+      }
       return asset;
     })
     .filter((asset): asset is ReferenceAssetLike => Boolean(asset));
   const mentionedEntityAssets = resolvePromptMentionedReferenceAssets(params.promptText, params.assets, params.entities);
 
-  const rewrittenPromptText = rewritePromptReferenceTags(params.promptText, promptTagReplacements);
+  const rewrittenPromptText = stripPromptReferenceTags(
+    rewritePromptReferenceTags(params.promptText, promptTagReplacements),
+    unusablePromptTags,
+  );
 
   const selectedAssets: ReferenceAssetLike[] = [];
   const seen = new Set<string>();

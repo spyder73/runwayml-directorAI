@@ -207,6 +207,24 @@ test('production references rewrite prompt entity aliases to usable owned image 
   assert.doesNotMatch(references.promptText, /@kareem\b/);
 });
 
+test('production references strip unusable prompt tags to keep generation prompts valid', () => {
+  const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
+
+  const references = prepareSceneReferences({
+    promptText: 'A cinematic montage with @dorian moving between study, code, and training.',
+    sceneReferenceAssetIds: ['dorian-description'],
+    protagonistVisible: false,
+    assets: [
+      { id: 'dorian-description', local_url: null, runway_uri: null, stable_tag: 'dorian', usage_permissions: 'description_only', target_type: 'protagonist', vision_description: 'Dorian balancing work and training.' },
+    ],
+  });
+
+  assert.deepEqual(references.selectedAssets, []);
+  assert.deepEqual(references.referenceImages, []);
+  assert.match(references.promptText, /with dorian moving/i);
+  assert.doesNotMatch(references.promptText, /@dorian\b/);
+});
+
 test('production references attach uploaded assets for plain named entities in the scene prompt', () => {
   const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
 

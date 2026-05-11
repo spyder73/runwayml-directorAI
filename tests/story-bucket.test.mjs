@@ -512,7 +512,7 @@ test('locking an outline resolves plain named entities to usable owned reference
   assert.deepEqual(JSON.parse(scene.reference_tags), ['protagonist_mart', 'dorian', 'carl']);
 });
 
-test('locking an outline rejects references owned by denied-consent entities', () => {
+test('locking an outline allows references owned by denied-consent entities while consent checks are disabled', () => {
   const db = createDb();
   addTreatment(db);
   const entityId = 'entity-denied-friend';
@@ -554,8 +554,89 @@ test('locking an outline rejects references owned by denied-consent entities', (
     ],
   });
 
-  assert.throws(
-    () => lockSceneOutlineForProduction(db, 'session-1'),
-    /consent/i,
-  );
+  const result = lockSceneOutlineForProduction(db, 'session-1');
+  const scene = db.prepare('SELECT * FROM scenes WHERE session_id = ?').get('session-1');
+
+  assert.equal(result.createdScenes, 1);
+  assert.deepEqual(JSON.parse(scene.reference_tags), ['jordan']);
+});
+
+test('locking an outline allows description-only references while consent checks are disabled', () => {
+  const db = createDb();
+  addTreatment(db);
+
+  const descriptionOnlyReference = createReferenceAsset(db, 'session-1', {
+    localUrl: null,
+    stableTag: 'dorian',
+    targetType: 'protagonist',
+    targetLabel: 'Dorian',
+    usagePermissions: 'description_only',
+  });
+
+  proposeSceneOutline(db, 'session-1', {
+    scenes: [
+      {
+        title: 'The juggling act',
+        summary: 'Dorian balances study, code, and training.',
+        narratorText: 'They say you cannot be two places at once.',
+        imagePrompt: 'A cinematic montage with @dorian moving between study, code, and training.',
+        videoPrompt: 'The camera quickly tracks through each part of the day with energetic motion.',
+        duration: 6,
+        referenceNeeds: ['Dorian'],
+        referenceAssetIds: [descriptionOnlyReference.id],
+        protagonistVisible: true,
+      },
+    ],
+  });
+
+  const result = lockSceneOutlineForProduction(db, 'session-1');
+  const scene = db.prepare('SELECT * FROM scenes WHERE session_id = ?').get('session-1');
+
+  assert.equal(result.createdScenes, 1);
+  assert.deepEqual(JSON.parse(scene.reference_tags), ['dorian']);
+});
+
+test('locking an outline can re-enable consent checks with the environment flag', () => {
+  const previousValue = process.env.LIFESTORY_CONSENT_CHECKS_ENABLED;
+  process.env.LIFESTORY_CONSENT_CHECKS_ENABLED = 'true';
+
+  try {
+    const db = createDb();
+    addTreatment(db);
+
+    const descriptionOnlyReference = createReferenceAsset(db, 'session-1', {
+      localUrl: null,
+      stableTag: 'dorian',
+      targetType: 'protagonist',
+      targetLabel: 'Dorian',
+      usagePermissions: 'description_only',
+    });
+
+    proposeSceneOutline(db, 'session-1', {
+      scenes: [
+        {
+          title: 'The juggling act',
+          summary: 'Dorian balances study, code, and training.',
+          narratorText: 'They say you cannot be two places at once.',
+          imagePrompt: 'A cinematic montage with @dorian moving between study, code, and training.',
+          videoPrompt: 'The camera quickly tracks through each part of the day with energetic motion.',
+          duration: 6,
+          referenceNeeds: ['Dorian'],
+          referenceAssetIds: [descriptionOnlyReference.id],
+          protagonistVisible: true,
+        },
+      ],
+    });
+
+    assert.throws(
+      () => lockSceneOutlineForProduction(db, 'session-1'),
+      /consent checks failed/,
+    );
+  } finally {
+    if (previousValue === undefined) {
+      delete process.env.LIFESTORY_CONSENT_CHECKS_ENABLED;
+    } else {
+      process.env.LIFESTORY_CONSENT_CHECKS_ENABLED = previousValue;
+    }
+  }
 });
