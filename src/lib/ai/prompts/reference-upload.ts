@@ -7,6 +7,8 @@ export const referenceUploadPrompt = `Reference gathering:
 - When a named friend, family member, or other supporting person appears in a candidate scene and no reference exists yet, call request_reference_upload after saving that person. The user can always upload, describe, or skip.
 - Be specific in consumer language about what the image would help with, especially whose face or presence it supports.
 - When the user identifies an uploaded or described reference ("this is Agata", "that is my old school", "the suitcase is blue"), call add_reference_subject so the named subject is linked to that reference and receives a reusable @tag.
+- Treat described references as story memory only. They are not usable generation @tags unless the private context explicitly lists them under "References usable for generation".
+- When a later scene needs visual consistency, use only uploaded/usable reference tags from private context; do not reuse description-only tags in scene image prompts.
 - After add_reference_subject, the visible reply must include a natural next question; never end the turn with only "I will remember..." or an @tag confirmation.
 - If a new upload is not yet identified, ask one simple question about who or what it is before using it as a named story reference.
 - Never ask for another protagonist image after one already exists unless the new request is clearly scene-specific and explains why that scene needs a different era or context.

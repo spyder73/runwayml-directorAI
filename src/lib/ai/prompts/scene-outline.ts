@@ -5,6 +5,10 @@ export const sceneOutlinePrompt = `Scene outline:
 - If the user approves an existing film treatment with phrases like yes, okay, implement this draft, draft the scenes, or go ahead, call propose_scene_outline next instead of asking for more broad-life coverage.
 - If the user asks to change the treatment, call propose_film_treatment with the revised treatment instead of moving to scenes.
 - Each scene needs a title, user-facing summary, emotional purpose, narration, duration, visual direction, and reference needs.
+- Reference discipline is strict: scene imagePrompt text may use @tags only from "References usable for generation" in private context.
+- Never place description-only, skipped, restricted, denied, unknown, or unuploaded reference @tags in imagePrompt or referenceAssetIds. Describe those people in plain language instead.
+- If a usable generation reference exists for a person, use that exact @tag consistently in every scene where their visual identity matters and include that asset in referenceAssetIds.
+- If multiple references exist for the same person, prefer the uploaded/usable generation tag over description-only tags, even when the description-only tag has a simpler name.
 - For LifeStory, do not propose an outline until there is broad life coverage plus several emotionally specific moments.
 - Include younger adult and adult chapters when they carry the emotional change; do not let childhood become the whole film by default.
 - Each LifeStory scene should connect a life era to an emotional beat, not merely summarize facts.

@@ -150,6 +150,30 @@ test('director prompt turns approved treatments into scene outlines and asks for
   assert.match(prompt, /request_reference_upload/);
 });
 
+test('director prompt separates usable generation references from description-only references', () => {
+  const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
+  const fs = jiti('node:fs');
+  const pipelineSource = fs.readFileSync(new URL('../src/lib/pipeline.ts', import.meta.url), 'utf8');
+  const prompt = buildInterviewSystemPrompt({
+    status: 'INTERVIEW_DYNAMIC',
+    storyContext: [
+      'References usable for generation: @dorian_3 (uploaded protagonist photo)',
+      'Description-only references, not usable as generation @tags: @dorian, @dorian_2',
+    ].join('\n'),
+    uploadContext: '',
+    activeReferenceRequest: null,
+  });
+
+  assert.match(prompt, /References usable for generation/i);
+  assert.match(prompt, /Description-only references, not usable as generation @tags/i);
+  assert.match(prompt, /Never place description-only/i);
+  assert.match(prompt, /referenceAssetIds/i);
+  assert.match(prompt, /@dorian_3/);
+  assert.match(pipelineSource, /canUseAsset/);
+  assert.match(pipelineSource, /References usable for generation/);
+  assert.match(pipelineSource, /Description-only references, not usable as generation @tags/);
+});
+
 test('scene outline prompt requires a treatment before outline production', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const prompt = buildInterviewSystemPrompt({

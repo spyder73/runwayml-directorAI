@@ -25,6 +25,7 @@ import { buildInterviewSystemPrompt } from './ai/prompts';
 import { generateImageAsset, imageRatio } from './runway';
 import { SKETCH_IMAGE_QUALITY } from './production-config';
 import { evaluateLifeStoryOutlineReadiness } from './story-readiness';
+import { canUseAsset } from './production-references';
 import {
   MISSING_BYOK_MESSAGE,
   createRunwayClientForSession,
@@ -109,7 +110,16 @@ export function formatStoryBucketForPrompt(bucket: StoryBucket) {
   }
 
   if (bucket.referenceAssets.length) {
-    parts.push(`References: ${bucket.referenceAssets.map((asset) => `@${asset.stable_tag}${asset.vision_description ? ` (${asset.vision_description})` : ''}`).join('; ')}`);
+    const usableReferences = bucket.referenceAssets.filter((asset) => canUseAsset(asset));
+    const descriptionOnlyReferences = bucket.referenceAssets.filter((asset) => !canUseAsset(asset));
+
+    if (usableReferences.length) {
+      parts.push(`References usable for generation: ${usableReferences.map((asset) => `@${asset.stable_tag}${asset.vision_description ? ` (${asset.vision_description})` : ''}`).join('; ')}`);
+    }
+
+    if (descriptionOnlyReferences.length) {
+      parts.push(`Description-only references, not usable as generation @tags: ${descriptionOnlyReferences.map((asset) => `@${asset.stable_tag}${asset.vision_description ? ` (${asset.vision_description})` : ''}`).join('; ')}`);
+    }
   }
 
   if (bucket.sceneOutline.length) {
