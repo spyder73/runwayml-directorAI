@@ -1,6 +1,5 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { pathToFileURL } from 'url';
 import type { FinalRenderPlan } from './final-render';
 
 type RemotionConcurrency = number | string | null;
@@ -26,6 +25,10 @@ export type ModalRenderRequest = {
     entryPoint: string;
     composition: FinalRenderPlan['composition'];
     inputProps: FinalRenderPlan['remotionInputProps'];
+    inputAssets: Array<{
+      mountedPath: string;
+      publicPath: string;
+    }>;
     outputVolumePath: string;
     outputMountedPath: string;
     renderOptions: ModalRenderOptions;
@@ -73,8 +76,16 @@ function volumePath(...parts: string[]) {
   return `/${path.posix.join(...parts.map((part) => part.replace(/^\/+|\/+$/g, '')))}`;
 }
 
-function mountedFileUrl(mountPath: string, remotePath: string) {
-  return pathToFileURL(path.posix.join(mountPath, remotePath.replace(/^\/+/, ''))).href;
+function mountedFilePath(mountPath: string, remotePath: string) {
+  return path.posix.join(mountPath, remotePath.replace(/^\/+/, ''));
+}
+
+function publicFilePath(jobId: string, remotePath: string) {
+  return path.posix.join('modal-inputs', jobId, path.posix.basename(remotePath));
+}
+
+function remotionPublicUrl(publicPath: string) {
+  return `/public/${publicPath}`;
 }
 
 function remoteRemotionEntryPoint(entryPoint: string) {
@@ -129,6 +140,7 @@ export function buildModalRenderRequest(
 ): ModalRenderRequest {
   const jobId = safeJobId(options.jobId);
   const inputFiles: ModalRenderRequest['inputFiles'] = [];
+  const inputAssets: ModalRenderRequest['manifest']['inputAssets'] = [];
   const urlMap = new Map<string, string>();
   const localPathToVolumePath = new Map<string, string>();
   const inputs = [...plan.videoInputs, ...plan.audioInputs];
@@ -143,9 +155,13 @@ export function buildModalRenderRequest(
         localPath: input.filePath,
         volumePath: remotePath,
       });
+      inputAssets.push({
+        mountedPath: mountedFilePath(options.volumeMountPath, remotePath),
+        publicPath: publicFilePath(jobId, remotePath),
+      });
     }
 
-    urlMap.set(input.remotionUrl, mountedFileUrl(options.volumeMountPath, remotePath));
+    urlMap.set(input.remotionUrl, remotionPublicUrl(publicFilePath(jobId, remotePath)));
   }
 
   const outputVolumePath = volumePath('jobs', jobId, 'output', 'final.mp4');
@@ -161,6 +177,7 @@ export function buildModalRenderRequest(
       entryPoint: remoteRemotionEntryPoint(plan.entryPoint),
       composition: plan.composition,
       inputProps: remapInputProps(plan, urlMap),
+      inputAssets,
       outputVolumePath,
       outputMountedPath: path.posix.join(options.volumeMountPath, outputVolumePath.replace(/^\/+/, '')),
       renderOptions: options.renderOptions,
