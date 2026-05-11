@@ -143,7 +143,7 @@ type CreateAvatarRpcToolsInput = {
   productionRunner?: (sessionId: string, options: { database: SqliteDatabase }) => Promise<unknown>;
 };
 
-const AVATAR_RENDER_HANDOFF_REPLY = "Leave your email on the page, and I'll send the finished director's cut as soon as the render is ready.";
+const AVATAR_RENDER_HANDOFF_REPLY = "All right, we'll wrap it up here. Add your email and I'll message you once your movie is ready!";
 const avatarSceneOutlinePayloadSchema = proposeSceneOutlineSchema.extend({
   treatment: filmTreatmentSchema.optional(),
 });

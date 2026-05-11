@@ -283,7 +283,7 @@ test('avatar scene outline handoff locks production and ends the call', async ()
   assert.equal(result.ok, true);
   assert.equal(result.endCall, true);
   assert.equal(result.layout, 'email');
-  assert.match(result.directorReply, /finished director's cut/i);
+  assert.equal(result.directorReply, "All right, we'll wrap it up here. Add your email and I'll message you once your movie is ready!");
   assert.doesNotMatch(result.directorReply, /draft/i);
   assert.equal(session.status, 'GENERATING_IMAGES');
   assert.equal(treatment.status, 'approved');
@@ -307,6 +307,11 @@ test('avatar prompts and paste-ready docs preserve director behavior', () => {
   assert.match(personality, /Nico Hale/);
   assert.match(personality, /one question at a time/i);
   assert.match(personality, /use tools silently/i);
+  assert.match(personality, /Photo checkpoints are part of the interview/i);
+  assert.match(personality, /request_reference_upload/);
+  assert.match(personality, /protagonist selfie/i);
+  assert.match(personality, /central friend/i);
+  assert.match(personality, /show_upload_dropzone/);
   assert.match(startScript, /Maya/);
   assert.doesNotMatch(startScript, /I am Nico Hale/);
   assert.match(startScript, /what is your name/i);
@@ -317,13 +322,36 @@ test('avatar prompts and paste-ready docs preserve director behavior', () => {
   assert.match(knowledge, /Place images are low priority/i);
   assert.match(knowledge, /call propose_scene_outline once/i);
   assert.match(knowledge, /Do not call propose_film_treatment/i);
-  assert.match(knowledge, /finished director's cut/i);
+  assert.match(knowledge, /All right, we'll wrap it up here/i);
   assert.doesNotMatch(knowledge, /draft of my idea/i);
   assert.match(knowledge, /end the call/i);
 
+  const docs = [];
   for (const fileName of ['personality.md', 'start-script.md', 'knowledge.md']) {
     const source = fs.readFileSync(new URL(`../docs/runway-character/${fileName}`, import.meta.url), 'utf8');
+    docs.push(source);
     assert.match(source, /Nico Hale|LifeStory|Director/i);
     assert.doesNotMatch(source, /TBD|TODO/);
   }
+  const combinedDocs = docs.join('\n');
+  assert.match(combinedDocs, /request_reference_upload/);
+  assert.match(combinedDocs, /central friend/i);
+  assert.match(combinedDocs, /All right, we'll wrap it up here/i);
+});
+
+test('avatar upload tools tell the model to ask for protagonist and central friend images', () => {
+  const {
+    avatarBackendTools,
+    avatarClientTools,
+  } = jiti('../src/lib/avatar/tool-definitions.ts');
+
+  const requestTool = avatarBackendTools.find((tool) => tool.name === 'request_reference_upload');
+  const showDropzoneTool = avatarClientTools.find((tool) => tool.name === 'show_upload_dropzone');
+
+  assert.ok(requestTool);
+  assert.ok(showDropzoneTool);
+  assert.match(requestTool.description, /protagonist/i);
+  assert.match(requestTool.description, /central friend/i);
+  assert.match(requestTool.description, /upload, describe, or skip/i);
+  assert.match(showDropzoneTool.description, /immediately after request_reference_upload/i);
 });

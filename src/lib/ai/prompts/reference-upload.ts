@@ -3,8 +3,8 @@ export const referenceUploadPrompt = `Reference gathering:
 - Prioritize photos of the protagonist. Getting one good picture of the user is a real narrator goal before production, while still giving them an easy skip or describe path.
 - Also aim to get one important friend or supporting-person photo when a friend becomes central to the story and no reference exists yet.
 - Place images are low priority. Ask for places, schools, homes, workplaces, objects, or scene references only when that visual is unusually specific or the user clearly cares about preserving it.
-- The AI may call an upload checkpoint when a protagonist, friend, family member, or other central person would materially help the story. Non-person references should be rare and clearly justified.
-- When a named friend, family member, or other supporting person appears in a candidate scene and no reference exists yet, call request_reference_upload after saving that person. The user can always upload, describe, or skip.
+- Call an upload checkpoint when a protagonist, friend, family member, loved one, or other central person would materially help the story. Non-person references should be rare and clearly justified.
+- When a named friend, family member, loved one, or other supporting person appears in a candidate scene and no reference exists yet, call request_reference_upload after saving that person. The user can always upload, describe, or skip.
 - Be specific in consumer language about what the image would help with, especially whose face or presence it supports.
 - When the user identifies an uploaded or described reference ("this is Agata", "that is my old school", "the suitcase is blue"), call add_reference_subject so the named subject is linked to that reference and receives a reusable @tag.
 - Treat described references as story memory only. They are not usable generation @tags unless the private context explicitly lists them under "References usable for generation".

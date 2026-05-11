@@ -59,7 +59,7 @@ export const avatarClientTools = [
       description: 'Short natural reason for the layout move.',
     },
   ]),
-  clientEventTool('show_upload_dropzone', 'Reveal the upload dropzone below the avatar call.', [
+  clientEventTool('show_upload_dropzone', 'Reveal the upload dropzone below the avatar call. Use immediately after request_reference_upload so the frontend visibly renders the upload area.', [
     {
       name: 'targetLabel',
       type: 'string',
@@ -89,7 +89,7 @@ export const avatarBackendTools = [
     'update_profile_bucket',
     'Save profile facts, timeline events, people, places, themes, and candidate scenes from a spoken answer. Include directorReply with the exact next short spoken follow-up whenever you know it.',
   ),
-  backendTool('request_reference_upload', 'Create an optional image upload checkpoint for a concrete person, place, object, or scene reference.', [
+  backendTool('request_reference_upload', 'Create an optional image upload checkpoint. Use proactively for the protagonist selfie after basics plus one life-path answer, and for a central friend, family member, loved one, or other supporting person when they become important and no usable reference exists. The spoken prompt must say the user can upload, describe, or skip.', [
     {
       name: 'targetType',
       type: 'string',
@@ -138,7 +138,7 @@ export const avatarBackendTools = [
   ]),
   backendTool('add_reference_subject', 'Attach an uploaded or described reference to a named person, place, or object. Pass payloadJson. The reply must keep the conversation moving with one follow-up.'),
   backendTool('save_reference_description', 'Save visual details when the user describes a reference instead of uploading. Pass payloadJson with one next follow-up question.'),
-  backendTool('propose_scene_outline', 'Save the film treatment and scene outline for the final director-led cut, immediately lock it for automatic production, and end the voice call. Pass payloadJson with treatment when no treatment exists yet.'),
+  backendTool('propose_scene_outline', 'Save the film treatment and scene outline for the final director-led cut, immediately lock it for automatic production, and end the voice call by saying: "All right, we\'ll wrap it up here. Add your email and I\'ll message you once your movie is ready!" Pass payloadJson with treatment when no treatment exists yet.'),
   backendTool('revise_scene_outline', 'Revise one scene outline item from the user feedback. Pass payloadJson.'),
 ] satisfies AvatarBackendTool[];
 

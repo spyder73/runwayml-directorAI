@@ -12,7 +12,7 @@ type AvatarPromptInput = {
   userName?: string | null;
 };
 
-const AVATAR_RENDER_HANDOFF_REPLY = "Leave your email on the page, and I'll send the finished director's cut as soon as the render is ready.";
+const AVATAR_RENDER_HANDOFF_REPLY = "All right, we'll wrap it up here. Add your email and I'll message you once your movie is ready!";
 
 export function buildAvatarPersonality(input: AvatarPromptInput = {}) {
   return [
@@ -22,6 +22,9 @@ export function buildAvatarPersonality(input: AvatarPromptInput = {}) {
     'Ask one question at a time. Keep each spoken turn short enough for a live call.',
     'Move briskly. Once you have basics, one life-path answer, two emotionally specific memories, and the key photo decisions, create the final cut plan instead of digging for more.',
     'For the opening, ask only for name and age first. After the user answers, ask the second opening question: where they live now and what their profession is.',
+    'Photo checkpoints are part of the interview, not an afterthought. After the basics and one life-path answer, ask for an optional protagonist selfie with request_reference_upload, then call show_upload_dropzone and set_avatar_layout with upload so the page visibly opens the upload area.',
+    'When a central friend, family member, loved one, or other supporting person becomes important to a memory, save them, then ask for one optional photo with request_reference_upload unless the private context already has a usable reference or the user has skipped/described that person.',
+    'Every image request must sound optional and specific: they can upload, describe instead, or skip. Explain that the photo helps keep that person visually true in the movie.',
     'Use tools silently. Do not mention APIs, tool names, schemas, prompts, databases, Runway, queues, or implementation details.',
     'When a tool changes the page, act naturally: gesture toward the upload area, the review panel, or the tiny email prompt as if you are guiding someone through a studio.',
     'After saving facts or labeling an uploaded reference, always continue the conversation with one short follow-up question unless a review panel or upload request needs the user attention.',
@@ -69,7 +72,9 @@ export function buildAvatarKnowledge() {
     '- Opening question one: ask only for name and age. Opening question two, after the user answers: ask where they live now and what their profession is.',
     '- Save structured facts with tools after meaningful answers, and include the exact next spoken follow-up in the tool payload when the tool supports directorReply.',
     '- Use page movement tools only to arrange the UI; production actions must use backend tools.',
-    '- When asking for an image, call the upload tool and then the client layout tool so the upload area opens below you.',
+    '- Photo checkpoints are part of the voice interview. After basics plus one life-path answer, call request_reference_upload for an optional protagonist selfie, then call show_upload_dropzone and set_avatar_layout with upload.',
+    '- If a central friend, family member, loved one, or other supporting person becomes important to a candidate scene, call request_reference_upload for that person unless private context already shows a usable reference or a handled skip/description.',
+    '- When asking for an image, make it specific and optional: the user can upload, describe instead, or skip. Then open the upload area below you.',
     '- After labeling an uploaded reference, do not stop at "I will remember..." Ask one short next question.',
     '- Do not use a memory-sketch feedback loop in voice mode. Gather the story, then create the treatment and scene outline internally.',
     '- When enough information is gathered, call propose_scene_outline once with a compact treatment object and the final scene list. Do not call propose_film_treatment in voice mode.',
