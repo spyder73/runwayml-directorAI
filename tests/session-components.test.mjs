@@ -126,11 +126,15 @@ test('director route can revise a single generated sub-scene prompt', () => {
   assert.match(source, /updateShotPlanPromptJson/);
 });
 
-test('home page exposes a rehearsal memory seed entrypoint', () => {
+test('home page exposes only the LifeStory start entrypoint', () => {
   const source = fs.readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /\/api\/pipeline\/demo/);
-  assert.match(source, /Open rehearsal memory/);
+  assert.match(source, /Describe Your Life Story/);
+  assert.match(source, /handleStart\(\)/);
+  assert.doesNotMatch(source, /handleStart\('single_memory'\)/);
+  assert.doesNotMatch(source, /Generate a Video of a Memory/);
+  assert.doesNotMatch(source, /\/api\/pipeline\/demo/);
+  assert.doesNotMatch(source, /Open rehearsal memory/);
 });
 
 test('home page checks whether live demo production is ready', () => {

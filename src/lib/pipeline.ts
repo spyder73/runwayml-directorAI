@@ -2,7 +2,7 @@ import db from './db';
 import { broadcastSessionUpdate } from './sse';
 import { generateObject, generateText, streamText } from 'ai';
 import { v4 as uuidv4 } from 'uuid';
-import { runFrameGenerationPhase, runMediaGenerationPhase } from './pipeline_media';
+import { runFrameGenerationPhase } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
 import { buildDirectorContinuationPrompt } from './director-continuation';
 import { filmTreatmentReviewHandoff } from './treatment-reply';
@@ -119,14 +119,8 @@ export function formatStoryBucketForPrompt(bucket: StoryBucket) {
 
 function advanceInterviewStatus(session: SessionRow, bucket: StoryBucket) {
   if (session.status === 'INTERVIEW_ONBOARDING') {
-    if (session.mode === 'single_memory' && bucket.memoryCandidates.length > 0) {
-      db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('INTERVIEW_DYNAMIC', session.id);
-      return;
-    }
-
     if (
-      session.mode === 'life_story'
-      && bucket.profile?.protagonist_name
+      bucket.profile?.protagonist_name
       && bucket.profile?.age
       && bucket.profile?.profession
       && bucket.profile?.current_location
@@ -272,7 +266,6 @@ async function draftSceneOutlineAfterTreatmentApproval(sessionId: string) {
 }
 
 function maybeRequestLifeStorySelfie(session: SessionRow, bucket: StoryBucket) {
-  if (session.mode !== 'life_story') return null;
   if (!hasBasicLifeStoryProfile(bucket) || !hasLifePathContext(bucket)) return null;
   if (hasProtagonistReferenceDecision(db, session.id)) return null;
 
@@ -335,7 +328,6 @@ export async function processInterviewTurn(sessionId: string) {
     const latestUserMessage = latestUserText(messages);
     const treatmentApprovalRequested = isTreatmentApprovalForOutline(latestUserMessage, storyBucket);
     const systemPrompt = buildInterviewSystemPrompt({
-      mode: session.mode,
       status: session.status,
       storyContext: formatStoryBucketForPrompt(storyBucket),
       uploadContext,
@@ -509,12 +501,10 @@ export async function processInterviewTurn(sessionId: string) {
              finalReply = text || 'Before I turn this into scenes, I want to shape the film treatment first: the title, emotional thesis, arc, visual motif, narrator style, ending feeling, and what to avoid. What should this short film feel like at the end?';
              continue;
            }
-           if (session.mode === 'life_story') {
-             const readiness = evaluateLifeStoryOutlineReadiness(bucketBeforeOutline);
-             if (!readiness.ready && !treatmentApprovalRequested) {
-               finalReply = text || readiness.nextQuestion;
-               continue;
-             }
+           const readiness = evaluateLifeStoryOutlineReadiness(bucketBeforeOutline);
+           if (!readiness.ready && !treatmentApprovalRequested) {
+             finalReply = text || readiness.nextQuestion;
+             continue;
            }
 
            const needsProtagonistReference = args.scenes.some((scene) => scene.protagonistVisible !== false);
@@ -542,8 +532,7 @@ export async function processInterviewTurn(sessionId: string) {
            lockSceneOutlineForProduction(db, sessionId);
 
             // Fire off phase 1 of generation (Images only)
-            const runner = session.mode === 'life_story' ? runFrameGenerationPhase : runMediaGenerationPhase;
-            runner(sessionId).catch(console.error);
+            runFrameGenerationPhase(sessionId).catch(console.error);
 
             const productionMessage = "Perfect. I am moving from outline into production now. You will see each scene come to life as the cut takes shape.";
             finalReply = text ? `${text}\n\n${productionMessage}` : productionMessage;

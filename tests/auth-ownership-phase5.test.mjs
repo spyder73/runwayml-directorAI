@@ -111,7 +111,7 @@ test('auth guards resolve confirmed users and enforce session ownership', () => 
   );
 });
 
-test('start and demo routes require confirmed auth and create user-owned sessions', async () => {
+test('start and readiness routes require confirmed auth and create user-owned sessions', async () => {
   const db = testDb();
   resetDb(db);
   insertUser(db, 'owner');
@@ -120,24 +120,20 @@ test('start and demo routes require confirmed auth and create user-owned session
   const ownerCookie = cookieFor(db, 'owner');
   const unconfirmedCookie = cookieFor(db, 'unconfirmed');
   const startRoute = jiti('../src/app/api/pipeline/start/route.ts');
-  const demoRoute = jiti('../src/app/api/pipeline/demo/route.ts');
   const readinessRoute = jiti('../src/app/api/pipeline/readiness/route.ts');
 
-  const missingAuth = await startRoute.POST(jsonRequest('/api/pipeline/start', { mode: 'life_story' }));
+  const missingAuth = await startRoute.POST(jsonRequest('/api/pipeline/start', {}));
   assert.equal(missingAuth.status, 401);
 
-  const unconfirmed = await startRoute.POST(jsonRequest('/api/pipeline/start', { mode: 'life_story' }, unconfirmedCookie));
+  const unconfirmed = await startRoute.POST(jsonRequest('/api/pipeline/start', {}, unconfirmedCookie));
   assert.equal(unconfirmed.status, 403);
 
-  const started = await startRoute.POST(jsonRequest('/api/pipeline/start', { mode: 'life_story' }, ownerCookie));
+  const started = await startRoute.POST(jsonRequest('/api/pipeline/start', { mode: 'single_memory' }, ownerCookie));
   assert.equal(started.status, 200);
   const startedJson = await started.json();
-  assert.equal(db.prepare('SELECT user_id FROM sessions WHERE id = ?').get(startedJson.sessionId).user_id, 'owner');
-
-  const demo = await demoRoute.POST(jsonRequest('/api/pipeline/demo', { aspectRatio: '9:16' }, ownerCookie));
-  assert.equal(demo.status, 200);
-  const demoJson = await demo.json();
-  assert.equal(db.prepare('SELECT user_id FROM sessions WHERE id = ?').get(demoJson.sessionId).user_id, 'owner');
+  const startedSession = db.prepare('SELECT user_id, mode FROM sessions WHERE id = ?').get(startedJson.sessionId);
+  assert.equal(startedSession.user_id, 'owner');
+  assert.equal(startedSession.mode, 'life_story');
 
   assert.equal((await readinessRoute.GET(new Request('https://lifestory.example/api/pipeline/readiness'))).status, 401);
   assert.equal((await readinessRoute.GET(new Request('https://lifestory.example/api/pipeline/readiness', { headers: { cookie: unconfirmedCookie } }))).status, 403);
@@ -189,7 +185,6 @@ test('pipeline session routes reject missing, unconfirmed, and foreign session a
 
 test('Phase 5 surfaces are wired through auth and SSE buffering stays disabled', () => {
   const protectedRoutes = [
-    'demo',
     'director',
     'events',
     'interview',

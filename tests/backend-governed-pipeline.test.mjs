@@ -49,7 +49,7 @@ function createDb() {
   `);
 
   db.prepare('INSERT INTO sessions (id, status, story_text, aspect_ratio, mode) VALUES (?, ?, ?, ?, ?)')
-    .run('session-1', 'INTERVIEW_DYNAMIC', '', '16:9', 'single_memory');
+    .run('session-1', 'INTERVIEW_DYNAMIC', '', '16:9', 'life_story');
 
   return db;
 }
@@ -135,7 +135,7 @@ test('cost estimator uses gpt_image_2 low sketches and high final frames', () =>
   const { estimateProductionCost } = jiti('../src/lib/cost-estimator.ts');
 
   const estimate = estimateProductionCost({
-    mode: 'single_memory',
+    mode: 'life_story',
     sketchCount: 1,
     scenes: [
       { durationSeconds: 8, narratorText: 'This is a short remembered moment.' },
@@ -154,7 +154,7 @@ test('transition guards refuse production without treatment, approval, or comple
   const { canLockOutline } = jiti('../src/lib/pipeline-guards.ts');
 
   const blocked = canLockOutline({
-    mode: 'single_memory',
+    mode: 'life_story',
     userApprovedOutline: false,
     treatmentReady: false,
     consentChecksPassed: true,

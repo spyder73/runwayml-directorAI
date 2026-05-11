@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Clapperboard, Film, Settings, Smartphone } from 'lucide-react';
+import { Film, Settings, Smartphone } from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 import SettingsModal from '@/components/session/SettingsModal';
 
@@ -30,7 +30,7 @@ export default function StudioHome() {
       })
       .catch(() => {
         if (!cancelled) {
-          setReadiness({ ok: false, userMessage: 'Rehearsal is ready. Live generation needs setup.' });
+          setReadiness({ ok: false, userMessage: 'Studio is ready. Live generation needs setup.' });
         }
       });
 
@@ -39,39 +39,11 @@ export default function StudioHome() {
     };
   }, []);
 
-  const handleStart = async (mode: 'single_memory' | 'life_story') => {
+  const handleStart = async () => {
     setIsSubmitting(true);
 
     try {
       const res = await fetch('/api/pipeline/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aspectRatio, mode }),
-      });
-
-      if (res.status === 401 || res.status === 403) {
-        redirectToLogin();
-        return;
-      }
-
-      const data = await res.json();
-      if (res.ok && data.sessionId) {
-        router.push(`/session/${data.sessionId}`);
-      } else {
-        console.error('Failed to start session', data);
-        setIsSubmitting(false);
-      }
-    } catch (err) {
-      console.error(err);
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDemoSeed = async () => {
-    setIsSubmitting(true);
-
-    try {
-      const res = await fetch('/api/pipeline/demo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aspectRatio }),
@@ -86,7 +58,7 @@ export default function StudioHome() {
       if (res.ok && data.sessionId) {
         router.push(`/session/${data.sessionId}`);
       } else {
-        console.error('Failed to open demo session', data);
+        console.error('Failed to start session', data);
         setIsSubmitting(false);
       }
     } catch (err) {
@@ -159,27 +131,12 @@ export default function StudioHome() {
                 </button>
               </div>
 
-              <div className="flex flex-col md:flex-row justify-center gap-6 mt-8 w-full max-w-2xl mx-auto">
+              <div className="mt-8 w-full max-w-md mx-auto">
                 <motion.button
-                  onClick={() => handleStart('single_memory')}
-                  whileHover={{ scale: 1.02, boxShadow: '0 0 50px rgba(56, 189, 248, 0.2)' }}
-                  whileTap={{ scale: 0.98 }}
-                  className="flex-1 px-8 py-10 bg-gradient-to-br from-blue-900/20 to-transparent border border-blue-500/30 hover:border-blue-400/50 rounded-3xl flex flex-col items-center gap-4 transition-all duration-300 group"
-                >
-                  <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center group-hover:bg-blue-500/30 transition-colors">
-                    <Film size={28} className="text-blue-300" />
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-xl font-serif text-blue-100 mb-2">Generate a Video of a Memory</h3>
-                    <p className="text-xs text-blue-200/50 font-mono uppercase tracking-wider">Fast & Focused</p>
-                  </div>
-                </motion.button>
-
-                <motion.button
-                  onClick={() => handleStart('life_story')}
+                  onClick={() => handleStart()}
                   whileHover={{ scale: 1.02, boxShadow: '0 0 50px rgba(251, 191, 36, 0.15)' }}
                   whileTap={{ scale: 0.98 }}
-                  className="flex-1 px-8 py-10 bg-gradient-to-br from-amber-900/20 to-transparent border border-amber-500/30 hover:border-amber-400/50 rounded-3xl flex flex-col items-center gap-4 transition-all duration-300 group"
+                  className="w-full px-8 py-10 bg-gradient-to-br from-amber-900/20 to-transparent border border-amber-500/30 hover:border-amber-400/50 rounded-3xl flex flex-col items-center gap-4 transition-all duration-300 group"
                 >
                   <div className="w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 transition-colors">
                     <Film size={28} className="text-amber-300" />
@@ -190,14 +147,6 @@ export default function StudioHome() {
                   </div>
                 </motion.button>
               </div>
-
-              <button
-                type="button"
-                onClick={handleDemoSeed}
-                className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-xs font-mono uppercase tracking-widest text-white/55 transition-colors hover:border-white/25 hover:text-white"
-              >
-                <Clapperboard size={16} /> Open rehearsal memory
-              </button>
 
               {readiness && (
                 <p className={`font-mono text-[10px] uppercase tracking-[0.28em] ${readiness.ok ? 'text-emerald-100/45' : 'text-amber-100/45'}`}>

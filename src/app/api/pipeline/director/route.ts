@@ -3,7 +3,7 @@ import { generateText, tool } from 'ai';
 import db from '@/lib/db';
 import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
 import { broadcastSessionUpdate } from '@/lib/sse';
-import { runFrameGenerationPhase, runMediaGenerationPhase, updateShotPlanPromptJson } from '@/lib/pipeline_media';
+import { runFinalAssetsPhase, runFrameGenerationPhase, updateShotPlanPromptJson } from '@/lib/pipeline_media';
 import { requeueMediaTasks } from '@/lib/media-tasks';
 import { z } from 'zod';
 import type { SceneRow } from '@/lib/types';
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
 
     const { session } = requireOwnedSessionForRequest(req, sessionId);
     const scenes = getSessionScenes(sessionId);
-    const isFrameReview = session?.mode === 'life_story' && session.status === 'AWAITING_APPROVAL';
+    const isFrameReview = session.status === 'AWAITING_APPROVAL';
     
     // Vercel AI SDK with Tools for MCP simulation
     const { text, toolCalls } = await generateText({
@@ -159,7 +159,7 @@ If it's just a general chat, reply naturally.
       broadcastSessionUpdate(sessionId, { scenes: getSessionScenes(sessionId) });
 
       // Triggers regeneration for that scene in background
-      const runner = isFrameReview && !forceMotionRetry ? runFrameGenerationPhase : runMediaGenerationPhase;
+      const runner = isFrameReview && !forceMotionRetry ? runFrameGenerationPhase : runFinalAssetsPhase;
       runner(sessionId).catch(console.error);
 
       responseText = isFrameReview

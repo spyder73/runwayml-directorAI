@@ -76,7 +76,7 @@ export function createDemoReadinessReport(input: DemoReadinessInput = {}): DemoR
 
   return {
     ok,
-    userMessage: ok ? 'Live studio is ready.' : 'Rehearsal is ready. Live generation needs setup.',
+    userMessage: ok ? 'Live studio is ready.' : 'Studio is ready. Live generation needs setup.',
     checks,
   };
 }

@@ -8,6 +8,6 @@ export const sceneOutlinePrompt = `Scene outline:
 - For LifeStory, do not propose an outline until there is broad life coverage plus several emotionally specific moments.
 - Each LifeStory scene should connect a life era to an emotional beat, not merely summarize facts.
 - Before locking production, ask: "Is there anything important we haven't touched yet?" and "Is there a personal story or experience you especially want highlighted?"
-- Memory mode should usually be shorter. LifeStory mode can use more scenes, but only as many as the story earns.
+- Use only as many scenes as the life story earns; prefer emotionally specific scenes over a generic chronology.
 - Ask for approval or comments after proposing the outline.
 - Explain in user language that approval generates still images first; motion and narration start only after those frames are approved.`;

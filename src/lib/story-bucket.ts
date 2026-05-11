@@ -1180,7 +1180,7 @@ export function reviseSceneOutline(database: SqliteDatabase, sessionId: string, 
 export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionId: string) {
   const outlineRows = database.prepare('SELECT * FROM scene_outline WHERE session_id = ? ORDER BY scene_index ASC')
     .all(sessionId) as SceneOutlineRow[];
-  const session = database.prepare('SELECT mode FROM sessions WHERE id = ?').get(sessionId) as { mode?: 'single_memory' | 'life_story' } | undefined;
+  const session = database.prepare('SELECT mode FROM sessions WHERE id = ?').get(sessionId) as { mode?: 'life_story' } | undefined;
   const treatment = getFilmTreatment(database, sessionId);
   const referenceAssets = database.prepare('SELECT * FROM reference_assets WHERE session_id = ?').all(sessionId) as ReferenceAssetRow[];
   const storyEntities = database.prepare('SELECT * FROM story_entities WHERE session_id = ?').all(sessionId) as StoryEntityRow[];

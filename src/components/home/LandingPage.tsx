@@ -9,8 +9,8 @@ type LandingPageProps = {
 const steps = [
   {
     icon: Sparkles,
-    title: 'Tell the moments',
-    body: 'Start with one memory or map a whole life. The director asks for the details that make the scene feel lived in.',
+    title: 'Tell your life story',
+    body: 'Begin with the people, places, chapters, and turning points that shaped you. The director asks for the details that make each scene feel lived in.',
   },
   {
     icon: WandSparkles,
@@ -107,7 +107,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
             </div>
             <div className="border border-white/10 bg-white/[0.035] p-5">
               <p className="font-mono text-[11px] uppercase tracking-[0.24em] text-amber-100/48">Narration</p>
-              <p className="mt-3 text-lg leading-7 text-white/76">The memory becomes a voiceover, then a shot plan, then a film you can keep.</p>
+              <p className="mt-3 text-lg leading-7 text-white/76">Those details become voiceover, then a shot plan, then a film you can keep.</p>
             </div>
           </div>
         </div>

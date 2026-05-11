@@ -9,8 +9,8 @@ test('director exposes story bucket and outline tools', () => {
   const toolNames = Object.keys(aiTools);
 
   assert.deepEqual(toolNames, [
-    'update_profile_bucket',
-    'request_reference_upload',
+      'update_profile_bucket',
+      'request_reference_upload',
     'add_reference_subject',
     'save_reference_description',
     'generate_memory_sketch',
@@ -42,7 +42,6 @@ test('add reference subject schema accepts an uploaded reference tag and subject
 test('interview prompt builder includes private story context without implementation language', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const prompt = buildInterviewSystemPrompt({
-    mode: 'life_story',
     status: 'INTERVIEW_ONBOARDING',
     storyContext: 'Profile: Maya, 41',
     uploadContext: '',
@@ -57,14 +56,12 @@ test('interview prompt builder includes private story context without implementa
 test('LifeStory prompt asks for a broad life map before deep cinematic moments', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const onboardingPrompt = buildInterviewSystemPrompt({
-    mode: 'life_story',
     status: 'INTERVIEW_ONBOARDING',
     storyContext: '',
     uploadContext: '',
     activeReferenceRequest: null,
   });
   const profilePrompt = buildInterviewSystemPrompt({
-    mode: 'life_story',
     status: 'INTERVIEW_PSYCH_PROFILE',
     storyContext: '',
     uploadContext: '',
@@ -97,18 +94,19 @@ test('profile bucket tool accepts LifeStory current-life basics', () => {
   assert.equal(parsed.profile.currentLocation, 'Berlin');
 });
 
-test('LifeStory start does not create an opening selfie request', () => {
+test('LifeStory start is the only supported session mode and does not create an opening selfie request', () => {
   const fs = jiti('node:fs');
   const source = fs.readFileSync(new URL('../src/app/api/pipeline/start/route.ts', import.meta.url), 'utf8');
 
-  assert.match(source, /mode === 'single_memory'[\s\S]*createReferenceUploadRequest/);
-  assert.doesNotMatch(source, /life_story'[\s\S]{0,240}protagonist reference now/i);
+  assert.match(source, /'life_story'/);
+  assert.doesNotMatch(source, /single_memory/);
+  assert.doesNotMatch(source, /createReferenceUploadRequest/);
+  assert.doesNotMatch(source, /protagonist reference now/i);
 });
 
 test('LifeStory outline prompt asks for missing stories and highlighted experiences before production', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const prompt = buildInterviewSystemPrompt({
-    mode: 'life_story',
     status: 'INTERVIEW_DYNAMIC',
     storyContext: 'Profile: Maya, 41',
     uploadContext: '',
@@ -124,7 +122,6 @@ test('LifeStory outline prompt asks for missing stories and highlighted experien
 test('director prompt turns approved treatments into scene outlines and asks for friend references', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const prompt = buildInterviewSystemPrompt({
-    mode: 'life_story',
     status: 'INTERVIEW_DYNAMIC',
     storyContext: 'Film treatment: Currents and Beats; Entities: Dorian (friend, kayaking friend)',
     uploadContext: '',
@@ -140,7 +137,6 @@ test('director prompt turns approved treatments into scene outlines and asks for
 test('scene outline prompt requires a treatment before outline production', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const prompt = buildInterviewSystemPrompt({
-    mode: 'single_memory',
     status: 'INTERVIEW_DYNAMIC',
     storyContext: 'Candidate scenes: The station goodbye.',
     uploadContext: '',

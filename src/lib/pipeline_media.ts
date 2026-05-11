@@ -927,14 +927,6 @@ export async function runMediaTaskRunner(sessionId: string, options: MediaTaskRu
   return result;
 }
 
-export async function runMediaGenerationPhase(sessionId: string) {
-  return runMediaTaskRunner(sessionId, {
-    includeRender: false,
-    onlyKinds: PRODUCTION_TASK_KINDS,
-    completionMode: 'all',
-  });
-}
-
 export async function runFrameGenerationPhase(sessionId: string, options: Omit<MediaTaskRunnerOptions, 'includeRender' | 'onlyKinds' | 'completionMode'> = {}) {
   return runMediaTaskRunner(sessionId, {
     ...options,

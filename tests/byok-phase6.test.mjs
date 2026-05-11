@@ -40,7 +40,7 @@ function insertUser(db, userId = 'user-1') {
 function insertSession(db, sessionId = 'session-1', userId = 'user-1') {
   db.prepare(`
     INSERT INTO sessions (id, user_id, status, story_text, aspect_ratio, mode)
-    VALUES (?, ?, 'INTERVIEW_DYNAMIC', '', '16:9', 'single_memory')
+    VALUES (?, ?, 'INTERVIEW_DYNAMIC', '', '16:9', 'life_story')
   `).run(sessionId, userId);
   return sessionId;
 }

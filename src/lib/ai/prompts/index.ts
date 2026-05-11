@@ -1,8 +1,7 @@
-import type { ReferenceUploadRequestRow, SessionMode, SessionStatus } from '@/lib/types';
+import type { ReferenceUploadRequestRow, SessionStatus } from '@/lib/types';
 import { lifeStoryDeepInterviewPrompt } from './life-story-deep-interview';
 import { lifeStoryOnboardingPrompt } from './life-story-onboarding';
 import { lifeStoryProfilePrompt } from './life-story-profile';
-import { memoryFastInterviewPrompt } from './memory-fast-interview';
 import { referenceUploadPrompt } from './reference-upload';
 import { sceneOutlinePrompt } from './scene-outline';
 import { sceneOutlineRevisionPrompt } from './scene-outline-revision';
@@ -10,15 +9,13 @@ import { sharedDirectorPrompt } from './shared-director';
 import { sketchFeedbackPrompt } from './sketch-feedback';
 
 export type InterviewPromptInput = {
-  mode: SessionMode;
   status: SessionStatus;
   storyContext: string;
   uploadContext: string;
   activeReferenceRequest: ReferenceUploadRequestRow | null;
 };
 
-function phasePrompt(mode: SessionMode, status: SessionStatus) {
-  if (mode === 'single_memory') return memoryFastInterviewPrompt;
+function phasePrompt(status: SessionStatus) {
   if (status === 'INTERVIEW_ONBOARDING') return lifeStoryOnboardingPrompt;
   if (status === 'INTERVIEW_PSYCH_PROFILE') return lifeStoryProfilePrompt;
   return lifeStoryDeepInterviewPrompt;
@@ -42,7 +39,7 @@ export function buildInterviewSystemPrompt(input: InterviewPromptInput) {
 
   return [
     sharedDirectorPrompt,
-    phasePrompt(input.mode, input.status),
+    phasePrompt(input.status),
     referenceUploadPrompt,
     sketchFeedbackPrompt,
     sceneOutlinePrompt,

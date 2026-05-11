@@ -86,7 +86,6 @@ test('Phase 8 routes are wired through rate limits, upload limits, and render lo
     register: '../src/app/api/auth/register/route.ts',
     resend: '../src/app/api/auth/resend-verification/route.ts',
     start: '../src/app/api/pipeline/start/route.ts',
-    demo: '../src/app/api/pipeline/demo/route.ts',
     outline: '../src/app/api/pipeline/outline/route.ts',
     synthesize: '../src/app/api/pipeline/synthesize/route.ts',
     retry: '../src/app/api/pipeline/retry/route.ts',

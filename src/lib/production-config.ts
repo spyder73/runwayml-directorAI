@@ -29,7 +29,6 @@ export const RUNWAY_CREDIT_COSTS = {
 } as const;
 
 export const DEMO_VIDEO_LIMITS: Record<SessionMode, { minSeconds: number; maxSeconds: number }> = {
-  single_memory: { minSeconds: 20, maxSeconds: 40 },
   life_story: { minSeconds: 45, maxSeconds: 75 },
 };
 

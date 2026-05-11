@@ -20,6 +20,8 @@ test('demo readiness reports missing live requirements without exposing secret v
   assert.equal(report.checks.find((check) => check.id === 'director')?.ok, true);
   assert.equal(report.checks.find((check) => check.id === 'generation')?.ok, false);
   assert.equal(report.checks.find((check) => check.id === 'render')?.ok, false);
+  assert.equal(report.userMessage, 'Studio is ready. Live generation needs setup.');
+  assert.doesNotMatch(report.userMessage, /Rehearsal/);
   assert.doesNotMatch(JSON.stringify(report), /director-secret-value/);
 });
 

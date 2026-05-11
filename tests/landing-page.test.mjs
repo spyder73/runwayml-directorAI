@@ -45,6 +45,9 @@ test('public landing page links visitors into the app subdomain', () => {
   assert.match(source, /href=\{`\$\{appUrl\}\/login`\}/);
   assert.match(source, /Your memories become scenes/);
   assert.match(source, /Private by design/);
+  assert.match(source, /Tell your life story/);
+  assert.doesNotMatch(source, /Start with one memory or map a whole life/);
+  assert.doesNotMatch(source, /one memory/i);
 });
 
 test('proxy leaves the public landing host open and keeps app routes on the app subdomain', () => {

@@ -1,6 +1,6 @@
 export type AspectRatio = '16:9' | '9:16';
 
-export type SessionMode = 'single_memory' | 'life_story';
+export type SessionMode = 'life_story';
 
 export type SessionStatus =
   | 'INTERVIEW_ONBOARDING'
