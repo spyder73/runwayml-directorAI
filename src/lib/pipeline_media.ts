@@ -546,14 +546,23 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
 }
 
 export function buildContinuityReferencePrompt(shot: ShotPlan, shotIndex: number) {
-  const basePrompt = cleanGeneratorPrompt(shot.referencePrompt)
+  const basePrompt = sanitizeContinuityReferencePrompt(cleanGeneratorPrompt(shot.referencePrompt)
     || referencePromptFromGeneratorText(shot.prompt)
     || cleanGeneratorPrompt(shot.visualStartState)
-    || cleanGeneratorPrompt(shot.prompt);
+    || cleanGeneratorPrompt(shot.prompt));
   if (shotIndex === 0 || basePrompt.includes(`@${OPENING_FRAME_REFERENCE_TAG}`)) {
     return basePrompt;
   }
   return `Using @${OPENING_FRAME_REFERENCE_TAG} as the visual reference, ${basePrompt}`;
+}
+
+function sanitizeContinuityReferencePrompt(promptText: string) {
+  return promptText
+    .replace(/@([a-zA-Z][a-zA-Z0-9_]*)/g, (match, tag: string) => (
+      tag === OPENING_FRAME_REFERENCE_TAG ? match : tag.replace(/_/g, ' ')
+    ))
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 async function generateContinuityReferenceImage(params: {

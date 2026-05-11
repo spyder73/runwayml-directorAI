@@ -128,6 +128,19 @@ test('video prompt repair uses validation errors to remove reference tags before
   assert.match(repaired.promptText, /camera|drifts|laugh/i);
 });
 
+test('continuity reference prompts keep only the opening frame tag', () => {
+  const { buildContinuityReferencePrompt } = jiti('../src/lib/pipeline_media.ts');
+
+  const prompt = buildContinuityReferencePrompt({
+    duration: 2,
+    prompt: 'Close up on Dorian and Martin laughing together.',
+    referencePrompt: 'A close up on the faces of @protagonist_dori and @martin as they laugh together.',
+  }, 1);
+
+  assert.match(prompt, /@opening_frame/);
+  assert.doesNotMatch(prompt, /@protagonist_dori|@martin/);
+});
+
 test('prompt moderation caps output tokens before OpenRouter receives the request', () => {
   const source = fs.readFileSync(new URL('../src/lib/moderation.ts', import.meta.url), 'utf8');
 
