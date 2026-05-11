@@ -163,7 +163,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
 
           <label className="block">
             <span className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.18em] text-white/45">
-              <span>Runway</span>
+              <span>Runway generation + character</span>
               <span>{summary.runwayKeySaved ? 'Saved' : 'Not saved'}</span>
             </span>
             <input
@@ -171,7 +171,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               value={runwayApiKey}
               onChange={(event) => setRunwayApiKey(event.target.value)}
               autoComplete="off"
-              placeholder="Paste a new Runway key"
+              placeholder="Paste a Runway key for video and Character"
               className="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-3 font-mono text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:border-amber-200/50"
             />
           </label>

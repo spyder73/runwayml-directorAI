@@ -2,12 +2,13 @@ import { tool } from 'ai';
 import { z } from 'zod';
 
 const optionalStringArray = z.array(z.string().min(1)).optional();
+const optionalAge = z.union([z.string(), z.number()]).transform(String).optional();
 
 export const updateProfileBucketSchema = z.object({
   directorReply: z.string().min(1).optional(),
   profile: z.object({
     protagonistName: z.string().optional(),
-    age: z.string().optional(),
+    age: optionalAge,
     profession: z.string().optional(),
     currentLocation: z.string().optional(),
     pronouns: z.string().optional(),

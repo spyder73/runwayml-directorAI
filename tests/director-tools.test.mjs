@@ -94,6 +94,19 @@ test('profile bucket tool accepts LifeStory current-life basics', () => {
   assert.equal(parsed.profile.currentLocation, 'Berlin');
 });
 
+test('profile bucket tool tolerates numeric age from model tool calls', () => {
+  const { updateProfileBucketSchema } = jiti('../src/lib/ai/tools.ts');
+
+  const parsed = updateProfileBucketSchema.parse({
+    profile: {
+      protagonistName: 'Dorian',
+      age: 23,
+    },
+  });
+
+  assert.equal(parsed.profile.age, '23');
+});
+
 test('LifeStory start is the only supported session mode and does not create an opening selfie request', () => {
   const fs = jiti('node:fs');
   const source = fs.readFileSync(new URL('../src/app/api/pipeline/start/route.ts', import.meta.url), 'utf8');
@@ -117,6 +130,25 @@ test('LifeStory outline prompt asks for missing stories and highlighted experien
   assert.match(prompt, /personal story or experience/i);
   assert.match(prompt, /highlight/i);
   assert.match(prompt, /broad life coverage/i);
+});
+
+test('LifeStory outline prompt requires cinematic protagonist bookends', () => {
+  const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
+  const prompt = buildInterviewSystemPrompt({
+    status: 'INTERVIEW_DYNAMIC',
+    storyContext: 'Profile: Dorian, scientist in Cologne',
+    uploadContext: 'References usable for generation: @dorian (uploaded protagonist photo)',
+    activeReferenceRequest: null,
+  });
+
+  assert.match(prompt, /standard intro/i);
+  assert.match(prompt, /standard outro/i);
+  assert.match(prompt, /main character/i);
+  assert.match(prompt, /same rendering/i);
+  assert.match(prompt, /same.*perspective/i);
+  assert.match(prompt, /fantastic place|nature|stunning/i);
+  assert.match(prompt, /This is/i);
+  assert.match(prompt, /history books/i);
 });
 
 test('story outline prompt generalizes multi-part memories into distinct scenes', () => {

@@ -95,8 +95,19 @@ test('production progress exposes unit retry controls for failed scene work', ()
   assert.match(source, /Retry frame/);
   assert.match(source, /Retry narration/);
   assert.match(source, /Retry motion/);
+  assert.match(source, /Retry missing piece/);
   assert.doesNotMatch(source, /Nothing has been replaced with pretend media/);
-  assert.doesNotMatch(source, /onClick=\{\(\) => onRetry\(\)\}/);
+  assert.match(source, /onRetry\(retry\.unit, scene\.id\)/);
+});
+
+test('production progress lets failed sessions render when all scene videos are complete', () => {
+  const source = fs.readFileSync(new URL('../src/components/session/ProductionProgress.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /canRenderFromCompletedScenes/);
+  assert.match(source, /isRecoverableFailedPreview/);
+  assert.match(source, /session\.status === 'PREVIEW_READY' \|\| isRecoverableFailedPreview/);
+  assert.match(source, /Prepare Final Film/);
+  assert.match(source, /!\s*isRecoverableFailedPreview/);
 });
 
 test('production progress exposes sub-scene frames while motion is optimized', () => {

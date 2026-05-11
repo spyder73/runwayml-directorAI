@@ -46,8 +46,7 @@ function rpcHandlers() {
 }
 
 function avatarApiKeyForSession(session: { id: string; user_id: string | null }) {
-  return process.env.RUNWAY_CHARACTER_API_SECRET
-    || getSessionProviderCredentials(db, session).runwayApiKey;
+  return getSessionProviderCredentials(db, session).runwayApiKey;
 }
 
 function avatarIdFrom(body: AvatarSessionRequest) {
@@ -160,7 +159,7 @@ export async function POST(req: NextRequest) {
     const apiKey = avatarApiKeyForSession(session);
     if (!apiKey) {
       return NextResponse.json({
-        error: 'Add RUNWAY_CHARACTER_API_SECRET or a saved Runway API key before starting a director call.',
+        error: 'Add a saved Runway API key before starting a director call. The same key powers Runway video generation and the live character.',
       }, { status: 400 });
     }
 

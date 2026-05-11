@@ -171,6 +171,7 @@ export function parseSceneVideoUrls(value: string | null) {
 }
 
 const FPS = 30;
+const BRANDED_OUTRO_DURATION_FRAMES = FPS * 3;
 const MAX_NARRATION_TEMPO = 1.12;
 const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
 const H264_MIN_CRF = 1;
@@ -314,7 +315,7 @@ export function buildFinalRenderPlan(params: {
       duration_in_frames: Math.max(1, Math.ceil(sceneDuration * FPS)),
     };
   });
-  const totalDurationFrames = remotionScenes.reduce((total, scene) => total + scene.duration_in_frames, 0);
+  const totalDurationFrames = remotionScenes.reduce((total, scene) => total + scene.duration_in_frames, 0) + BRANDED_OUTRO_DURATION_FRAMES;
 
   return {
     publicUrl,

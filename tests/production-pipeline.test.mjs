@@ -478,6 +478,33 @@ test('final render plan sends readable subtitles into the Remotion composition',
   assert.equal(plan.composition.id, 'LifeStoryFilm');
 });
 
+test('final render plan reserves three seconds for branded outro card', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+  const source = fs.readFileSync(new URL('../src/remotion/MainComposition.tsx', import.meta.url), 'utf8');
+
+  const plan = buildFinalRenderPlan({
+    sessionId: 'session-1',
+    aspectRatio: '16:9',
+    scenes: [
+      {
+        id: 'scene-1',
+        scene_index: 0,
+        narrator_text: 'First line.',
+        video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4']),
+        shot_plan_json: JSON.stringify([{ duration: 6 }]),
+        audio_url: '/generated/audio/session-1/scene-1.mp3',
+        duration: 6,
+      },
+    ],
+  });
+
+  assert.equal(plan.composition.durationInFrames, 270);
+  assert.match(source, /Made with yourlifestory\.io/);
+  assert.match(source, /yourlifestory\.io/);
+  assert.match(source, /opacity: 0\.2/);
+  assert.match(source, /bottom: 18/);
+});
+
 test('final render plan gently speeds narration when it is longer than planned clip time', () => {
   const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
 
