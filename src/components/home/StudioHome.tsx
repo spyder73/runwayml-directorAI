@@ -3,9 +3,14 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Film, Settings, Smartphone } from 'lucide-react';
+import { Film, Play, Settings, Smartphone, Sparkles } from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 import SettingsModal from '@/components/session/SettingsModal';
+
+const aspectOptions = [
+  { value: '16:9' as const, label: 'Cinematic', ratio: '16:9', icon: Film },
+  { value: '9:16' as const, label: 'Vertical', ratio: '9:16', icon: Smartphone },
+];
 
 export default function StudioHome() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -68,30 +73,42 @@ export default function StudioHome() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0A0A0F] text-white overflow-hidden relative flex items-center justify-center">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#07070C] px-4 py-10 text-white sm:px-6">
       <AmbientFractalBackground intensity="landing" />
+
+      <div className="pointer-events-none fixed inset-0 z-[1]" aria-hidden="true">
+        <div className="lifestory-aurora absolute inset-0" />
+        <div className="lifestory-stage-rays absolute inset-[-12%]" />
+        <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-white/[0.06] to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/80 to-transparent" />
+      </div>
 
       <button
         type="button"
         onClick={() => setIsSettingsOpen(true)}
-        className="fixed right-6 top-6 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+        className="fixed right-5 top-5 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/60 shadow-[0_0_24px_rgba(255,255,255,0.08)] backdrop-blur-md transition-colors hover:border-white/25 hover:bg-white/10 hover:text-white sm:right-6 sm:top-6"
         aria-label="Open settings"
         title="Generation settings"
       >
         <Settings size={18} />
       </button>
 
-      <div className="z-10 w-full max-w-3xl px-6 flex flex-col items-center">
+      <div className="relative z-10 flex w-full max-w-4xl flex-col items-center">
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-          className="text-center mb-16"
+          initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
+          className="mb-9 text-center sm:mb-11"
         >
-          <h1 className="text-5xl md:text-7xl font-light tracking-wider mb-4 font-serif text-white/90 drop-shadow-lg">
+          <div className="mb-5 inline-flex items-center gap-2 border-b border-amber-100/24 px-3 pb-2 font-mono text-[11px] uppercase text-amber-50/58">
+            <Sparkles size={13} className="text-amber-100/72" />
+            Live memoir cinema
+          </div>
+          <h1 className="bg-[linear-gradient(110deg,#fffaf0_8%,#f6e2b7_40%,#e5f6f7_66%,#fff_88%)] bg-clip-text font-serif text-6xl font-light leading-none text-transparent drop-shadow-[0_0_20px_rgba(246,226,183,0.13)] sm:text-7xl md:text-8xl">
             Lifestory
           </h1>
-          <p className="text-white/40 uppercase tracking-[0.4em] text-xs font-mono">
+          <div className="mx-auto mt-5 h-px w-48 bg-gradient-to-r from-transparent via-amber-100/46 to-transparent" />
+          <p className="mt-5 font-mono text-xs uppercase text-white/42">
             Cinematic AI Documentary
           </p>
         </motion.div>
@@ -100,56 +117,71 @@ export default function StudioHome() {
           {!isSubmitting ? (
             <motion.div
               key="form"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20, filter: 'blur(10px)' }}
               transition={{ duration: 0.8 }}
-              className="w-full flex flex-col gap-10 items-center relative group"
+              className="relative flex w-full flex-col items-center gap-7"
             >
-              <div className="flex justify-center gap-6">
-                <button
-                  type="button"
-                  onClick={() => setAspectRatio('16:9')}
-                  className={`flex items-center gap-3 px-6 py-3 rounded-full transition-colors border font-mono text-xs uppercase tracking-widest ${
-                    aspectRatio === '16:9'
-                      ? 'bg-white/10 border-white/30 text-white'
-                      : 'bg-transparent border-white/5 text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  <Film size={16} /> Cinematic (16:9)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAspectRatio('9:16')}
-                  className={`flex items-center gap-3 px-6 py-3 rounded-full transition-colors border font-mono text-xs uppercase tracking-widest ${
-                    aspectRatio === '9:16'
-                      ? 'bg-white/10 border-white/30 text-white'
-                      : 'bg-transparent border-white/5 text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  <Smartphone size={16} /> Vertical (9:16)
-                </button>
+              <div className="flex w-full max-w-lg flex-col gap-2 rounded-full border border-white/10 bg-black/32 p-1.5 backdrop-blur-xl sm:flex-row">
+                {aspectOptions.map((option) => {
+                  const Icon = option.icon;
+                  const isSelected = aspectRatio === option.value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setAspectRatio(option.value)}
+                      className={`relative flex min-h-12 flex-1 items-center justify-center gap-3 rounded-full border px-5 py-3 font-mono text-xs uppercase transition-all ${
+                        isSelected
+                          ? 'border-amber-100/30 bg-white/[0.11] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]'
+                          : 'border-transparent bg-transparent text-white/42 hover:bg-white/[0.06] hover:text-white/72'
+                      }`}
+                    >
+                      {isSelected && <span className="absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-amber-100/80 to-transparent" />}
+                      <Icon size={16} />
+                      <span>{option.label}</span>
+                      <span className={isSelected ? 'text-amber-100/70' : 'text-white/34'}>{option.ratio}</span>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="mt-8 w-full max-w-md mx-auto">
+              <div className="relative mx-auto mt-2 w-full max-w-lg">
+                <div className="lifestory-portal-ring absolute inset-[-14px] opacity-70" aria-hidden="true" />
                 <motion.button
                   onClick={() => handleStart()}
-                  whileHover={{ scale: 1.02, boxShadow: '0 0 50px rgba(251, 191, 36, 0.15)' }}
+                  whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full px-8 py-10 bg-gradient-to-br from-amber-900/20 to-transparent border border-amber-500/30 hover:border-amber-400/50 rounded-3xl flex flex-col items-center gap-4 transition-all duration-300 group"
+                  className="group relative flex w-full overflow-hidden rounded-lg border border-amber-100/28 bg-[linear-gradient(145deg,rgba(239,219,176,0.12),rgba(8,8,14,0.88)_48%,rgba(168,218,220,0.08))] px-6 py-8 shadow-[0_22px_70px_rgba(0,0,0,0.48),0_0_42px_rgba(239,219,176,0.08)] transition-all duration-500 hover:border-amber-100/42 hover:shadow-[0_24px_74px_rgba(0,0,0,0.54),0_0_54px_rgba(239,219,176,0.12)] sm:px-8 sm:py-9"
                 >
-                  <div className="w-16 h-16 rounded-full bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 transition-colors">
-                    <Film size={28} className="text-amber-300" />
-                  </div>
-                  <div className="text-center">
-                    <h3 className="text-xl font-serif text-amber-100 mb-2">Describe Your Life Story</h3>
-                    <p className="text-xs text-amber-200/50 font-mono uppercase tracking-wider">Takes 5-10 minutes</p>
-                  </div>
+                  <span className="lifestory-button-sheen absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+                  <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/46 to-transparent" />
+                  <span className="absolute bottom-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-cyan-100/24 to-transparent" />
+
+                  <span className="relative z-10 flex w-full flex-col items-center gap-5 text-center">
+                    <span className="relative flex h-[72px] w-[72px] items-center justify-center rounded-full border border-amber-100/22 bg-amber-100/[0.08] shadow-[0_0_32px_rgba(239,219,176,0.14)] transition-transform duration-500 group-hover:scale-105">
+                      <span className="lifestory-icon-ring absolute inset-[-8px] rounded-full border border-white/10" />
+                      <span className="absolute inset-3 rounded-full bg-amber-100/10 blur-md" />
+                      <Film size={30} className="relative text-amber-100/88 drop-shadow-[0_0_10px_rgba(239,219,176,0.35)]" />
+                    </span>
+
+                    <span>
+                      <span className="mb-2 block font-serif text-2xl font-light text-amber-50 sm:text-3xl">Describe Your Life Story</span>
+                      <span className="block font-mono text-xs uppercase text-amber-100/46">Takes 5-10 minutes</span>
+                    </span>
+
+                    <span className="inline-flex items-center gap-2 border border-white/12 bg-white/[0.055] px-4 py-2 font-mono text-xs uppercase text-white/62 transition-colors group-hover:border-white/22 group-hover:text-white/84">
+                      <Play size={14} fill="currentColor" />
+                      Begin the interview
+                    </span>
+                  </span>
                 </motion.button>
               </div>
 
               {readiness && (
-                <p className={`font-mono text-[10px] uppercase tracking-[0.28em] ${readiness.ok ? 'text-emerald-100/45' : 'text-amber-100/45'}`}>
+                <p className={`font-mono text-[10px] uppercase ${readiness.ok ? 'text-emerald-100/52' : 'text-amber-100/52'}`}>
                   {readiness.userMessage}
                 </p>
               )}
@@ -159,14 +191,15 @@ export default function StudioHome() {
               key="loading"
               initial={{ opacity: 0, filter: 'blur(10px)' }}
               animate={{ opacity: 1, filter: 'blur(0px)' }}
-              className="text-center space-y-6 flex flex-col items-center"
+              className="flex flex-col items-center space-y-6 text-center"
             >
-              <div className="w-16 h-16 relative flex items-center justify-center">
-                <div className="absolute inset-0 border-t border-white/30 rounded-full animate-spin"></div>
-                <div className="absolute inset-2 border-r border-amber-200/30 rounded-full animate-spin [animation-duration:1.5s] [animation-direction:reverse]"></div>
-                <div className="w-2 h-2 bg-white rounded-full shadow-[0_0_15px_#fff] animate-pulse"></div>
+              <div className="relative flex h-24 w-24 items-center justify-center">
+                <div className="absolute inset-0 rounded-full border border-amber-100/18 shadow-[0_0_55px_rgba(251,191,36,0.18)]" />
+                <div className="absolute inset-2 animate-spin rounded-full border-t border-cyan-100/42" />
+                <div className="absolute inset-5 animate-spin rounded-full border-r border-amber-200/42 [animation-direction:reverse] [animation-duration:1.6s]" />
+                <Sparkles size={24} className="text-amber-100 drop-shadow-[0_0_18px_rgba(251,191,36,0.8)]" />
               </div>
-              <p className="text-sm text-white/50 uppercase tracking-[0.3em] font-mono animate-pulse">
+              <p className="animate-pulse font-mono text-sm uppercase text-white/58">
                 Entering the Studio...
               </p>
             </motion.div>

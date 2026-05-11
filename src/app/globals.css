@@ -12,3 +12,114 @@
     color: #fff;
   }
 }
+
+@layer components {
+  .lifestory-aurora {
+    background:
+      radial-gradient(ellipse at 50% 24%, rgba(239, 219, 176, 0.13), transparent 35%),
+      radial-gradient(ellipse at 28% 68%, rgba(168, 218, 220, 0.08), transparent 34%),
+      radial-gradient(ellipse at 74% 62%, rgba(190, 155, 109, 0.065), transparent 32%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 42%);
+    mix-blend-mode: screen;
+    animation: lifestory-aurora-drift 16s ease-in-out infinite alternate;
+  }
+
+  .lifestory-stage-rays {
+    opacity: 0.14;
+    background:
+      conic-gradient(from 210deg at 50% 42%, transparent 0deg, rgba(239, 219, 176, 0.1) 18deg, transparent 40deg, transparent 118deg, rgba(168, 218, 220, 0.07) 140deg, transparent 160deg, transparent 360deg),
+      repeating-linear-gradient(102deg, transparent 0 90px, rgba(255, 255, 255, 0.032) 91px, transparent 93px 184px);
+    mask-image: radial-gradient(ellipse at 50% 44%, black 0 34%, transparent 72%);
+    transform-origin: 50% 42%;
+    animation: lifestory-rays-breathe 18s ease-in-out infinite alternate;
+  }
+
+  .lifestory-portal-ring {
+    border: 1px solid rgba(239, 219, 176, 0.12);
+    border-radius: 14px;
+    background:
+      linear-gradient(90deg, transparent, rgba(239, 219, 176, 0.2), transparent) top / 58% 1px no-repeat,
+      linear-gradient(90deg, transparent, rgba(168, 218, 220, 0.12), transparent) bottom / 54% 1px no-repeat,
+      conic-gradient(from 28deg at 50% 50%, transparent 0deg, rgba(239, 219, 176, 0.11) 44deg, transparent 100deg, rgba(168, 218, 220, 0.08) 178deg, transparent 262deg, rgba(190, 155, 109, 0.07) 318deg, transparent 360deg);
+    filter: blur(0.1px);
+    animation: lifestory-portal-glow 9s ease-in-out infinite alternate;
+  }
+
+  .lifestory-button-sheen {
+    background:
+      linear-gradient(110deg, transparent 0 30%, rgba(255, 255, 255, 0.08) 44%, transparent 58% 100%),
+      radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.07), transparent 38%);
+    transform: translateX(-18%);
+    animation: lifestory-sheen 4.5s ease-in-out infinite;
+  }
+
+  .lifestory-icon-ring {
+    animation: lifestory-icon-ring 3.4s ease-in-out infinite;
+  }
+
+  @keyframes lifestory-aurora-drift {
+    from {
+      opacity: 0.78;
+      transform: translate3d(-1.5%, 0, 0) scale(1);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(1.5%, -1%, 0) scale(1.04);
+    }
+  }
+
+  @keyframes lifestory-rays-breathe {
+    from {
+      opacity: 0.18;
+      transform: rotate(-1deg) scale(1);
+    }
+    to {
+      opacity: 0.22;
+      transform: rotate(1deg) scale(1.06);
+    }
+  }
+
+  @keyframes lifestory-portal-glow {
+    from {
+      opacity: 0.42;
+      box-shadow: 0 0 24px rgba(239, 219, 176, 0.055);
+    }
+    to {
+      opacity: 0.68;
+      box-shadow: 0 0 38px rgba(168, 218, 220, 0.07), 0 0 58px rgba(239, 219, 176, 0.08);
+    }
+  }
+
+  @keyframes lifestory-sheen {
+    0%,
+    42% {
+      transform: translateX(-42%);
+    }
+    74%,
+    100% {
+      transform: translateX(42%);
+    }
+  }
+
+  @keyframes lifestory-icon-ring {
+    0%,
+    100% {
+      opacity: 0.52;
+      transform: scale(0.98);
+    }
+    52% {
+      opacity: 0.78;
+      transform: scale(1.05);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lifestory-aurora,
+  .lifestory-stage-rays,
+  .lifestory-portal-ring,
+  .lifestory-button-sheen,
+  .lifestory-icon-ring {
+    animation: none;
+  }
+}
