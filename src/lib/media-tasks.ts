@@ -1,6 +1,8 @@
 import type Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
-import type { RenderProgressPayload } from './types';
+import { resolveFinalRenderBackend } from './final-render-backend';
+import { getFinalRenderBackendForSession } from './providers/user-credentials';
+import type { FinalRenderBackend, RenderProgressPayload } from './types';
 
 type SqliteDatabase = Database.Database;
 
@@ -13,7 +15,7 @@ export type MediaTaskKind =
   | 'render_final';
 
 export type MediaTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-export type MediaTaskProvider = 'runway' | 'remotion' | 'local';
+export type MediaTaskProvider = 'runway' | 'remotion' | 'local' | 'modal';
 
 export type RenderProgressDetail = {
   renderedFrames?: number | null;
@@ -49,6 +51,11 @@ export type MediaTaskRow = {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+};
+
+type FinalRenderBackendEnv = {
+  [key: string]: string | undefined;
+  FINAL_RENDER_BACKEND?: string | undefined;
 };
 
 function existingColumns(database: SqliteDatabase, tableName: string) {
@@ -97,6 +104,13 @@ export function initializeMediaTaskTables(database: SqliteDatabase) {
 
 function jsonArray(value: string[] | undefined) {
   return JSON.stringify(value || []);
+}
+
+export function finalRenderTaskProvider(
+  env: FinalRenderBackendEnv = process.env,
+  preference: FinalRenderBackend = 'local',
+): MediaTaskProvider {
+  return resolveFinalRenderBackend(env, preference);
 }
 
 function parseTaskIds(value: string | null | undefined) {
@@ -175,7 +189,7 @@ export function createMediaTaskDagForScenes(database: SqliteDatabase, params: {
   createMediaTask(database, {
     sessionId: params.sessionId,
     kind: 'render_final',
-    provider: 'local',
+    provider: finalRenderTaskProvider(process.env, getFinalRenderBackendForSession(database, params.sessionId)),
     dependsOnTaskIds: videoTaskIds,
   });
 

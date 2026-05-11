@@ -101,6 +101,7 @@ test('Phase 6 provider credentials decrypt per user and expose safe missing-key 
     runwayApiKey: 'rw-user-1',
     runwayConcurrencyMode: 'parallel',
     runwayVideoModel: 'veo3.1_fast',
+    finalRenderBackend: 'local',
   });
   assert.equal(requireOpenRouterApiKeyForSession(db, sessionId), 'sk-or-user-1');
   assert.equal(requireRunwayApiKeyForSession(db, sessionId), 'rw-user-1');

@@ -44,6 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     chromium \
     ca-certificates \
+    python3 \
+    python3-venv \
     fonts-liberation \
     libnss3 \
     libdbus-1-3 \
@@ -60,6 +62,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libatk-bridge2.0-0 \
   && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/modal-bridge \
+  && /opt/modal-bridge/bin/pip install --no-cache-dir \
+    "modal>=1.1,<2" \
+    "fastapi>=0.115,<1" \
+    "uvicorn[standard]>=0.30,<1"
+
+ENV PATH="/opt/modal-bridge/bin:$PATH"
 
 RUN groupadd --system --gid 1001 nodejs
 RUN useradd --system --uid 1001 --gid nodejs nextjs
@@ -80,6 +90,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/src/remotion ./src/remotion
 COPY --from=builder --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nodejs /app/package-lock.json ./package-lock.json
+COPY --from=builder --chown=nextjs:nodejs /app/python ./python
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
 USER nextjs
 
@@ -89,4 +103,4 @@ ENV PORT=3000
 # set hostname to localhost
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+CMD ["sh", "scripts/start-production.sh"]

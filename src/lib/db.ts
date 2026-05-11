@@ -93,6 +93,7 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
       user_id TEXT PRIMARY KEY,
       runway_concurrency_mode TEXT NOT NULL DEFAULT 'serial',
       runway_video_model TEXT NOT NULL DEFAULT 'gen4_turbo',
+      final_render_backend TEXT NOT NULL DEFAULT 'local',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -209,6 +210,7 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
   addColumnIfMissing(database, 'chat_history', 'options', 'options TEXT');
   addColumnIfMissing(database, 'user_uploads', 'vision_description', 'vision_description TEXT');
   addColumnIfMissing(database, 'user_settings', 'runway_video_model', "runway_video_model TEXT NOT NULL DEFAULT 'gen4_turbo'");
+  addColumnIfMissing(database, 'user_settings', 'final_render_backend', "final_render_backend TEXT NOT NULL DEFAULT 'local'");
 
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);

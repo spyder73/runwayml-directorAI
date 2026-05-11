@@ -53,6 +53,16 @@ To deploy on a VPS using Docker:
    Persist `data/` between deploys; it now contains both SQLite and private media files.
 3. If Nginx or another buffering reverse proxy sits in front of the app, disable buffering for `/api/pipeline/events` so Server-Sent Events stream immediately. The route also sends `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`.
 
+### Optional Modal final renders
+
+Final renders stay local unless `FINAL_RENDER_BACKEND=modal` is set. To enable Modal renders, create a Modal token, set `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET`, then deploy the renderer from the repo root:
+
+```bash
+modal deploy python/modal_renderer/app.py
+```
+
+The production container starts a loopback-only Python bridge when Modal is enabled. It uploads private render inputs to a Modal Volume, invokes the deployed `render_final` function, downloads the compressed MP4 back into `MEDIA_STORAGE_DIR`, and the existing `/api/media/:id` final video flow continues unchanged.
+
 ## Production Reviewer Account
 
 Production can seed a confirmed reviewer account at startup when these env vars are set:

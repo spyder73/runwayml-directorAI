@@ -106,11 +106,13 @@ export interface UserApiCredentialsRow {
 
 export type RunwayConcurrencyMode = 'serial' | 'parallel';
 export type RunwayVideoModel = 'gen4_turbo' | 'veo3.1_fast';
+export type FinalRenderBackend = 'local' | 'modal';
 
 export interface UserSettingsRow {
   user_id: string;
   runway_concurrency_mode: RunwayConcurrencyMode;
   runway_video_model: RunwayVideoModel;
+  final_render_backend: FinalRenderBackend;
   created_at: string;
   updated_at: string;
 }

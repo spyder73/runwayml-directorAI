@@ -66,8 +66,12 @@ test('settings route summarizes saved keys, encrypts updates, and rejects invali
     runwayKeySaved: false,
     runwayConcurrencyMode: 'serial',
     runwayVideoModel: 'gen4_turbo',
+    finalRenderBackend: 'local',
+    modalRenderingAvailable: false,
   });
 
+  const previousRenderBackend = process.env.FINAL_RENDER_BACKEND;
+  process.env.FINAL_RENDER_BACKEND = 'modal';
   const saved = await route.PUT(new Request('https://lifestory.example/api/settings', {
     method: 'PUT',
     headers: { 'content-type': 'application/json', cookie },
@@ -76,8 +80,14 @@ test('settings route summarizes saved keys, encrypts updates, and rejects invali
       runwayApiKey: 'runway-user-key',
       runwayConcurrencyMode: 'parallel',
       runwayVideoModel: 'veo3.1_fast',
+      finalRenderBackend: 'modal',
     }),
   }));
+  if (previousRenderBackend === undefined) {
+    delete process.env.FINAL_RENDER_BACKEND;
+  } else {
+    process.env.FINAL_RENDER_BACKEND = previousRenderBackend;
+  }
   assert.equal(saved.status, 200);
   const savedJson = await saved.json();
   assert.deepEqual(savedJson, {
@@ -85,6 +95,8 @@ test('settings route summarizes saved keys, encrypts updates, and rejects invali
     runwayKeySaved: true,
     runwayConcurrencyMode: 'parallel',
     runwayVideoModel: 'veo3.1_fast',
+    finalRenderBackend: 'modal',
+    modalRenderingAvailable: true,
   });
   assert.equal(JSON.stringify(savedJson).includes('openrouter-user-key'), false);
   assert.equal(JSON.stringify(savedJson).includes('runway-user-key'), false);
@@ -116,6 +128,13 @@ test('settings route summarizes saved keys, encrypts updates, and rejects invali
     body: JSON.stringify({ runwayVideoModel: 'gen4_aleph' }),
   }));
   assert.equal(invalidModel.status, 400);
+
+  const invalidBackend = await route.PUT(new Request('https://lifestory.example/api/settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', cookie },
+    body: JSON.stringify({ finalRenderBackend: 'gpu' }),
+  }));
+  assert.equal(invalidBackend.status, 400);
 });
 
 test('session UI exposes a settings cog and never hydrates raw saved keys into fields', () => {
@@ -131,6 +150,9 @@ test('session UI exposes a settings cog and never hydrates raw saved keys into f
   assert.match(modalSource, /runwayApiKey/);
   assert.match(modalSource, /runwayConcurrencyMode/);
   assert.match(modalSource, /runwayVideoModel/);
+  assert.match(modalSource, /finalRenderBackend/);
+  assert.match(modalSource, /Modal render/);
+  assert.match(modalSource, /Server enabled/);
   assert.match(modalSource, /Sequential/);
   assert.match(modalSource, /step by step/);
   assert.match(modalSource, /throttle/i);

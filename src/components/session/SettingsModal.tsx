@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import type { RunwayConcurrencyMode, RunwayVideoModel } from '@/lib/types';
+import type { FinalRenderBackend, RunwayConcurrencyMode, RunwayVideoModel } from '@/lib/types';
 
 type SettingsSummary = {
   openrouterKeySaved: boolean;
   runwayKeySaved: boolean;
   runwayConcurrencyMode: RunwayConcurrencyMode;
   runwayVideoModel: RunwayVideoModel;
+  finalRenderBackend: FinalRenderBackend;
+  modalRenderingAvailable: boolean;
 };
 
 type SettingsModalProps = {
@@ -23,6 +25,8 @@ const DEFAULT_SETTINGS: SettingsSummary = {
   runwayKeySaved: false,
   runwayConcurrencyMode: 'serial',
   runwayVideoModel: 'gen4_turbo',
+  finalRenderBackend: 'local',
+  modalRenderingAvailable: false,
 };
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {
@@ -31,6 +35,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [runwayApiKey, setRunwayApiKey] = useState('');
   const [runwayConcurrencyMode, setRunwayConcurrencyMode] = useState<RunwayConcurrencyMode>('serial');
   const [runwayVideoModel, setRunwayVideoModel] = useState<RunwayVideoModel>('gen4_turbo');
+  const [finalRenderBackend, setFinalRenderBackend] = useState<FinalRenderBackend>('local');
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +54,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         setSummary(nextSummary);
         setRunwayConcurrencyMode(nextSummary.runwayConcurrencyMode);
         setRunwayVideoModel(nextSummary.runwayVideoModel);
+        setFinalRenderBackend(nextSummary.modalRenderingAvailable ? nextSummary.finalRenderBackend : 'local');
         setStatus('idle');
       })
       .catch((loadError) => {
@@ -80,7 +86,8 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       runwayApiKey?: string;
       runwayConcurrencyMode: RunwayConcurrencyMode;
       runwayVideoModel: RunwayVideoModel;
-    } = { runwayConcurrencyMode, runwayVideoModel };
+      finalRenderBackend: FinalRenderBackend;
+    } = { runwayConcurrencyMode, runwayVideoModel, finalRenderBackend };
 
     if (openrouterApiKey.trim()) payload.openrouterApiKey = openrouterApiKey.trim();
     if (runwayApiKey.trim()) payload.runwayApiKey = runwayApiKey.trim();
@@ -101,6 +108,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       setSummary(nextSummary);
       setRunwayConcurrencyMode(nextSummary.runwayConcurrencyMode);
       setRunwayVideoModel(nextSummary.runwayVideoModel);
+      setFinalRenderBackend(nextSummary.modalRenderingAvailable ? nextSummary.finalRenderBackend : 'local');
       setOpenrouterApiKey('');
       setRunwayApiKey('');
       setStatus('saved');
@@ -210,6 +218,24 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
               ))}
             </div>
           </div>
+
+          <label className="flex items-center justify-between gap-4 rounded-lg border border-white/10 bg-black/30 p-3">
+            <span>
+              <span className="block font-mono text-[11px] uppercase tracking-[0.18em] text-white/45">Modal render</span>
+              <span className="mt-1 block text-sm leading-5 text-white/50">
+                {summary.modalRenderingAvailable
+                  ? 'Server enabled. Final renders can run on Modal when this is on.'
+                  : 'Server disabled. Set FINAL_RENDER_BACKEND=modal before enabling.'}
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={finalRenderBackend === 'modal'}
+              disabled={!summary.modalRenderingAvailable}
+              onChange={(event) => setFinalRenderBackend(event.target.checked ? 'modal' : 'local')}
+              className="h-5 w-5 shrink-0 accent-white disabled:cursor-not-allowed disabled:opacity-40"
+            />
+          </label>
         </div>
 
         {error && <p className="mt-4 text-sm text-red-200">{error}</p>}

@@ -2,8 +2,9 @@ import type Database from 'better-sqlite3';
 import RunwayML from '@runwayml/sdk';
 import { createOpenRouterModel } from '../ai';
 import { decryptCredential } from '../crypto/credentials';
+import { normalizeFinalRenderBackend } from '../final-render-backend';
 import { getRunwayVideoModel, normalizeRunwayVideoModel } from '../production-config';
-import type { RunwayConcurrencyMode, RunwayVideoModel, SessionRow, UserApiCredentialsRow, UserSettingsRow } from '../types';
+import type { FinalRenderBackend, RunwayConcurrencyMode, RunwayVideoModel, SessionRow, UserApiCredentialsRow, UserSettingsRow } from '../types';
 
 type SqliteDatabase = Database.Database;
 type ProviderName = 'openrouter' | 'runway';
@@ -90,6 +91,7 @@ export function getUserProviderCredentials(database: SqliteDatabase, userId: str
       runwayApiKey: undefined,
       runwayConcurrencyMode: 'serial' as RunwayConcurrencyMode,
       runwayVideoModel: getRunwayVideoModel(),
+      finalRenderBackend: 'local' as FinalRenderBackend,
     };
   }
 
@@ -101,6 +103,7 @@ export function getUserProviderCredentials(database: SqliteDatabase, userId: str
     runwayApiKey: decryptEnvelope(credentials, 'runway_key_encrypted', 'runway_key_iv', 'runway_key_tag'),
     runwayConcurrencyMode: settings?.runway_concurrency_mode === 'parallel' ? 'parallel' as const : 'serial' as const,
     runwayVideoModel: normalizeRunwayVideoModel(settings?.runway_video_model, getRunwayVideoModel()),
+    finalRenderBackend: normalizeFinalRenderBackend(settings?.final_render_backend),
   };
 }
 
@@ -120,6 +123,13 @@ export function getRunwayVideoModelForSession(
   sessionOrId: string | Pick<SessionRow, 'id' | 'user_id'>,
 ): RunwayVideoModel {
   return getSessionProviderCredentials(database, sessionOrId).runwayVideoModel;
+}
+
+export function getFinalRenderBackendForSession(
+  database: SqliteDatabase,
+  sessionOrId: string | Pick<SessionRow, 'id' | 'user_id'>,
+): FinalRenderBackend {
+  return getSessionProviderCredentials(database, sessionOrId).finalRenderBackend;
 }
 
 export function requireOpenRouterApiKeyForSession(database: SqliteDatabase, sessionOrId: string | Pick<SessionRow, 'id' | 'user_id'>) {

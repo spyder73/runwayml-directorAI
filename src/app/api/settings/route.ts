@@ -3,6 +3,7 @@ import db from '../../../lib/db';
 import { AUTH_SESSION_COOKIE, findAuthSessionByToken, readSessionTokenFromCookieHeader } from '../../../lib/auth/session';
 import {
   getUserSettings,
+  InvalidFinalRenderBackendError,
   InvalidRunwayConcurrencyModeError,
   InvalidRunwayVideoModelError,
   updateUserSettings,
@@ -52,6 +53,10 @@ export async function PUT(req: NextRequest) {
     }
 
     if (error instanceof InvalidRunwayVideoModelError) {
+      return jsonError(error.message, 400);
+    }
+
+    if (error instanceof InvalidFinalRenderBackendError) {
       return jsonError(error.message, 400);
     }
 

@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
-import type { RunwayConcurrencyMode, RunwayVideoModel, UserApiCredentialsRow, UserSettingsRow } from '@/lib/types';
+import type { FinalRenderBackend, RunwayConcurrencyMode, RunwayVideoModel, UserApiCredentialsRow, UserSettingsRow } from '@/lib/types';
 import { encryptCredential } from './crypto/credentials';
+import { isFinalRenderBackend, isModalRenderingAvailable, normalizeFinalRenderBackend } from './final-render-backend';
 import { normalizeRunwayVideoModel, isRunwayVideoModel } from './production-config';
 
 type SqliteDatabase = Database.Database;
@@ -10,6 +11,8 @@ export type UserSettingsSummary = {
   runwayKeySaved: boolean;
   runwayConcurrencyMode: RunwayConcurrencyMode;
   runwayVideoModel: RunwayVideoModel;
+  finalRenderBackend: FinalRenderBackend;
+  modalRenderingAvailable: boolean;
 };
 
 export type UpdateUserSettingsInput = {
@@ -17,6 +20,7 @@ export type UpdateUserSettingsInput = {
   runwayApiKey?: unknown;
   runwayConcurrencyMode?: unknown;
   runwayVideoModel?: unknown;
+  finalRenderBackend?: unknown;
 };
 
 export class InvalidRunwayConcurrencyModeError extends Error {
@@ -30,6 +34,13 @@ export class InvalidRunwayVideoModelError extends Error {
   constructor() {
     super('Runway video model must be gen4_turbo or veo3.1_fast.');
     this.name = 'InvalidRunwayVideoModelError';
+  }
+}
+
+export class InvalidFinalRenderBackendError extends Error {
+  constructor() {
+    super('Final render backend must be local or modal.');
+    this.name = 'InvalidFinalRenderBackendError';
   }
 }
 
@@ -82,6 +93,8 @@ export function getUserSettings(database: SqliteDatabase, userId: string): UserS
     ),
     runwayConcurrencyMode: settings.runway_concurrency_mode,
     runwayVideoModel: normalizeRunwayVideoModel(settings.runway_video_model),
+    finalRenderBackend: normalizeFinalRenderBackend(settings.final_render_backend),
+    modalRenderingAvailable: isModalRenderingAvailable(),
   };
 }
 
@@ -110,6 +123,18 @@ export function updateUserSettings(database: SqliteDatabase, userId: string, inp
       SET runway_video_model = ?, updated_at = CURRENT_TIMESTAMP
       WHERE user_id = ?
     `).run(input.runwayVideoModel, userId);
+  }
+
+  if (input.finalRenderBackend !== undefined && input.finalRenderBackend !== null) {
+    if (!isFinalRenderBackend(input.finalRenderBackend)) {
+      throw new InvalidFinalRenderBackendError();
+    }
+
+    database.prepare(`
+      UPDATE user_settings
+      SET final_render_backend = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `).run(input.finalRenderBackend, userId);
   }
 
   const openrouterApiKey = normalizeOptionalApiKey(input.openrouterApiKey);

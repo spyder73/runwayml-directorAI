@@ -4,12 +4,19 @@ import fs from 'fs/promises';
 import path from 'path';
 import { pathToFileURL } from 'url';
 import db from './db';
+import { resolveFinalRenderBackend } from './final-render-backend';
 import {
   createMediaAssetForSession,
   createPrivateMediaFilePath,
   mediaAssetUrl,
   resolveMediaUrlToFilePath,
 } from './media-assets';
+import {
+  buildModalRenderRequest,
+  modalRenderConfig,
+  runModalRenderBridge,
+} from './modal-render';
+import { getFinalRenderBackendForSession } from './providers/user-credentials';
 
 type AspectRatio = '16:9' | '9:16';
 type RenderQuality = 'fast' | 'standard' | 'ultra';
@@ -169,6 +176,8 @@ const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
 const H264_MIN_CRF = 1;
 const H264_MAX_CRF = 51;
 const PROGRESS_REPORT_BUCKETS = 50;
+
+export { resolveFinalRenderBackend };
 
 function remotionRenderQuality(env: RemotionRenderEnv = process.env): RenderQuality {
   const configured = env.REMOTION_RENDER_QUALITY?.trim().toLowerCase();
@@ -532,6 +541,75 @@ async function runRemotionRender(plan: FinalRenderPlan) {
   });
 }
 
+async function runModalRemotionRender(plan: FinalRenderPlan) {
+  const config = modalRenderConfig();
+  const request = buildModalRenderRequest(plan, {
+    appName: config.appName,
+    functionName: config.functionName,
+    volumeName: config.volumeName,
+    volumeMountPath: config.volumeMountPath,
+    jobId: `${plan.composition.id}-${Date.now()}`,
+    renderOptions: {
+      crf: resolveRemotionCrf(),
+      x264Preset: remotionX264Preset(),
+      timeoutInMilliseconds: remotionRenderTimeout(),
+      concurrency: remotionRenderConcurrency(),
+    },
+  });
+
+  reportFinalRenderProgress(plan, {
+    progress: 0.03,
+    message: 'Uploading media to Modal',
+    renderedFrames: 0,
+    encodedFrames: 0,
+    totalFrames: plan.composition.durationInFrames,
+    stitchStage: null,
+  });
+
+  console.log(JSON.stringify({
+    scope: 'final-render',
+    backend: 'modal',
+    message: 'modal-render-submit',
+    appName: request.appName,
+    functionName: request.functionName,
+    volumeName: request.volumeName,
+    inputCount: request.inputFiles.length,
+    outputLocalPath: request.outputLocalPath,
+    outputVolumePath: request.manifest.outputVolumePath,
+    width: request.manifest.composition.width,
+    height: request.manifest.composition.height,
+    durationInFrames: request.manifest.composition.durationInFrames,
+  }));
+
+  try {
+    const result = await runModalRenderBridge(request, config.bridgeUrl);
+    console.log(JSON.stringify({
+      scope: 'final-render',
+      backend: 'modal',
+      message: 'modal-render-completed',
+      outputLocalPath: result.outputLocalPath,
+      byteSize: result.byteSize,
+    }));
+  } catch (error) {
+    console.error(JSON.stringify({
+      scope: 'final-render',
+      backend: 'modal',
+      message: 'modal-render-failed',
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    throw error;
+  }
+
+  reportFinalRenderProgress(plan, {
+    progress: 1,
+    message: 'Final video ready',
+    renderedFrames: plan.composition.durationInFrames,
+    encodedFrames: plan.composition.durationInFrames,
+    totalFrames: plan.composition.durationInFrames,
+    stitchStage: 'modal',
+  });
+}
+
 export async function renderFinalFilm(params: {
   sessionId: string;
   aspectRatio: AspectRatio;
@@ -544,9 +622,23 @@ export async function renderFinalFilm(params: {
     ...buildFinalRenderPlan({ ...params, database }),
     onProgress: params.onProgress,
   };
+  const preferredBackend = getFinalRenderBackendForSession(database, params.sessionId);
+  const backend = resolveFinalRenderBackend(process.env, preferredBackend);
+  console.log(JSON.stringify({
+    scope: 'final-render',
+    message: 'backend-selected',
+    sessionId: params.sessionId,
+    preferredBackend,
+    selectedBackend: backend,
+    envBackend: process.env.FINAL_RENDER_BACKEND || null,
+  }));
   await fs.mkdir(path.dirname(plan.outputFilePath), { recursive: true });
   await assertInputsExist([...plan.videoInputs, ...plan.audioInputs]);
-  await runRemotionRender(plan);
+  if (backend === 'modal') {
+    await runModalRemotionRender(plan);
+  } else {
+    await runRemotionRender(plan);
+  }
   const outputStats = await fs.stat(plan.outputFilePath);
   if (plan.outputMediaAssetId && plan.outputFilePathRelative) {
     createMediaAssetForSession(database, {
