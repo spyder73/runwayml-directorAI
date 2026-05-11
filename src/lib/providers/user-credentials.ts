@@ -2,7 +2,8 @@ import type Database from 'better-sqlite3';
 import RunwayML from '@runwayml/sdk';
 import { createOpenRouterModel } from '../ai';
 import { decryptCredential } from '../crypto/credentials';
-import type { RunwayConcurrencyMode, SessionRow, UserApiCredentialsRow, UserSettingsRow } from '../types';
+import { getRunwayVideoModel, normalizeRunwayVideoModel } from '../production-config';
+import type { RunwayConcurrencyMode, RunwayVideoModel, SessionRow, UserApiCredentialsRow, UserSettingsRow } from '../types';
 
 type SqliteDatabase = Database.Database;
 type ProviderName = 'openrouter' | 'runway';
@@ -88,6 +89,7 @@ export function getUserProviderCredentials(database: SqliteDatabase, userId: str
       openrouterApiKey: undefined,
       runwayApiKey: undefined,
       runwayConcurrencyMode: 'serial' as RunwayConcurrencyMode,
+      runwayVideoModel: getRunwayVideoModel(),
     };
   }
 
@@ -98,6 +100,7 @@ export function getUserProviderCredentials(database: SqliteDatabase, userId: str
     openrouterApiKey: decryptEnvelope(credentials, 'openrouter_key_encrypted', 'openrouter_key_iv', 'openrouter_key_tag'),
     runwayApiKey: decryptEnvelope(credentials, 'runway_key_encrypted', 'runway_key_iv', 'runway_key_tag'),
     runwayConcurrencyMode: settings?.runway_concurrency_mode === 'parallel' ? 'parallel' as const : 'serial' as const,
+    runwayVideoModel: normalizeRunwayVideoModel(settings?.runway_video_model, getRunwayVideoModel()),
   };
 }
 
@@ -110,6 +113,13 @@ export function getRunwayConcurrencyModeForSession(
   sessionOrId: string | Pick<SessionRow, 'id' | 'user_id'>,
 ): RunwayConcurrencyMode {
   return getSessionProviderCredentials(database, sessionOrId).runwayConcurrencyMode;
+}
+
+export function getRunwayVideoModelForSession(
+  database: SqliteDatabase,
+  sessionOrId: string | Pick<SessionRow, 'id' | 'user_id'>,
+): RunwayVideoModel {
+  return getSessionProviderCredentials(database, sessionOrId).runwayVideoModel;
 }
 
 export function requireOpenRouterApiKeyForSession(database: SqliteDatabase, sessionOrId: string | Pick<SessionRow, 'id' | 'user_id'>) {

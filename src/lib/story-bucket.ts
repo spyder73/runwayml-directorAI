@@ -15,6 +15,7 @@ import { createMediaTaskDagForScenes, initializeMediaTaskTables } from './media-
 import {
   canUseAsset,
   extractPromptReferenceTags,
+  resolvePromptMentionedReferenceAssets,
   resolveReferenceAssetToken,
   rewritePromptReferenceTags,
 } from './production-references';
@@ -204,6 +205,12 @@ function resolveSceneOutlineReferences(params: {
     seen.add(asset.id);
   };
 
+  if (params.row.protagonist_visible === 1 || params.row.protagonist_visible === true) {
+    for (const asset of params.assets.filter((candidate) => candidate.target_type === 'protagonist')) {
+      addAsset(asset);
+    }
+  }
+
   for (const token of parseArray(params.row.reference_asset_ids_json)) {
     addAsset(resolveReferenceAssetToken(token, params.assets, params.entities) as ReferenceAssetRow | undefined);
   }
@@ -222,6 +229,10 @@ function resolveSceneOutlineReferences(params: {
       promptTagReplacements.set(normalizeReferenceTag(tag), asset.stable_tag);
     }
     addAsset(asset);
+  }
+
+  for (const asset of resolvePromptMentionedReferenceAssets(params.row.image_prompt, params.assets, params.entities)) {
+    addAsset(asset as ReferenceAssetRow);
   }
 
   return {

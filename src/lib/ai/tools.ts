@@ -160,7 +160,7 @@ export const aiTools = {
     inputSchema: requestReferenceUploadSchema,
   }),
   add_reference_subject: tool({
-    description: 'When the user identifies an uploaded or described reference, attach that reference to a named person, place, or object. Prefer referenceTag from the current References list, or omit it to label the most recent unassigned reference. Return a warm directorReply.',
+    description: 'When the user identifies an uploaded or described reference, attach that reference to a named person, place, or object. Prefer referenceTag from the current References list, or omit it to label the most recent unassigned reference. Return a warm directorReply with one short follow-up question.',
     inputSchema: addReferenceSubjectSchema,
   }),
   save_reference_description: tool({
@@ -188,7 +188,7 @@ export const aiTools = {
     inputSchema: reviseSceneOutlineSchema,
   }),
   lock_scene_outline: tool({
-    description: 'Freeze the approved outline and hand it to production only after the user clearly approves it.',
+    description: 'Freeze the approved outline and hand it to automatic production only after the user clearly approves it.',
     inputSchema: lockSceneOutlineSchema,
   }),
 };

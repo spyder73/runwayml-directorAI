@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Cormorant_Garamond } from "next/font/google";
+import "@runwayml/avatars-react/styles.css";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,7 +20,7 @@ const cormorantGaramond = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "Lifestory.ai",
+  title: "yourlifestory",
   description: "A cinematic memoir studio for turning real memories into a short film.",
 };
 

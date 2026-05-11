@@ -38,6 +38,7 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       mode TEXT NOT NULL DEFAULT 'life_story',
+      interview_medium TEXT NOT NULL DEFAULT 'text',
       status TEXT NOT NULL,
       story_text TEXT NOT NULL,
       aspect_ratio TEXT NOT NULL DEFAULT '16:9',
@@ -48,6 +49,8 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
       final_video_url TEXT,
       user_id TEXT,
       final_video_media_asset_id TEXT,
+      render_notification_email TEXT,
+      render_notification_sent_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -89,6 +92,7 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
     CREATE TABLE IF NOT EXISTS user_settings (
       user_id TEXT PRIMARY KEY,
       runway_concurrency_mode TEXT NOT NULL DEFAULT 'serial',
+      runway_video_model TEXT NOT NULL DEFAULT 'gen4_turbo',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -149,15 +153,47 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
       FOREIGN KEY (user_id) REFERENCES users(id),
       FOREIGN KEY (session_id) REFERENCES sessions(id)
     );
+
+    CREATE TABLE IF NOT EXISTS avatar_call_sessions (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      runway_session_id TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL,
+      transcript_json TEXT,
+      error_message TEXT,
+      started_at DATETIME,
+      ended_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (session_id) REFERENCES sessions(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS avatar_call_events (
+      id TEXT PRIMARY KEY,
+      avatar_call_session_id TEXT,
+      session_id TEXT NOT NULL,
+      runway_session_id TEXT,
+      event_type TEXT NOT NULL,
+      tool_name TEXT,
+      duration_ms INTEGER,
+      payload_json TEXT,
+      error_message TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (avatar_call_session_id) REFERENCES avatar_call_sessions(id),
+      FOREIGN KEY (session_id) REFERENCES sessions(id)
+    );
   `);
 
   addColumnIfMissing(database, 'sessions', 'mode', "mode TEXT DEFAULT 'life_story'");
+  addColumnIfMissing(database, 'sessions', 'interview_medium', "interview_medium TEXT NOT NULL DEFAULT 'text'");
   addColumnIfMissing(database, 'sessions', 'user_name', 'user_name TEXT');
   addColumnIfMissing(database, 'sessions', 'user_age', 'user_age TEXT');
   addColumnIfMissing(database, 'sessions', 'user_selfie_url', 'user_selfie_url TEXT');
   addColumnIfMissing(database, 'sessions', 'final_video_url', 'final_video_url TEXT');
   addColumnIfMissing(database, 'sessions', 'user_id', 'user_id TEXT');
   addColumnIfMissing(database, 'sessions', 'final_video_media_asset_id', 'final_video_media_asset_id TEXT');
+  addColumnIfMissing(database, 'sessions', 'render_notification_email', 'render_notification_email TEXT');
+  addColumnIfMissing(database, 'sessions', 'render_notification_sent_at', 'render_notification_sent_at DATETIME');
 
   addColumnIfMissing(database, 'scenes', 'image_prompt', 'image_prompt TEXT');
   addColumnIfMissing(database, 'scenes', 'video_prompt', 'video_prompt TEXT');
@@ -172,11 +208,14 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
 
   addColumnIfMissing(database, 'chat_history', 'options', 'options TEXT');
   addColumnIfMissing(database, 'user_uploads', 'vision_description', 'vision_description TEXT');
+  addColumnIfMissing(database, 'user_settings', 'runway_video_model', "runway_video_model TEXT NOT NULL DEFAULT 'gen4_turbo'");
 
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_media_assets_owner ON media_assets(user_id, session_id);
     CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id, expires_at);
+    CREATE INDEX IF NOT EXISTS idx_avatar_call_sessions_session ON avatar_call_sessions(session_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_avatar_call_events_session ON avatar_call_events(session_id, created_at);
   `);
 
   initializeStoryBucketTables(database);

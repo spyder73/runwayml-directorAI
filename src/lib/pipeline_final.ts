@@ -24,6 +24,7 @@ import {
 import {
   createRunwayClientForSession,
   getRunwayConcurrencyModeForSession,
+  getRunwayVideoModelForSession,
   requireOpenRouterApiKeyForSession,
   safeCredentialErrorMessage,
 } from './providers/user-credentials';
@@ -280,6 +281,7 @@ export async function generateVideoAudioPhase(sessionId: string) {
               sessionId,
               runwayClient,
               database: db,
+              videoModel: getRunwayVideoModelForSession(db, session),
             });
             videoUrls.push(videoAsset.localUrl);
           }

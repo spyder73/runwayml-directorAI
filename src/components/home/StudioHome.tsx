@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Film, Play, Settings, Smartphone, Sparkles } from 'lucide-react';
+import { Film, MessageSquareText, PhoneCall, Play, Settings, Smartphone, Sparkles } from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 import SettingsModal from '@/components/session/SettingsModal';
 
@@ -12,12 +13,31 @@ const aspectOptions = [
   { value: '9:16' as const, label: 'Vertical', ratio: '9:16', icon: Smartphone },
 ];
 
+const interviewOptions = [
+  {
+    interviewMedium: 'voice' as const,
+    title: 'Call the Director',
+    subtitle: 'Nico Hale, AI content director',
+    icon: PhoneCall,
+  },
+  {
+    interviewMedium: 'text' as const,
+    title: 'Communicate via text',
+    subtitle: 'Keep the current chat interview',
+    icon: MessageSquareText,
+  },
+];
+
+const directorStudioImage = '/landing/director-studio.png';
+const nicoIntroLine = "Hey, I'm Nico Hale, your content director";
+
 export default function StudioHome() {
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submittingMedium, setSubmittingMedium] = useState<'text' | 'voice' | null>(null);
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16'>('16:9');
   const [readiness, setReadiness] = useState<{ ok: boolean; userMessage: string } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const router = useRouter();
+  const isSubmitting = submittingMedium !== null;
 
   const redirectToLogin = () => {
     router.push(`/login?next=${encodeURIComponent('/')}`);
@@ -44,14 +64,14 @@ export default function StudioHome() {
     };
   }, []);
 
-  const handleStart = async () => {
-    setIsSubmitting(true);
+  const handleStart = async (interviewMedium: 'text' | 'voice' = 'text') => {
+    setSubmittingMedium(interviewMedium);
 
     try {
       const res = await fetch('/api/pipeline/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aspectRatio }),
+        body: JSON.stringify({ aspectRatio, interviewMedium }),
       });
 
       if (res.status === 401 || res.status === 403) {
@@ -61,14 +81,14 @@ export default function StudioHome() {
 
       const data = await res.json();
       if (res.ok && data.sessionId) {
-        router.push(`/session/${data.sessionId}`);
+        router.push(interviewMedium === 'voice' ? `/session/${data.sessionId}?mode=voice` : `/session/${data.sessionId}`);
       } else {
         console.error('Failed to start session', data);
-        setIsSubmitting(false);
+        setSubmittingMedium(null);
       }
     } catch (err) {
       console.error(err);
-      setIsSubmitting(false);
+      setSubmittingMedium(null);
     }
   };
 
@@ -83,17 +103,30 @@ export default function StudioHome() {
         <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/80 to-transparent" />
       </div>
 
+      <div className="pointer-events-none fixed inset-y-0 left-0 z-[2] hidden w-[44vw] max-w-[640px] opacity-86 lg:block" aria-hidden="true">
+        <Image
+          src={directorStudioImage}
+          alt=""
+          fill
+          priority
+          sizes="44vw"
+          className="object-cover object-[50%_24%]"
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,7,12,0.18)_0%,rgba(7,7,12,0.42)_62%,rgba(7,7,12,0.96)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(7,7,12,0.1)_0%,rgba(7,7,12,0.82)_100%)]" />
+      </div>
+
       <button
         type="button"
         onClick={() => setIsSettingsOpen(true)}
-        className="fixed right-5 top-5 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/60 shadow-[0_0_24px_rgba(255,255,255,0.08)] backdrop-blur-md transition-colors hover:border-white/25 hover:bg-white/10 hover:text-white sm:right-6 sm:top-6"
+        className="fixed right-6 top-6 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/35 text-white/60 shadow-[0_0_24px_rgba(255,255,255,0.08)] backdrop-blur-md transition-colors hover:border-white/25 hover:bg-white/10 hover:text-white"
         aria-label="Open settings"
         title="Generation settings"
       >
         <Settings size={18} />
       </button>
 
-      <div className="relative z-10 flex w-full max-w-4xl flex-col items-center">
+      <div className="relative z-10 flex w-full max-w-4xl flex-col items-center lg:ml-[30vw]">
         <motion.div
           initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
@@ -102,15 +135,29 @@ export default function StudioHome() {
         >
           <div className="mb-5 inline-flex items-center gap-2 border-b border-amber-100/24 px-3 pb-2 font-mono text-[11px] uppercase text-amber-50/58">
             <Sparkles size={13} className="text-amber-100/72" />
-            Live memoir cinema
+            Nico Hale - AI content director
+          </div>
+          <div className="mx-auto mb-5 h-24 w-24 overflow-hidden rounded-full border border-amber-100/18 bg-black/40 shadow-[0_0_42px_rgba(239,219,176,0.14)] lg:hidden">
+            <Image
+              src={directorStudioImage}
+              alt="Nico Hale, your AI content director"
+              width={144}
+              height={144}
+              priority
+              className="h-full w-full object-cover object-[50%_24%]"
+            />
           </div>
           <h1 className="bg-[linear-gradient(110deg,#fffaf0_8%,#f6e2b7_40%,#e5f6f7_66%,#fff_88%)] bg-clip-text font-serif text-6xl font-light leading-none text-transparent drop-shadow-[0_0_20px_rgba(246,226,183,0.13)] sm:text-7xl md:text-8xl">
-            Lifestory
+            yourlifestory
           </h1>
           <div className="mx-auto mt-5 h-px w-48 bg-gradient-to-r from-transparent via-amber-100/46 to-transparent" />
-          <p className="mt-5 font-mono text-xs uppercase text-white/42">
-            Cinematic AI Documentary
+          <p className="mx-auto mt-5 max-w-xl font-serif text-2xl font-light leading-tight text-white/84 sm:text-3xl">
+            Hey, I&apos;m Nico Hale, your content director.
           </p>
+          <p className="mx-auto mt-4 max-w-lg text-sm leading-6 text-white/48 sm:text-base">
+            Come in, tell me what still glows in the memory, and I&apos;ll help shape it into a film.
+          </p>
+          <span className="sr-only">{nicoIntroLine}</span>
         </motion.div>
 
         <AnimatePresence mode="wait">
@@ -148,20 +195,14 @@ export default function StudioHome() {
                 })}
               </div>
 
-              <div className="relative mx-auto mt-2 w-full max-w-lg">
+              <div className="relative mx-auto mt-2 w-full max-w-2xl">
                 <div className="lifestory-portal-ring absolute inset-[-14px] opacity-70" aria-hidden="true" />
-                <motion.button
-                  onClick={() => handleStart()}
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="group relative flex w-full overflow-hidden rounded-lg border border-amber-100/28 bg-[linear-gradient(145deg,rgba(239,219,176,0.12),rgba(8,8,14,0.88)_48%,rgba(168,218,220,0.08))] px-6 py-8 shadow-[0_22px_70px_rgba(0,0,0,0.48),0_0_42px_rgba(239,219,176,0.08)] transition-all duration-500 hover:border-amber-100/42 hover:shadow-[0_24px_74px_rgba(0,0,0,0.54),0_0_54px_rgba(239,219,176,0.12)] sm:px-8 sm:py-9"
-                >
-                  <span className="lifestory-button-sheen absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+                <div className="relative overflow-hidden rounded-lg border border-amber-100/28 bg-[linear-gradient(145deg,rgba(239,219,176,0.12),rgba(8,8,14,0.88)_48%,rgba(168,218,220,0.08))] px-5 py-6 shadow-[0_22px_70px_rgba(0,0,0,0.48),0_0_42px_rgba(239,219,176,0.08)] sm:px-6">
                   <span className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/46 to-transparent" />
                   <span className="absolute bottom-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-cyan-100/24 to-transparent" />
 
-                  <span className="relative z-10 flex w-full flex-col items-center gap-5 text-center">
-                    <span className="relative flex h-[72px] w-[72px] items-center justify-center rounded-full border border-amber-100/22 bg-amber-100/[0.08] shadow-[0_0_32px_rgba(239,219,176,0.14)] transition-transform duration-500 group-hover:scale-105">
+                  <div className="relative z-10 flex flex-col items-center gap-5 text-center">
+                    <span className="relative flex h-[72px] w-[72px] items-center justify-center rounded-full border border-amber-100/22 bg-amber-100/[0.08] shadow-[0_0_32px_rgba(239,219,176,0.14)]">
                       <span className="lifestory-icon-ring absolute inset-[-8px] rounded-full border border-white/10" />
                       <span className="absolute inset-3 rounded-full bg-amber-100/10 blur-md" />
                       <Film size={30} className="relative text-amber-100/88 drop-shadow-[0_0_10px_rgba(239,219,176,0.35)]" />
@@ -172,12 +213,39 @@ export default function StudioHome() {
                       <span className="block font-mono text-xs uppercase text-amber-100/46">Takes 5-10 minutes</span>
                     </span>
 
-                    <span className="inline-flex items-center gap-2 border border-white/12 bg-white/[0.055] px-4 py-2 font-mono text-xs uppercase text-white/62 transition-colors group-hover:border-white/22 group-hover:text-white/84">
+                    <div className="grid w-full gap-3 sm:grid-cols-2">
+                      {interviewOptions.map((option) => {
+                        const Icon = option.icon;
+
+                        return (
+                          <motion.button
+                            key={option.interviewMedium}
+                            type="button"
+                            onClick={() => handleStart(option.interviewMedium)}
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.98 }}
+                            className="group relative flex min-h-28 flex-col items-center justify-center gap-3 border border-white/12 bg-white/[0.055] px-4 py-4 text-center transition-colors hover:border-white/28 hover:bg-white/[0.09]"
+                          >
+                            <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/14 bg-black/24 text-amber-100/82 transition-colors group-hover:border-amber-100/30">
+                              <Icon size={18} />
+                            </span>
+                            <span className="font-serif text-xl font-light text-white">{option.title}</span>
+                            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-white/42">{option.subtitle}</span>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleStart()}
+                      className="inline-flex items-center gap-2 border border-white/12 bg-white/[0.035] px-4 py-2 font-mono text-xs uppercase text-white/44 transition-colors hover:border-white/22 hover:text-white/70"
+                    >
                       <Play size={14} fill="currentColor" />
                       Begin the interview
-                    </span>
-                  </span>
-                </motion.button>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {readiness && (
@@ -200,7 +268,7 @@ export default function StudioHome() {
                 <Sparkles size={24} className="text-amber-100 drop-shadow-[0_0_18px_rgba(251,191,36,0.8)]" />
               </div>
               <p className="animate-pulse font-mono text-sm uppercase text-white/58">
-                Entering the Studio...
+                {submittingMedium === 'voice' ? 'Calling the Director...' : 'Entering the Studio...'}
               </p>
             </motion.div>
           )}

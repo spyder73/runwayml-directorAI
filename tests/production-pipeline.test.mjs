@@ -207,6 +207,33 @@ test('production references rewrite prompt entity aliases to usable owned image 
   assert.doesNotMatch(references.promptText, /@kareem\b/);
 });
 
+test('production references attach uploaded assets for plain named entities in the scene prompt', () => {
+  const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
+
+  const references = prepareSceneReferences({
+    promptText: 'Martin and his friend Dorian arrive at a trance festival while Carl watches the lights.',
+    sceneReferenceAssetIds: [],
+    protagonistVisible: true,
+    assets: [
+      { id: 'martin-upload', local_url: '/uploads/martin.jpg', runway_uri: null, stable_tag: 'protagonist_mart', usage_permissions: 'allowed', target_type: 'protagonist', owner_entity_id: 'martin-entity', vision_description: 'Martin at night.' },
+      { id: 'dorian-upload', local_url: '/uploads/dorian.jpg', runway_uri: null, stable_tag: 'dorian', usage_permissions: 'allowed', target_type: 'friend', owner_entity_id: 'dorian-entity', vision_description: 'Dorian smiling.' },
+      { id: 'carl-upload', local_url: '/uploads/carl.jpg', runway_uri: null, stable_tag: 'carl', usage_permissions: 'allowed', target_type: 'pet', owner_entity_id: 'carl-entity', vision_description: 'Carl the dog.' },
+    ],
+    entities: [
+      { id: 'martin-entity', display_name: 'Martin', reference_asset_id: 'martin-upload' },
+      { id: 'dorian-entity', display_name: 'Dorian', reference_asset_id: 'dorian-upload' },
+      { id: 'carl-entity', display_name: 'Carl', reference_asset_id: 'carl-upload' },
+    ],
+  });
+
+  assert.deepEqual(references.selectedAssets.map((asset) => asset.id), ['martin-upload', 'dorian-upload', 'carl-upload']);
+  assert.deepEqual(references.referenceImages.map((image) => image.tag), ['protagonist_mart', 'dorian', 'carl']);
+  assert.equal(references.referenceImages.length <= 16, true);
+  assert.match(references.promptText, /@protagonist_mart/);
+  assert.match(references.promptText, /@dorian/);
+  assert.match(references.promptText, /@carl/);
+});
+
 test('final render plan produces a real output path and Remotion inputs', () => {
   const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
 
@@ -475,9 +502,9 @@ test('Runway video model can be configured from the environment', () => {
 
   assert.equal(getRunwayVideoModel({}), DEFAULT_VIDEO_MODEL);
   assert.equal(getRunwayVideoModel({ video_model: 'veo3.1_fast' }), 'veo3.1_fast');
-  assert.equal(getRunwayVideoModel({ video_model: 'gen4_aleph' }), 'gen4_aleph');
+  assert.equal(getRunwayVideoModel({ video_model: 'gen4_aleph' }), DEFAULT_VIDEO_MODEL);
   assert.equal(getRunwayVideoModel({ VIDEO_MODEL: 'gen4_turbo' }), 'gen4_turbo');
-  assert.equal(getRunwayVideoModel({ RUNWAY_VIDEO_MODEL: 'gen4_aleph' }), 'gen4_aleph');
+  assert.equal(getRunwayVideoModel({ RUNWAY_VIDEO_MODEL: 'gen4_aleph' }), DEFAULT_VIDEO_MODEL);
 });
 
 test('Runway video task helper normalizes Veo 3.1 Fast payload constraints', async () => {

@@ -6,6 +6,7 @@ Lifestory.ai is a magical, single-page web application designed for the Runway A
 - **Magical Canvas:** A dark, starry UI where users describe their life story.
 - **AI Analyst:** Uses an LLM (via OpenRouter) to structure the story into chronological scenes with visual prompts and narration.
 - **Upload Checkpoint:** Allows users to upload personal photos to visually ground the AI.
+- **Runway Character Interview:** Lets users call Nico Hale, a live AI director avatar, instead of using the text interview.
 - **Runway Generation:** Leverages RunwayML APIs for creating reference images, animating them into video, and generating TTS voiceovers.
 - **Remotion Player:** Dynamically previews the assembled video with subtitles.
 - **Director's MCP:** A natural-language chat interface that acts as a director, orchestrating timeline updates (regenerating specific scenes or audio) via AI agents.
@@ -24,6 +25,8 @@ To run this project locally for testing:
    Create a `.env.local` file in the `runwayml-directorAI` directory with the following keys:
    ```env
    CREDENTIAL_ENCRYPTION_KEY=base64-encoded-32-byte-key
+   RUNWAY_CHARACTER_AVATAR_ID=your-character-avatar-id
+   RUNWAY_CHARACTER_API_SECRET=your-app-owned-runway-secret
    ```
    Live OpenRouter and Runway keys are user-owned now. Add them from the in-app settings modal after registering and logging in.
    Runtime uploads, generated assets, and final renders are stored privately under `data/media` and served through authenticated `/api/media/:id` URLs. Generated reference frames are uploaded to Runway through temporary SDK uploads before video generation.
@@ -73,6 +76,10 @@ Set the real reviewer email, password, and optional BYOK keys shortly before dep
 - Vercel AI SDK (`ai`, `@ai-sdk/openai`)
 - `@remotion/player`
 
-## Phase 2: Runway Characters
+## Runway Character Voice Interview
 
-After the single-memory demo path is stable, the next product step is a Runway Character interviewer: a speaking AI director that conducts the interview verbally and keeps the user out of text input for most of the flow. This is intentionally deferred until the core real-media generation pipeline is reliable.
+The studio home lets users choose between the current text interview and a live call with Nico Hale. The voice path creates the same LifeStory pipeline session, then provisions a Runway `gwm1_avatars` realtime session through `/api/avatar/session`.
+
+Set `RUNWAY_CHARACTER_AVATAR_ID` to your custom Character. Set `RUNWAY_CHARACTER_API_SECRET` for the app-owned Character account; if it is not present, the route falls back to the logged-in user's saved Runway key. Use `AVATAR_DEBUG_LOGS=1` only while debugging, because avatar events are verbose even though secrets are redacted before storage.
+
+Paste-ready Character fields live in `docs/runway-character/`.

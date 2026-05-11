@@ -13,6 +13,7 @@ import {
   RUNWAY_TASK_WAIT_TIMEOUT_MS,
   getRunwayVideoModel,
 } from './production-config';
+import type { RunwayVideoModel } from './types';
 import { logMediaGeneration, type MediaGenerationLogDetails } from './media-logging';
 import {
   createMediaAssetForSession,
@@ -223,6 +224,27 @@ function mimeTypeForLocalPath(filePath: string) {
   return 'image/jpeg';
 }
 
+function extensionForUploadMimeType(mimeType: string) {
+  if (mimeType.includes('png')) return 'png';
+  if (mimeType.includes('webp')) return 'webp';
+  if (mimeType.includes('gif')) return 'gif';
+  if (mimeType.includes('mp4')) return 'mp4';
+  if (mimeType.includes('mpeg')) return 'mp3';
+  if (mimeType.includes('wav')) return 'wav';
+  if (mimeType.includes('jpeg') || mimeType.includes('jpg')) return 'jpg';
+  return 'bin';
+}
+
+function runwayUploadFileName(input: { sourcePath: string; mimeType: string; fallbackPath: string }) {
+  const baseName = path.basename(input.sourcePath || input.fallbackPath);
+  if (path.extname(baseName)) return baseName;
+
+  const fallbackExtension = path.extname(input.fallbackPath).replace('.', '').toLowerCase()
+    || extensionForUploadMimeType(input.mimeType);
+  const stem = baseName.replace(/\.+$/g, '') || 'upload';
+  return `${stem}.${fallbackExtension}`;
+}
+
 async function uploadLocalAssetForRunway(localOrRemoteUrl: string, runwayClient: RunwayClient, database: SqliteDatabase = db) {
   if (/^(https?:|runway:)/i.test(localOrRemoteUrl)) {
     return localOrRemoteUrl;
@@ -237,8 +259,13 @@ async function uploadLocalAssetForRunway(localOrRemoteUrl: string, runwayClient:
 
   const uploadPromise = (async () => {
     const buffer = await fs.readFile(absolutePath);
-    const fileName = path.basename(normalizedPath);
-    const file = await toFile(buffer, fileName, { type: mimeTypeForLocalPath(normalizedPath) });
+    const mimeType = mediaFile?.asset.mime_type || mimeTypeForLocalPath(absolutePath);
+    const fileName = runwayUploadFileName({
+      sourcePath: mediaFile?.filePath || normalizedPath,
+      mimeType,
+      fallbackPath: absolutePath,
+    });
+    const file = await toFile(buffer, fileName, { type: mimeType });
     const upload = await runwayClient.uploads.createEphemeral({ file }, { timeout: RUNWAY_TASK_CREATE_TIMEOUT_MS });
     return upload.uri;
   })();
@@ -486,10 +513,11 @@ export async function generateVideoAsset(params: {
   sessionId: string;
   runwayClient: RunwayClient;
   database?: SqliteDatabase;
+  videoModel?: RunwayVideoModel;
   logContext?: MediaGenerationLogDetails;
 }) {
   const promptImageUri = await uploadLocalAssetForRunway(params.promptImageUrl, params.runwayClient, params.database);
-  const model = getRunwayVideoModel();
+  const model = params.videoModel || getRunwayVideoModel();
   const logContext = {
     ...params.logContext,
     sessionId: params.sessionId,

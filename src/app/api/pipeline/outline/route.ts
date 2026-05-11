@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
-import { runFrameGenerationPhase } from '@/lib/pipeline_media';
+import { runAutomaticProductionPipeline } from '@/lib/pipeline_media';
 import { GENERATION_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import {
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
       lockSceneOutlineForProduction(db, body.sessionId);
       broadcastSessionUpdate(body.sessionId, fullSessionUpdate(body.sessionId));
-      runFrameGenerationPhase(body.sessionId).catch(console.error);
+      runAutomaticProductionPipeline(body.sessionId).catch(console.error);
       return NextResponse.json({ success: true });
     }
 

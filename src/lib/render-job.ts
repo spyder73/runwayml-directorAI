@@ -2,6 +2,7 @@ import db from './db';
 import { broadcastSessionUpdate } from './sse';
 import type { SceneRow, SessionRow } from './types';
 import { renderFinalFilm, type FinalRenderProgress } from './final-render';
+import { notifyFinalRenderReady } from './final-render-notification';
 import { canRenderFinal } from './pipeline-guards';
 import {
   completeMediaTaskForSessionKind,
@@ -104,6 +105,9 @@ export async function startFinalRenderJob(sessionId: string) {
       sessionId,
       kind: 'render_final',
       outputAssetId: rendered.publicUrl,
+    });
+    notifyFinalRenderReady(db, sessionId, rendered.publicUrl).catch((error) => {
+      console.error('Failed to send final render email', error);
     });
     broadcastRenderJobProgress(sessionId, 'COMPLETED');
 

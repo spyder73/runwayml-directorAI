@@ -81,15 +81,16 @@ test('Phase 6 provider credentials decrypt per user and expose safe missing-key 
     runway: 'rw-user-1',
   });
   db.prepare(`
-    INSERT INTO user_settings (user_id, runway_concurrency_mode)
-    VALUES (?, ?)
-  `).run('user-1', 'parallel');
+    INSERT INTO user_settings (user_id, runway_concurrency_mode, runway_video_model)
+    VALUES (?, ?, ?)
+  `).run('user-1', 'parallel', 'veo3.1_fast');
 
   const {
     MISSING_BYOK_MESSAGE,
     MissingUserCredentialError,
     getUserProviderCredentials,
     getRunwayConcurrencyModeForSession,
+    getRunwayVideoModelForSession,
     requireOpenRouterApiKeyForSession,
     requireRunwayApiKeyForSession,
   } = jiti('../src/lib/providers/user-credentials.ts');
@@ -99,10 +100,12 @@ test('Phase 6 provider credentials decrypt per user and expose safe missing-key 
     openrouterApiKey: 'sk-or-user-1',
     runwayApiKey: 'rw-user-1',
     runwayConcurrencyMode: 'parallel',
+    runwayVideoModel: 'veo3.1_fast',
   });
   assert.equal(requireOpenRouterApiKeyForSession(db, sessionId), 'sk-or-user-1');
   assert.equal(requireRunwayApiKeyForSession(db, sessionId), 'rw-user-1');
   assert.equal(getRunwayConcurrencyModeForSession(db, sessionId), 'parallel');
+  assert.equal(getRunwayVideoModelForSession(db, sessionId), 'veo3.1_fast');
 
   insertUser(db, 'user-2');
   insertSession(db, 'session-2', 'user-2');

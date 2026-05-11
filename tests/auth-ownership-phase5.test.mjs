@@ -128,12 +128,14 @@ test('start and readiness routes require confirmed auth and create user-owned se
   const unconfirmed = await startRoute.POST(jsonRequest('/api/pipeline/start', {}, unconfirmedCookie));
   assert.equal(unconfirmed.status, 403);
 
-  const started = await startRoute.POST(jsonRequest('/api/pipeline/start', { mode: 'single_memory' }, ownerCookie));
+  const started = await startRoute.POST(jsonRequest('/api/pipeline/start', { mode: 'single_memory', interviewMedium: 'voice' }, ownerCookie));
   assert.equal(started.status, 200);
   const startedJson = await started.json();
-  const startedSession = db.prepare('SELECT user_id, mode FROM sessions WHERE id = ?').get(startedJson.sessionId);
+  const startedSession = db.prepare('SELECT user_id, mode, interview_medium, render_notification_email FROM sessions WHERE id = ?').get(startedJson.sessionId);
   assert.equal(startedSession.user_id, 'owner');
   assert.equal(startedSession.mode, 'life_story');
+  assert.equal(startedSession.interview_medium, 'voice');
+  assert.equal(startedSession.render_notification_email, 'owner@example.com');
 
   assert.equal((await readinessRoute.GET(new Request('https://lifestory.example/api/pipeline/readiness'))).status, 401);
   assert.equal((await readinessRoute.GET(new Request('https://lifestory.example/api/pipeline/readiness', { headers: { cookie: unconfirmedCookie } }))).status, 403);
@@ -161,6 +163,8 @@ test('pipeline session routes reject missing, unconfirmed, and foreign session a
     sketchFeedback: jiti('../src/app/api/pipeline/sketch-feedback/route.ts'),
     synthesize: jiti('../src/app/api/pipeline/synthesize/route.ts'),
     upload: jiti('../src/app/api/pipeline/upload/route.ts'),
+    renderEmail: jiti('../src/app/api/pipeline/render-email/route.ts'),
+    avatarSession: jiti('../src/app/api/avatar/session/route.ts'),
   };
 
   const calls = [
@@ -174,6 +178,8 @@ test('pipeline session routes reject missing, unconfirmed, and foreign session a
     ['sketch-feedback', (cookie) => routes.sketchFeedback.POST(jsonRequest('/api/pipeline/sketch-feedback', { sessionId: 'owned-session', candidateId: 'missing', feedback: 'accepted' }, cookie))],
     ['synthesize', (cookie) => routes.synthesize.POST(jsonRequest('/api/pipeline/synthesize', { sessionId: 'owned-session' }, cookie))],
     ['upload', (cookie) => routes.upload.POST(uploadRequest('owned-session', cookie))],
+    ['render-email', (cookie) => routes.renderEmail.POST(jsonRequest('/api/pipeline/render-email', { sessionId: 'owned-session', email: 'film@example.com' }, cookie))],
+    ['avatar-session', (cookie) => routes.avatarSession.POST(jsonRequest('/api/avatar/session', { appSessionId: 'owned-session', avatarId: 'avatar-123' }, cookie))],
   ];
 
   for (const [name, call] of calls) {
@@ -197,6 +203,7 @@ test('Phase 5 surfaces are wired through auth and SSE buffering stays disabled',
     'start',
     'synthesize',
     'upload',
+    'render-email',
   ];
 
   for (const routeName of protectedRoutes) {
@@ -213,4 +220,8 @@ test('Phase 5 surfaces are wired through auth and SSE buffering stays disabled',
 
   const proxySource = readFileSync(new URL('../src/proxy.ts', import.meta.url), 'utf8');
   assert.equal(proxySource.includes("pathname === '/'"), true);
+
+  const avatarSource = readFileSync(new URL('../src/app/api/avatar/session/route.ts', import.meta.url), 'utf8');
+  assert.match(avatarSource, /auth\/guards/);
+  assert.match(avatarSource, /requireOwnedSessionForRequest/);
 });

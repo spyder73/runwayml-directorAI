@@ -22,10 +22,10 @@ function MessageContent({ content, onOpenImage }: { content: string; onOpenImage
           key={`img-${index}`}
           type="button"
           onClick={() => onOpenImage(part.url)}
-          className="my-6 block w-full max-w-lg overflow-hidden rounded-xl border border-white/10 bg-black/40 text-left shadow-[0_10px_40px_rgba(0,0,0,0.5)]"
+          className="my-6 block w-[min(72vw,36rem)] max-w-full overflow-hidden rounded-xl border border-white/10 bg-black/40 text-left shadow-[0_10px_40px_rgba(0,0,0,0.5)]"
         >
-          <span className="relative block aspect-video w-full">
-            <Image src={part.url} alt="Uploaded reference" fill className="object-cover" unoptimized />
+          <span className="relative block aspect-[4/3] w-full bg-black/60">
+            <Image src={part.url} alt="Uploaded reference" fill className="object-contain" unoptimized />
           </span>
         </button>,
       );
