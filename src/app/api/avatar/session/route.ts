@@ -25,6 +25,13 @@ type AvatarSessionRequest = {
 type AvatarRpcHandler = unknown;
 type AvatarRpcRuntime = typeof import('@runwayml/avatars-node-rpc');
 
+const DEFAULT_AVATAR_SESSION_READY_TIMEOUT_MS = 60_000;
+const configuredAvatarReadyTimeoutMs = Number.parseInt(process.env.RUNWAY_CHARACTER_SESSION_READY_TIMEOUT_MS || '', 10);
+const AVATAR_SESSION_READY_TIMEOUT_MS = Number.isFinite(configuredAvatarReadyTimeoutMs) && configuredAvatarReadyTimeoutMs > 0
+  ? configuredAvatarReadyTimeoutMs
+  : DEFAULT_AVATAR_SESSION_READY_TIMEOUT_MS;
+const AVATAR_SESSION_READY_POLL_MS = 1_000;
+
 const globalForAvatarRpc = globalThis as typeof globalThis & {
   __lifestoryAvatarRpcHandlers?: Map<string, AvatarRpcHandler>;
 };
@@ -61,8 +68,12 @@ async function loadAvatarRpcRuntime() {
 }
 
 async function waitForReadySession(client: RunwayML, runwaySessionId: string) {
-  for (let attempt = 0; attempt < 24; attempt += 1) {
+  const deadline = Date.now() + AVATAR_SESSION_READY_TIMEOUT_MS;
+  let lastStatus = 'UNKNOWN';
+
+  while (Date.now() < deadline) {
     const status = await client.realtimeSessions.retrieve(runwaySessionId);
+    lastStatus = status.status;
     avatarDebugLog('runway_session_status', status);
 
     if (status.status === 'READY') return status;
@@ -73,10 +84,10 @@ async function waitForReadySession(client: RunwayML, runwaySessionId: string) {
       throw new Error('Runway avatar session was cancelled.');
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, AVATAR_SESSION_READY_POLL_MS));
   }
 
-  throw new Error('Runway avatar session did not become ready in time.');
+  throw new Error(`Runway avatar session did not become ready within ${Math.round(AVATAR_SESSION_READY_TIMEOUT_MS / 1000)}s. Last status: ${lastStatus}.`);
 }
 
 export async function POST(req: NextRequest) {

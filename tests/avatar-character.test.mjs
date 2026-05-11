@@ -30,6 +30,15 @@ test('avatar session tools stay within Runway limits and use max backend timeout
   }
 });
 
+test('avatar realtime session readiness waits long enough for cold production starts', () => {
+  const routeSource = fs.readFileSync(new URL('../src/app/api/avatar/session/route.ts', import.meta.url), 'utf8');
+
+  assert.match(routeSource, /AVATAR_SESSION_READY_TIMEOUT_MS/);
+  assert.match(routeSource, /60_000/);
+  assert.match(routeSource, /Date\.now\(\) < deadline/);
+  assert.doesNotMatch(routeSource, /attempt < 24/);
+});
+
 test('avatar logging redacts secrets and records tool events', () => {
   const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
   const {

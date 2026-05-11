@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { splitVisibleMessageContent } from '@/lib/chat-display';
@@ -12,22 +13,49 @@ type InterviewChatProps = {
   onOpenImage: (url: string) => void;
 };
 
+function UploadedReferencePreview({ url, onOpenImage }: { url: string; onOpenImage: (url: string) => void }) {
+  const [hasPreviewError, setHasPreviewError] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenImage(url)}
+      className="my-6 block w-[min(72vw,36rem)] max-w-full overflow-hidden rounded-xl border border-white/10 bg-black/40 text-left shadow-[0_10px_40px_rgba(0,0,0,0.5)]"
+    >
+      <span className="relative block aspect-[4/3] w-full bg-black/60">
+        {hasPreviewError ? (
+          <span className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+            <span className="font-mono text-xs uppercase tracking-[0.18em] text-white/50">Preview unavailable</span>
+            <span className="mt-3 text-sm leading-relaxed text-white/62">
+              Re-upload this reference as JPG, PNG, WebP, or GIF if the image does not open.
+            </span>
+          </span>
+        ) : (
+          <Image
+            src={url}
+            alt="Uploaded reference"
+            fill
+            className="object-contain"
+            unoptimized
+            onError={() => setHasPreviewError(true)}
+          />
+        )}
+      </span>
+    </button>
+  );
+}
+
 function MessageContent({ content, onOpenImage }: { content: string; onOpenImage: (url: string) => void }) {
   const elements: React.ReactNode[] = [];
 
   splitVisibleMessageContent(content).forEach((part, index) => {
     if (part.type === 'image') {
       elements.push(
-        <button
+        <UploadedReferencePreview
           key={`img-${index}`}
-          type="button"
-          onClick={() => onOpenImage(part.url)}
-          className="my-6 block w-[min(72vw,36rem)] max-w-full overflow-hidden rounded-xl border border-white/10 bg-black/40 text-left shadow-[0_10px_40px_rgba(0,0,0,0.5)]"
-        >
-          <span className="relative block aspect-[4/3] w-full bg-black/60">
-            <Image src={part.url} alt="Uploaded reference" fill className="object-contain" unoptimized />
-          </span>
-        </button>,
+          url={part.url}
+          onOpenImage={onOpenImage}
+        />,
       );
       return;
     }

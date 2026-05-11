@@ -63,6 +63,8 @@ test('text interview chat shows uploaded images at readable size', () => {
   assert.match(source, /aspect-\[4\/3\]/);
   assert.match(source, /object-contain/);
   assert.match(source, /Uploaded reference/);
+  assert.match(source, /Preview unavailable/);
+  assert.match(source, /onError/);
 });
 
 test('production progress exposes frame approval before motion generation', () => {
@@ -199,7 +201,7 @@ test('voice session renders Runway avatar stage without webcam and docks around 
   assert.match(callSource, /video=\{false\}/);
   assert.match(callSource, /PageActions/);
   assert.match(callSource, /useTranscript/);
-  assert.match(callSource, /connectPromiseRef/);
+  assert.match(callSource, /connectionRequestRef/);
   assert.match(callSource, /set_avatar_layout/);
   assert.match(callSource, /director-call--docked/);
   assert.match(callSource, /splitVisibleMessageContent/);
@@ -209,6 +211,16 @@ test('voice session renders Runway avatar stage without webcam and docks around 
   assert.match(callSource, /!static/);
   assert.match(callSource, /!bg-transparent/);
   assert.match(callSource, /!p-0/);
+});
+
+test('voice session shows avatar connection progress and errors instead of a blank stage', () => {
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+
+  assert.match(callSource, /connection\.status/);
+  assert.match(callSource, /Preparing Nico/);
+  assert.match(callSource, /Could not start director call/);
+  assert.match(callSource, /credentials=\{connection\.credentials\}/);
+  assert.doesNotMatch(callSource, /connect=\{connect\}/);
 });
 
 test('voice review panels are director-led without manual approval buttons', () => {

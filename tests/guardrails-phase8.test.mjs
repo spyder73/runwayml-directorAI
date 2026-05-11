@@ -40,6 +40,7 @@ test('Phase 8 upload validator rejects empty, non-image, svg, oversized, and too
   assert.match(validateUploadFiles([{ name: 'empty.jpg', size: 0, type: 'image/jpeg' }])?.message || '', /empty/i);
   assert.match(validateUploadFiles([{ name: 'notes.txt', size: 128, type: 'text/plain' }])?.message || '', /image/i);
   assert.match(validateUploadFiles([{ name: 'vector.svg', size: 128, type: 'image/svg+xml' }])?.message || '', /image/i);
+  assert.match(validateUploadFiles([{ name: 'phone.heic', size: 128, type: 'image/heic' }])?.message || '', /JPG, PNG, WebP, or GIF/i);
   assert.match(validateUploadFiles([{ name: 'huge.jpg', size: MAX_UPLOAD_FILE_BYTES + 1, type: 'image/jpeg' }])?.message || '', /25 MB/i);
   assert.match(
     validateUploadFiles(Array.from({ length: MAX_UPLOAD_FILES + 1 }, (_, index) => ({

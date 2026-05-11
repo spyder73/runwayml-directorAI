@@ -80,6 +80,6 @@ Set the real reviewer email, password, and optional BYOK keys shortly before dep
 
 The studio home lets users choose between the current text interview and a live call with Nico Hale. The voice path creates the same LifeStory pipeline session, then provisions a Runway `gwm1_avatars` realtime session through `/api/avatar/session`.
 
-Set `RUNWAY_CHARACTER_AVATAR_ID` to your custom Character. Set `RUNWAY_CHARACTER_API_SECRET` for the app-owned Character account; if it is not present, the route falls back to the logged-in user's saved Runway key. Use `AVATAR_DEBUG_LOGS=1` only while debugging, because avatar events are verbose even though secrets are redacted before storage.
+Set `RUNWAY_CHARACTER_AVATAR_ID` to your custom Character. Set `RUNWAY_CHARACTER_API_SECRET` for the app-owned Character account; if it is not present, the route falls back to the logged-in user's saved Runway key. `RUNWAY_CHARACTER_SESSION_READY_TIMEOUT_MS` defaults to 60000 for cold production avatar starts. Use `AVATAR_DEBUG_LOGS=1` only while debugging, because avatar events are verbose even though secrets are redacted before storage.
 
 Paste-ready Character fields live in `docs/runway-character/`.
