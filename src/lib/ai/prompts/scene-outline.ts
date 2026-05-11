@@ -5,6 +5,12 @@ export const sceneOutlinePrompt = `Scene outline:
 - If the user approves an existing film treatment with phrases like yes, okay, implement this draft, draft the scenes, or go ahead, call propose_scene_outline next instead of asking for more broad-life coverage.
 - If the user asks to change the treatment, call propose_film_treatment with the revised treatment instead of moving to scenes.
 - Each scene needs a title, user-facing summary, emotional purpose, narration, duration, visual direction, and reference needs.
+- Always include a standard intro scene and a standard outro scene with the main character when drafting a LifeStory outline.
+- The standard intro should feel like: "This is [name]..." and introduce who the person is in narrator language.
+- The standard outro should feel like: "That is [name]'s story so far..." and may end with the idea that we will see what else they leave for us to read in the history books.
+- Intro and outro must use the same rendering and perspective of the person: a medium-wide three-quarter back/side view, consistent lens/camera height, and the same visible identity reference when one exists.
+- Place the person in a fantastic, stunning natural or cinematic setting that matches their life. For example, a scientist could stand in a vast field under the Milky Way looking up and thinking deeply.
+- The intro scene should fade in from black slowly. The outro scene should echo the intro perspective and create a graceful closing beat before the final branded card.
 - Reference discipline is strict: scene imagePrompt text may use @tags only from "References usable for generation" in private context.
 - Never place description-only, skipped, restricted, denied, unknown, or unuploaded reference @tags in imagePrompt or referenceAssetIds. Describe those people in plain language instead.
 - If a usable generation reference exists for a person, use that exact @tag consistently in every scene where their visual identity matters and include that asset in referenceAssetIds.

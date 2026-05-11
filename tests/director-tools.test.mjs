@@ -119,6 +119,25 @@ test('LifeStory outline prompt asks for missing stories and highlighted experien
   assert.match(prompt, /broad life coverage/i);
 });
 
+test('LifeStory outline prompt requires cinematic protagonist bookends', () => {
+  const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
+  const prompt = buildInterviewSystemPrompt({
+    status: 'INTERVIEW_DYNAMIC',
+    storyContext: 'Profile: Dorian, scientist in Cologne',
+    uploadContext: 'References usable for generation: @dorian (uploaded protagonist photo)',
+    activeReferenceRequest: null,
+  });
+
+  assert.match(prompt, /standard intro/i);
+  assert.match(prompt, /standard outro/i);
+  assert.match(prompt, /main character/i);
+  assert.match(prompt, /same rendering/i);
+  assert.match(prompt, /same.*perspective/i);
+  assert.match(prompt, /fantastic place|nature|stunning/i);
+  assert.match(prompt, /This is/i);
+  assert.match(prompt, /history books/i);
+});
+
 test('story outline prompt generalizes multi-part memories into distinct scenes', () => {
   const { buildInterviewSystemPrompt } = jiti('../src/lib/ai/prompts/index.ts');
   const prompt = buildInterviewSystemPrompt({

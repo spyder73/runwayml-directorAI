@@ -86,6 +86,10 @@ function renderStageLabel(progress: RenderProgressPayload) {
   return progress.stitchStage ? 'Encoding final video' : 'Rendering frames';
 }
 
+function canRenderFromCompletedScenes(scenes: SceneRow[]) {
+  return scenes.length > 0 && scenes.every((scene) => Boolean(scene.video_url));
+}
+
 function SceneSubsceneProgress({ scene, aspectRatio, onOpenImage }: { scene: SceneRow; aspectRatio: SessionRow['aspect_ratio']; onOpenImage: (url: string) => void }) {
   const shotPlan = parseSceneShotPlan(scene);
   if (shotPlan.length < 2 && !shotPlan.some((shot) => shot.reference_image_url || shot.url || shot.status)) return null;
@@ -135,11 +139,13 @@ export default function ProductionProgress({ session, scenes, renderProgress, pi
   const imagedScenes = scenes.filter((scene) => scene.reference_image_url).length;
   const totalScenes = Math.max(scenes.length, 1);
   const renderPercent = renderProgress ? clampPercent(renderProgress.progress) : 0;
+  const isRecoverableFailedPreview = session.status === 'FAILED' && canRenderFromCompletedScenes(scenes);
 
   const copy = (() => {
     if (session.status === 'GENERATING_IMAGES') return { eyebrow: 'First pass', title: 'Composing scene frames', body: 'The first still images are taking shape. Each scene will fill in as its frame is ready.' };
     if (session.status === 'AWAITING_APPROVAL') return { eyebrow: 'Frame review', title: 'Approve the stills', body: 'Look over the scene images. If they feel right, I will turn them into narration and motion next.' };
     if (session.status === 'GENERATING_FINAL_ASSETS') return { eyebrow: 'Second pass', title: 'Filming and narration', body: 'The approved frames are becoming moving scenes with voiceover.' };
+    if (isRecoverableFailedPreview) return { eyebrow: 'Preview ready', title: "The Director's Cut", body: 'All generated scenes are complete. You can prepare the final film from here.' };
     if (session.status === 'FAILED') return { eyebrow: 'Production paused', title: 'One scene needs another pass', body: 'Retry the scene that needs another pass to continue from the missing piece.' };
     if (session.status === 'PREVIEW_READY') return { eyebrow: 'Preview ready', title: "The Director's Cut", body: 'Your generated scenes are ready to watch.' };
     if (session.status === 'RENDERING') return { eyebrow: 'Final pass', title: 'Preparing your film', body: 'The preview is becoming the final downloadable video.' };
@@ -179,22 +185,29 @@ export default function ProductionProgress({ session, scenes, renderProgress, pi
         )}
       </div>
 
-      {(session.status === 'FAILED' || pipelineError) && (
+      {(session.status === 'FAILED' || pipelineError) && !isRecoverableFailedPreview && (
         <div className="mx-auto mb-10 max-w-3xl rounded-xl border border-red-400/30 bg-red-950/30 p-5 shadow-[0_0_40px_rgba(248,113,113,0.12)]">
           <div className="flex items-start gap-4">
             <AlertTriangle className="mt-1 text-red-200" size={22} />
             <div className="flex-1">
               <p className="font-mono text-xs uppercase tracking-[0.25em] text-red-100/70">Paused</p>
               <p className="mt-2 font-sans text-sm leading-relaxed text-red-50/80">{safeProductionPauseMessage(pipelineError)}</p>
+              <button
+                type="button"
+                onClick={() => onRetry()}
+                className="mt-4 inline-flex items-center gap-2 rounded-full border border-red-100/30 bg-white/10 px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-red-50 transition-colors hover:bg-red-100 hover:text-black"
+              >
+                <RefreshCw size={13} /> Retry missing piece
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {(session.status === 'PREVIEW_READY' || session.status === 'RENDERING' || session.status === 'COMPLETED') ? (
+      {(session.status === 'PREVIEW_READY' || isRecoverableFailedPreview || session.status === 'RENDERING' || session.status === 'COMPLETED') ? (
         <div className="flex flex-col items-center gap-8">
           <RemotionPreview scenes={scenes} aspectRatio={session.aspect_ratio} />
-          {session.status === 'PREVIEW_READY' && (
+          {(session.status === 'PREVIEW_READY' || isRecoverableFailedPreview) && (
             <button type="button" onClick={onRenderFinal} className="flex items-center gap-3 rounded-full bg-white px-8 py-4 font-bold uppercase tracking-widest text-black shadow-[0_0_30px_rgba(255,255,255,0.4)] transition-colors hover:bg-amber-100">
               <Download size={20} /> Prepare Final Film
             </button>

@@ -119,6 +119,56 @@ test('profile bucket update persists profile, entities, themes, and memory candi
   assert.equal(bucket.memoryCandidates[0]?.title, 'The bus station goodbye');
 });
 
+test('scene outline adds standard protagonist intro and outro scenes', () => {
+  const db = createDb();
+  addTreatment(db);
+
+  applyProfileBucketUpdate(db, 'session-1', {
+    profile: {
+      protagonistName: 'Dorian',
+      profession: 'scientist',
+      currentLocation: 'Cologne',
+      emotionalTone: 'curious and reflective',
+    },
+  });
+  const protagonist = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/dorian.jpg',
+    stableTag: 'dorian',
+    targetType: 'protagonist',
+    targetLabel: 'Dorian',
+    usagePermissions: 'allowed',
+  });
+
+  const outline = proposeSceneOutline(db, 'session-1', {
+    scenes: [
+      {
+        title: 'The discovery',
+        summary: 'Dorian follows the question that shaped his work.',
+        narratorText: 'The question would not let him sleep, and eventually it became a calling.',
+        imagePrompt: 'Dorian studies a notebook under a bright night sky.',
+        videoPrompt: 'The camera slowly pushes toward Dorian as stars turn overhead.',
+        duration: 6,
+        emotionalPurpose: 'curiosity becomes direction',
+        referenceAssetIds: [protagonist.id],
+        protagonistVisible: true,
+      },
+    ],
+  });
+
+  assert.equal(outline.length, 3);
+  assert.match(outline[0].title, /This Is Dorian/i);
+  assert.match(outline[0].narrator_text, /This is Dorian/i);
+  assert.match(outline[0].image_prompt, /@dorian/);
+  assert.match(outline[0].image_prompt, /medium-wide three-quarter/i);
+  assert.match(outline[0].video_prompt, /fade in from black/i);
+  assert.equal(outline[1].title, 'The discovery');
+  assert.match(outline[2].title, /Dorian.*Story So Far/i);
+  assert.match(outline[2].narrator_text, /story so far/i);
+  assert.match(outline[2].narrator_text, /history books/i);
+  assert.match(outline[2].video_prompt, /same medium-wide three-quarter/i);
+  db.close();
+});
+
 test('reference assets get stable unique tags and attach to active requests', () => {
   const db = createDb();
 
@@ -506,7 +556,7 @@ test('locking an outline resolves plain named entities to usable owned reference
   });
 
   lockSceneOutlineForProduction(db, 'session-1');
-  const scene = db.prepare('SELECT * FROM scenes WHERE session_id = ?').get('session-1');
+  const scene = db.prepare('SELECT * FROM scenes WHERE session_id = ? AND title = ?').get('session-1', 'Festival arrival');
 
   assert.deepEqual(JSON.parse(scene.scene_references), [martin.id, dorian.id, carl.id]);
   assert.deepEqual(JSON.parse(scene.reference_tags), ['protagonist_mart', 'dorian', 'carl']);

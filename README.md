@@ -26,9 +26,8 @@ To run this project locally for testing:
    ```env
    CREDENTIAL_ENCRYPTION_KEY=base64-encoded-32-byte-key
    RUNWAY_CHARACTER_AVATAR_ID=your-character-avatar-id
-   RUNWAY_CHARACTER_API_SECRET=your-app-owned-runway-secret
    ```
-   Live OpenRouter and Runway keys are user-owned now. Add them from the in-app settings modal after registering and logging in.
+   Live OpenRouter and Runway keys are user-owned now. Add them from the in-app settings modal after registering and logging in. The saved Runway key powers both media generation and the live Character interview.
    Runtime uploads, generated assets, and final renders are stored privately under `data/media` and served through authenticated `/api/media/:id` URLs. Generated reference frames are uploaded to Runway through temporary SDK uploads before video generation.
    Generate the credential encryption key with `openssl rand -base64 32`.
 
@@ -90,7 +89,7 @@ Set the real reviewer email, password, and optional BYOK keys shortly before dep
 
 The studio home lets users choose between the current text interview and a live call with Nico Hale. The voice path creates the same LifeStory pipeline session, then provisions a Runway `gwm1_avatars` realtime session through `/api/avatar/session`.
 
-Set `RUNWAY_CHARACTER_AVATAR_ID` to your custom Character. Set `RUNWAY_CHARACTER_API_SECRET` for the app-owned Character account; if it is not present, the route falls back to the logged-in user's saved Runway key. `RUNWAY_CHARACTER_SESSION_READY_TIMEOUT_MS` defaults to 60000 for cold production avatar starts. Use `AVATAR_DEBUG_LOGS=1` only while debugging, because avatar events are verbose even though secrets are redacted before storage.
+Set `RUNWAY_CHARACTER_AVATAR_ID` to your custom Character. The route uses the logged-in user's saved Runway key for both the Character session and Runway media generation. `RUNWAY_CHARACTER_SESSION_READY_TIMEOUT_MS` defaults to 60000 for cold production avatar starts. Use `AVATAR_DEBUG_LOGS=1` only while debugging, because avatar events are verbose even though secrets are redacted before storage.
 
 When a production call times out before the avatar appears, inspect the persisted status poll events:
 

@@ -52,6 +52,15 @@ test('avatar readiness polling records production diagnostics without secrets', 
   assert.match(routeSource, /lastStatus/);
 });
 
+test('avatar session uses the saved Runway key instead of a separate character secret', () => {
+  const routeSource = fs.readFileSync(new URL('../src/app/api/avatar/session/route.ts', import.meta.url), 'utf8');
+  const envExample = fs.readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(routeSource, /RUNWAY_CHARACTER_API_SECRET/);
+  assert.doesNotMatch(envExample, /RUNWAY_CHARACTER_API_SECRET/);
+  assert.match(routeSource, /saved Runway API key/i);
+});
+
 test('avatar logging redacts secrets and records tool events', () => {
   const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
   const {

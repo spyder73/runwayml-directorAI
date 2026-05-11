@@ -193,6 +193,142 @@ function boolToInt(value: boolean | undefined, fallback = true) {
   return value ?? fallback ? 1 : 0;
 }
 
+function protagonistNameFrom(bucket: StoryBucket) {
+  return nullable(bucket.profile?.protagonist_name) || null;
+}
+
+function protagonistReferenceAsset(bucket: StoryBucket) {
+  if (bucket.profile?.protagonist_reference_asset_id) {
+    const profileAsset = bucket.referenceAssets.find((asset) => asset.id === bucket.profile?.protagonist_reference_asset_id);
+    if (profileAsset && canUseAsset(profileAsset)) return profileAsset;
+  }
+
+  return bucket.referenceAssets.find((asset) => asset.target_type === 'protagonist' && canUseAsset(asset));
+}
+
+function protagonistLifeContext(bucket: StoryBucket) {
+  const bits = [
+    nullable(bucket.profile?.profession),
+    nullable(bucket.profile?.current_location) ? `in ${nullable(bucket.profile?.current_location)}` : '',
+    nullable(bucket.profile?.emotional_tone),
+    nullable(bucket.treatment?.visual_motif) ? `visual motif: ${nullable(bucket.treatment?.visual_motif)}` : '',
+  ].filter(Boolean);
+  return bits.length ? bits.join(', ') : 'a life shaped by memory, place, and possibility';
+}
+
+function cinematicBookendSetting(bucket: StoryBucket) {
+  const profession = bucket.profile?.profession?.toLowerCase() || '';
+  if (/(scientist|research|physic|astronom|engineer|chemist|biology|mathematic)/.test(profession)) {
+    return 'a vast quiet field under a brilliant Milky Way, the person looking up in deep thought';
+  }
+  if (/(artist|designer|writer|film|music|composer|poet)/.test(profession)) {
+    return 'a windswept coastal overlook at golden hour, the person facing the horizon as light moves through the air';
+  }
+  if (/(founder|entrepreneur|builder|director|leader|architect)/.test(profession)) {
+    return 'a high alpine meadow at sunrise with distant ridges and clear cinematic air';
+  }
+  return 'a fantastic place in nature that feels stunning and personally matched to the story';
+}
+
+function protagonistImagePhrase(name: string, referenceTag?: string) {
+  return referenceTag ? `@${referenceTag}, ${name}` : name;
+}
+
+function narratorIntroText(name: string, bucket: StoryBucket) {
+  const context = protagonistLifeContext(bucket);
+  return `This is ${name}. ${name} is the name at the center of this film, a life unfolding through ${context}.`;
+}
+
+function narratorOutroText(name: string) {
+  return `That is ${name}'s story so far, and we will see what else ${name} leaves for us to read in the history books.`;
+}
+
+function isStandardIntroScene(scene: SceneOutlineInput['scenes'][number] | undefined, name: string) {
+  if (!scene) return false;
+  return new RegExp(`\\bThis Is ${name}\\b`, 'i').test(scene.title)
+    || new RegExp(`\\bThis is ${name}\\b`, 'i').test(scene.narratorText);
+}
+
+function isStandardOutroScene(scene: SceneOutlineInput['scenes'][number] | undefined) {
+  if (!scene) return false;
+  return /story so far|history books|standard outro/i.test(`${scene.title} ${scene.narratorText}`);
+}
+
+function standardBookendScenes(database: SqliteDatabase, sessionId: string) {
+  const bucket = loadStoryBucket(database, sessionId);
+  const name = protagonistNameFrom(bucket);
+  if (!name) return null;
+
+  const referenceAsset = protagonistReferenceAsset(bucket);
+  const referenceTag = referenceAsset?.stable_tag;
+  const person = protagonistImagePhrase(name, referenceTag);
+  const setting = cinematicBookendSetting(bucket);
+  const perspective = 'same medium-wide three-quarter back/side perspective, 35mm lens, camera at chest height, person standing slightly left of center';
+  const referenceAssetIds = referenceAsset ? [referenceAsset.id] : [];
+  const referenceNeeds = referenceAsset ? [] : ['protagonist'];
+
+  return {
+    intro: {
+      title: `This Is ${name}`,
+      summary: `${name} is introduced in a stunning place that visually matches the life story.`,
+      narratorText: narratorIntroText(name, bucket),
+      imagePrompt: [
+        `Cinematic standard intro portrait of ${person}.`,
+        `${perspective}.`,
+        `${setting}.`,
+        'Epic natural scale, quiet emotional focus, photoreal documentary texture, soft atmospheric light.',
+      ].join(' '),
+      videoPrompt: [
+        `Fade in from black slowly to ${name} in ${setting}.`,
+        `${perspective}.`,
+        'The camera slowly pushes forward as the person breathes, looks upward, and thinks deeply.',
+      ].join(' '),
+      duration: 5,
+      emotionalPurpose: 'Introduce the main character with mythic calm and immediate visual identity.',
+      referenceNeeds,
+      referenceAssetIds,
+      protagonistVisible: true,
+    },
+    outro: {
+      title: `${name}'s Story So Far`,
+      summary: `${name} returns in the same cinematic perspective for a reflective closing beat.`,
+      narratorText: narratorOutroText(name),
+      imagePrompt: [
+        `Cinematic standard outro portrait of ${person}.`,
+        `${perspective}.`,
+        `${setting}, now held in late golden light with a quiet sense of continuation.`,
+        'Epic natural scale, reflective mood, photoreal documentary texture.',
+      ].join(' '),
+      videoPrompt: [
+        `${name} stands in the same medium-wide three-quarter back/side perspective in ${setting}.`,
+        'The camera slowly drifts forward as the light changes and the person turns slightly toward the open horizon.',
+      ].join(' '),
+      duration: 5,
+      emotionalPurpose: 'Close the story with continuity, dignity, and a sense of what remains unwritten.',
+      referenceNeeds,
+      referenceAssetIds,
+      protagonistVisible: true,
+    },
+  };
+}
+
+function withStandardBookendScenes(database: SqliteDatabase, sessionId: string, scenes: SceneOutlineInput['scenes']) {
+  const bookends = standardBookendScenes(database, sessionId);
+  if (!bookends) return scenes;
+
+  const name = protagonistNameFrom(loadStoryBucket(database, sessionId));
+  if (!name) return scenes;
+
+  const nextScenes = [...scenes];
+  if (!isStandardIntroScene(nextScenes[0], name)) {
+    nextScenes.unshift(bookends.intro);
+  }
+  if (!isStandardOutroScene(nextScenes[nextScenes.length - 1])) {
+    nextScenes.push(bookends.outro);
+  }
+  return nextScenes;
+}
+
 function resolveSceneOutlineReferences(params: {
   row: SceneOutlineRow;
   assets: ReferenceAssetRow[];
@@ -1116,7 +1252,7 @@ export function proposeSceneOutline(database: SqliteDatabase, sessionId: string,
       .run(sessionId, sessionId);
     database.prepare("DELETE FROM scene_outline WHERE session_id = ? AND status != 'locked'").run(sessionId);
 
-    input.scenes.forEach((scene, index) => {
+    withStandardBookendScenes(database, sessionId, input.scenes).forEach((scene, index) => {
       insertOutline.run(
         scene.id || uuidv4(),
         sessionId,
