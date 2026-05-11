@@ -67,3 +67,11 @@ test('Phase 9 final render code consumes Remotion deployment knobs', () => {
   assert.match(source, /renderMedia\(\{[\s\S]*concurrency/);
   assert.match(source, /renderMedia\(\{[\s\S]*x264Preset/);
 });
+
+test('Phase 9 standalone build carries LiveKit RPC logger dependencies', () => {
+  const config = readText('../next.config.js');
+
+  assert.match(config, /@livekit\/rtc-node/);
+  assert.match(config, /@runwayml\/avatars-node-rpc/);
+  assert.match(config, /pino/);
+});

@@ -8,6 +8,8 @@ const runtimeExternalPackageIncludes = [
   './node_modules/@runwayml/avatars-node-rpc/**/*',
   './node_modules/esbuild/**/*',
   './node_modules/get-audio-duration/**/*',
+  './node_modules/pino/**/*',
+  './node_modules/pino-pretty/**/*',
   './node_modules/remotion/**/*',
   './src/remotion/**/*',
 ];
@@ -29,6 +31,8 @@ const nextConfig = {
     '@runwayml/avatars-node-rpc',
     '@livekit/rtc-node',
     '@livekit/rtc-ffi-bindings',
+    'pino',
+    'pino-pretty',
   ],
 };
 
