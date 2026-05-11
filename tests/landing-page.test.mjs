@@ -40,14 +40,29 @@ test('home route chooses between landing and studio from request host', () => {
 test('public landing page links visitors into the app subdomain', () => {
   const source = fs.readFileSync(new URL('../src/components/home/LandingPage.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /Cinema from the life/);
+  assert.match(source, /A short film from a life only you can tell/);
+  assert.match(source, /Tell it the way you remember it/);
   assert.match(source, /href=\{`\$\{appUrl\}\/register`\}/);
   assert.match(source, /href=\{`\$\{appUrl\}\/login`\}/);
-  assert.match(source, /Your memories become scenes/);
-  assert.match(source, /Private by design/);
-  assert.match(source, /Tell your life story/);
+  assert.match(source, /It starts where real stories always start: a detail/);
+  assert.match(source, /Not a prompt box\. A director's room/);
+  assert.match(source, /Give your memories a screen/);
+  assert.match(source, /\/landing\/hero/);
+  assert.match(source, /\/landing\/memory-detail/);
+  assert.match(source, /\/landing\/director-desk/);
+  assert.match(source, /\/landing\/final-screening/);
+  assert.doesNotMatch(source, /Your account owns its media/);
+  assert.doesNotMatch(source, /authenticated routes/);
+  assert.doesNotMatch(source, /generation keys stay encrypted/);
   assert.doesNotMatch(source, /Start with one memory or map a whole life/);
   assert.doesNotMatch(source, /one memory/i);
+});
+
+test('root metadata positions Lifestory as a cinematic memoir studio', () => {
+  const source = fs.readFileSync(new URL('../src/app/layout.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /cinematic memoir studio/i);
+  assert.doesNotMatch(source, /A cinematic documentary of your life/);
 });
 
 test('proxy leaves the public landing host open and keeps app routes on the app subdomain', () => {

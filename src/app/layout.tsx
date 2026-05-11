@@ -20,7 +20,7 @@ const cormorantGaramond = Cormorant_Garamond({
 
 export const metadata: Metadata = {
   title: "Lifestory.ai",
-  description: "A cinematic documentary of your life",
+  description: "A cinematic memoir studio for turning real memories into a short film.",
 };
 
 export default function RootLayout({
