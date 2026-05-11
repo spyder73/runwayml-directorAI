@@ -307,7 +307,10 @@ test('avatar prompts and paste-ready docs preserve director behavior', () => {
   assert.match(personality, /Nico Hale/);
   assert.match(personality, /one question at a time/i);
   assert.match(personality, /use tools silently/i);
-  assert.match(personality, /Photo checkpoints are part of the interview/i);
+  assert.doesNotMatch(personality, /Move briskly/i);
+  assert.match(personality, /at least three emotionally specific memories/i);
+  assert.match(personality, /childhood, younger adult, and current-life/i);
+  assert.match(personality, /selfie checkpoint is mandatory to ask/i);
   assert.match(personality, /request_reference_upload/);
   assert.match(personality, /protagonist selfie/i);
   assert.match(personality, /central friend/i);
@@ -320,6 +323,9 @@ test('avatar prompts and paste-ready docs preserve director behavior', () => {
   assert.match(knowledge, /Prioritize photos of the protagonist/i);
   assert.match(knowledge, /one important friend/i);
   assert.match(knowledge, /Place images are low priority/i);
+  assert.match(knowledge, /Do not call propose_scene_outline/i);
+  assert.match(knowledge, /at least three emotionally specific memories/i);
+  assert.match(knowledge, /protagonist selfie decision/i);
   assert.match(knowledge, /call propose_scene_outline once/i);
   assert.match(knowledge, /Do not call propose_film_treatment/i);
   assert.match(knowledge, /All right, we'll wrap it up here/i);

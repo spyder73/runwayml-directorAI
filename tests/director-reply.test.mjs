@@ -26,18 +26,59 @@ test('director continuation prompt asks for a fresh visible response', () => {
 
   assert.match(prompt, /visible response/i);
   assert.match(prompt, /fresh/i);
+  assert.match(prompt, /anchor/i);
+  assert.match(prompt, /Do not ask vague handoff questions/i);
 });
 
-test('tool-only reference replies keep the conversation moving', () => {
-  const { ensureProactiveDirectorReply } = jiti('../src/lib/director-continuation.ts');
+test('contextual interview fallback uses known story details instead of a generic handoff', () => {
+  const { buildContextualInterviewFollowUp } = jiti('../src/lib/director-continuation.ts');
+
+  const question = buildContextualInterviewFollowUp({
+    profile: {
+      protagonist_name: 'Martin',
+      age: '46',
+      profession: 'law student',
+      current_location: 'Cologne',
+      summary: 'Martin studies law later in life, loves Stromberg, and reads books.',
+    },
+    timelineEvents: [],
+    memoryCandidates: [],
+    entities: [],
+    referenceAssets: [],
+    sceneOutline: [],
+    sceneOutlineComments: [],
+    uploadRequests: [],
+    treatment: null,
+  });
+
+  assert.doesNotMatch(question, /what should we explore next/i);
+  assert.match(question, /(law|Stromberg|books|Cologne)/i);
+  assert.match(question, /\?$/);
+});
+
+test('tool-only reference replies keep the conversation moving with context', () => {
+  const { buildContextualInterviewFollowUp, ensureProactiveDirectorReply } = jiti('../src/lib/director-continuation.ts');
+
+  const fallbackQuestion = buildContextualInterviewFollowUp({
+    profile: null,
+    timelineEvents: [{ label: 'Garden', description: 'A rainy garden with grandmother.', emotion: 'tender' }],
+    memoryCandidates: [],
+    entities: [],
+    referenceAssets: [],
+    sceneOutline: [],
+    sceneOutlineComments: [],
+    uploadRequests: [],
+    treatment: null,
+  });
 
   const reply = ensureProactiveDirectorReply(
     'I will remember Dorian as @dorian_2 for future scenes.',
-    { fallbackQuestion: 'What should we explore next?' },
+    { fallbackQuestion },
   );
 
   assert.match(reply, /I will remember Dorian/);
-  assert.match(reply, /What should we explore next\?/);
+  assert.match(reply, /Garden|rainy garden|grandmother/i);
+  assert.doesNotMatch(reply, /What should we explore next/i);
   assert.equal(
     ensureProactiveDirectorReply('Saved. What happened after that?', { fallbackQuestion: 'What next?' }),
     'Saved. What happened after that?',

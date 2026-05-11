@@ -4,7 +4,7 @@ import { generateObject, generateText, streamText } from 'ai';
 import { v4 as uuidv4 } from 'uuid';
 import { runAutomaticProductionPipeline } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
-import { buildDirectorContinuationPrompt, ensureProactiveDirectorReply } from './director-continuation';
+import { buildContextualInterviewFollowUp, buildDirectorContinuationPrompt, ensureProactiveDirectorReply } from './director-continuation';
 import { filmTreatmentReviewHandoff } from './treatment-reply';
 import { storySceneDiversityPrompt } from './ai/prompts/scene-outline';
 import {
@@ -54,7 +54,6 @@ import {
 const MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS = 8192;
 const MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS = 1200;
 const MAX_DIRECTOR_TOOL_OUTPUT_TOKENS = 8192;
-const DEFAULT_INTERVIEW_FOLLOW_UP = 'What should we explore next for the film?';
 
 function safeInterviewErrorMessage(error: unknown) {
   if (isMissingUserCredentialError(error)) return MISSING_BYOK_MESSAGE;
@@ -193,6 +192,20 @@ export function isTreatmentApprovalForOutline(message: string, bucket: StoryBuck
   }
 
   return /\b(?:approve|approved|accept|accepted|yes|sure|ok|okay|go ahead|implement|draft|outline|scenes?|move on|looks good|like it)\b/i.test(text);
+}
+
+export function isMovieCreationRequest(message: string) {
+  const text = message.trim();
+  if (!text) return false;
+  if (/\b(?:but|however|change|revise|revision|add|remove|instead|maybe|perhaps|not yet|wait)\b/i.test(text)) {
+    return false;
+  }
+
+  const saysNothingElse = /\b(?:no|nothing|that's it|thats it|all good|enough)\b/i.test(text);
+  const asksToCreate = /\b(?:create|make|generate|start|go ahead|move on|proceed|continue|finish)\b[\s\S]{0,36}\b(?:movie|film|video|cut|plan|outline|scenes?)\b/i.test(text)
+    || /\b(?:movie|film|video|cut|plan|outline|scenes?)\b[\s\S]{0,36}\b(?:create|make|generate|start|go ahead|move on|proceed|continue|finish)\b/i.test(text);
+
+  return saysNothingElse || asksToCreate;
 }
 
 function compactText(value: string | null | undefined, fallback: string) {
@@ -344,6 +357,7 @@ export async function processInterviewTurn(sessionId: string) {
     const storyBucket = loadStoryBucket(db, sessionId);
     const latestUserMessage = latestUserText(messages);
     const treatmentApprovalRequested = isTreatmentApprovalForOutline(latestUserMessage, storyBucket);
+    const movieCreationRequested = isMovieCreationRequest(latestUserMessage);
     const systemPrompt = buildInterviewSystemPrompt({
       status: session.status,
       storyContext: formatStoryBucketForPrompt(storyBucket),
@@ -408,19 +422,19 @@ export async function processInterviewTurn(sessionId: string) {
            const nextReply = selfiePrompt || supportingReferenceRequest?.prompt_text || text || args.directorReply || finalReply;
            finalReply = selfiePrompt || supportingReferenceRequest
              ? nextReply
-             : ensureProactiveDirectorReply(nextReply, { fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP });
+             : ensureProactiveDirectorReply(nextReply, { fallbackQuestion: buildContextualInterviewFollowUp(updatedBucket) });
         } else if (call.toolName === 'request_reference_upload') {
            const args = requestReferenceUploadSchema.parse(call.input);
            const request = createReferenceUploadRequest(db, sessionId, args);
            finalReply = request
              ? (text || args.promptText)
-             : (text || 'I already have the protagonist reference, so I will keep using that unless we need a specific scene-era image later. What should we explore next?');
+             : (text || `I already have the protagonist reference, so I will keep using that unless we need a specific scene-era image later. ${buildContextualInterviewFollowUp(loadStoryBucket(db, sessionId))}`);
         } else if (call.toolName === 'add_reference_subject') {
            const args = addReferenceSubjectSchema.parse(call.input);
            const result = addReferenceSubject(db, sessionId, args);
            finalReply = ensureProactiveDirectorReply(
              text || args.directorReply || `I will remember ${args.displayName} as @${result.referenceAsset.stable_tag} for future scenes.`,
-             { fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP },
+             { fallbackQuestion: buildContextualInterviewFollowUp(loadStoryBucket(db, sessionId)) },
            );
         } else if (call.toolName === 'save_reference_description') {
            const args = saveReferenceDescriptionSchema.parse(call.input);
@@ -428,7 +442,7 @@ export async function processInterviewTurn(sessionId: string) {
            db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
              .run('INTERVIEW_DYNAMIC', sessionId);
            finalReply = ensureProactiveDirectorReply(text || args.directorReply || finalReply, {
-             fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP,
+             fallbackQuestion: buildContextualInterviewFollowUp(loadStoryBucket(db, sessionId)),
            });
         } else if (call.toolName === 'generate_memory_sketch') {
            const args = memorySketchSchema.parse(call.input);
@@ -566,8 +580,11 @@ export async function processInterviewTurn(sessionId: string) {
 
     const bucketAfterTools = loadStoryBucket(db, sessionId);
     if (
-      treatmentApprovalRequested
-      && isTreatmentApprovalForOutline(latestUserMessage, bucketAfterTools)
+      (treatmentApprovalRequested || movieCreationRequested)
+      && (
+        isTreatmentApprovalForOutline(latestUserMessage, bucketAfterTools)
+        || Boolean(movieCreationRequested && bucketAfterTools.treatment && bucketAfterTools.sceneOutline.length === 0)
+      )
       && !getActiveReferenceRequest(db, sessionId)
     ) {
       const outline = await draftSceneOutlineAfterTreatmentApproval(sessionId);

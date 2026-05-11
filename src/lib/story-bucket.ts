@@ -1093,8 +1093,12 @@ export function createReferenceAsset(database: SqliteDatabase, sessionId: string
 }
 
 export function addReferenceSubject(database: SqliteDatabase, sessionId: string, input: ReferenceSubjectInput) {
-  const referenceAsset = getReferenceAssetForSubject(database, sessionId, input);
   const existingEntity = getEntityForSubject(database, sessionId, input);
+  const referenceAsset = getReferenceAssetForSubject(database, sessionId, input)
+    || (existingEntity?.reference_asset_id
+      ? database.prepare('SELECT * FROM reference_assets WHERE id = ? AND session_id = ?')
+        .get(existingEntity.reference_asset_id, sessionId) as ReferenceAssetRow | undefined
+      : undefined);
   const entityId = existingEntity?.id || input.entityId || uuidv4();
   const consentState = input.consentState || existingEntity?.consent_state || 'unknown';
 

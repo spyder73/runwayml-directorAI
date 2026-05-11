@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { ToolHandler } from '@runwayml/avatars-node-rpc';
 import type { ChatHistoryRow, SceneRow, SessionRow } from '@/lib/types';
-import { ensureProactiveDirectorReply } from '@/lib/director-continuation';
+import { buildContextualInterviewFollowUp, ensureProactiveDirectorReply } from '@/lib/director-continuation';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import {
   addReferenceSubject,
@@ -87,7 +87,7 @@ function advanceInterviewStatus(database: SqliteDatabase, sessionId: string) {
 function directorReplyFrom(value: unknown, fallback: string) {
   const fallbackQuestion = /[?？]/.test(fallback)
     ? fallback
-    : 'What should we explore next for the film?';
+    : 'Which earlier or later chapter would help explain who you are now?';
   if (!value || typeof value !== 'object') {
     return ensureProactiveDirectorReply(fallback, { fallbackQuestion });
   }
@@ -247,7 +247,7 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
         ok: true,
         entityId: result.entity.id,
         referenceAssetId: result.referenceAsset.id,
-        directorReply: directorReplyFrom(payload, 'Excellent. I have that reference labeled.'),
+        directorReply: directorReplyFrom(payload, buildContextualInterviewFollowUp(loadStoryBucket(database, appSessionId))),
       };
     }),
     save_reference_description: (args) => runTool('save_reference_description', args, () => {

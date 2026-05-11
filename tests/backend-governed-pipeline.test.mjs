@@ -248,7 +248,7 @@ test('film treatment persists as the required bridge before outline lock', () =>
 
 test('explicit treatment approval can move a LifeStory into scene outline despite remaining readiness gaps', () => {
   const { initializeStoryBucketTables, loadStoryBucket, proposeFilmTreatment } = jiti('../src/lib/story-bucket.ts');
-  const { isTreatmentApprovalForOutline } = jiti('../src/lib/pipeline.ts');
+  const { isTreatmentApprovalForOutline, isMovieCreationRequest } = jiti('../src/lib/pipeline.ts');
 
   const db = createDb();
   initializeStoryBucketTables(db);
@@ -266,6 +266,9 @@ test('explicit treatment approval can move a LifeStory into scene outline despit
 
   assert.equal(isTreatmentApprovalForOutline('just implement this draft i like it', bucket), true);
   assert.equal(isTreatmentApprovalForOutline('sure but I would add Aachen', bucket), false);
+  assert.equal(isMovieCreationRequest('no thats it, lets create the movie'), true);
+  assert.equal(isMovieCreationRequest('nothing else, create the movie'), true);
+  assert.equal(isMovieCreationRequest('what else should we explore?'), false);
 });
 
 test('fallback treatment outline creates scene rows from the approved story bucket', () => {

@@ -237,6 +237,37 @@ test('reference subjects attach uploaded assets to named entities and stable tag
   assert.equal(linkedAsset?.usage_permissions, 'allowed');
 });
 
+test('reference subjects are idempotent when the same named subject is labeled again', () => {
+  const db = createDb();
+  const upload = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/dorian.jpg',
+    targetType: 'reference',
+    targetLabel: 'reference',
+    visionDescription: 'Dorian at a Berlin club night.',
+    usagePermissions: 'allowed',
+  });
+
+  const first = addReferenceSubject(db, 'session-1', {
+    referenceAssetId: upload.id,
+    subjectType: 'friend',
+    displayName: 'Dorian',
+    description: 'Friend from Berlin festival nights.',
+    consentState: 'allowed',
+  });
+  const second = addReferenceSubject(db, 'session-1', {
+    subjectType: 'friend',
+    displayName: 'Dorian',
+    description: 'Friend from Berlin festival nights.',
+    consentState: 'allowed',
+  });
+  const bucket = loadStoryBucket(db, 'session-1');
+
+  assert.equal(second.entity.id, first.entity.id);
+  assert.equal(second.referenceAsset.id, first.referenceAsset.id);
+  assert.equal(bucket.referenceAssets.filter((asset) => asset.stable_tag.startsWith('dorian')).length, 1);
+  assert.equal(bucket.referenceAssets[0].stable_tag, 'dorian');
+});
+
 test('reference subjects can resolve visible prompt tags with @ prefixes', () => {
   const db = createDb();
   const upload = createReferenceAsset(db, 'session-1', {

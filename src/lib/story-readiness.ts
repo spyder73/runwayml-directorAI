@@ -87,7 +87,7 @@ export function evaluateLifeStoryOutlineReadiness(bucket: StoryBucket): LifeStor
   if (entityCount < 2) {
     missing.push('important relationships or places');
   }
-  if (moments.length < 2) {
+  if (moments.length < 3) {
     missing.push('deeper emotionally specific moments');
   }
 
