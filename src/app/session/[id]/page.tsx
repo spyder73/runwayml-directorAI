@@ -44,6 +44,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [chatHistory, setChatHistory] = useState<ChatHistoryRow[]>([]);
   const [storyBucket, setStoryBucket] = useState<StoryBucket | null>(null);
   const [activeReferenceRequest, setActiveReferenceRequest] = useState<ReferenceUploadRequestRow | null>(null);
+  const [forceShowVoiceUpload, setForceShowVoiceUpload] = useState(false);
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -190,6 +191,9 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       },
     ]);
     setMessage('');
+    if (showReferenceRequest) {
+      setForceShowVoiceUpload(false);
+    }
     setIsSending(true);
 
     try {
@@ -221,6 +225,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       console.error(err);
     } finally {
       setIsUploading(false);
+      setForceShowVoiceUpload(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -388,8 +393,9 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     );
   }
 
-  const showReferenceRequest = Boolean(activeReferenceRequest) || (session.status === 'AWAITING_SELFIE' && !session.user_selfie_url);
   const isVoiceMode = searchParams.get('mode') === 'voice' || session.interview_medium === 'voice';
+  const backendReferenceRequest = Boolean(activeReferenceRequest) || (session.status === 'AWAITING_SELFIE' && !session.user_selfie_url);
+  const showReferenceRequest = backendReferenceRequest || (isVoiceMode && forceShowVoiceUpload);
   const isReferenceDescribeDraft = showReferenceRequest && message.trim().length > 0;
   const showComposer = (!isVoiceMode && !showReferenceRequest) || isReferenceDescribeDraft;
   const productionStarted = [
@@ -439,6 +445,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           showUpload={showReferenceRequest}
           hasReviewPanel={hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision || productionStarted}
           shouldEndForProduction={shouldEndDirectorCall}
+          onShowUploadRequested={() => setForceShowVoiceUpload(true)}
         />
       )}
 
@@ -514,7 +521,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-10 flex flex-col items-center bg-gradient-to-t from-[#0A0A0F] via-[#0A0A0F] to-transparent p-6" data-avatar-target="reference-upload">
+      <div className="fixed bottom-0 left-0 right-0 z-30 flex flex-col items-center bg-gradient-to-t from-[#0A0A0F] via-[#0A0A0F] to-transparent p-6" data-avatar-target="reference-upload">
         <input
           type="file"
           accept="image/*"
@@ -529,14 +536,16 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
             request={activeReferenceRequest}
             isSelfieRequest={session.status === 'AWAITING_SELFIE' && !session.user_selfie_url}
             hasSelfie={Boolean(session.user_selfie_url)}
+            forceVisible={isVoiceMode && forceShowVoiceUpload && !backendReferenceRequest}
             isUploading={isUploading}
             onChooseFiles={() => fileInputRef.current?.click()}
             onSkip={async () => {
+              setForceShowVoiceUpload(false);
               await resolveActiveReferenceRequest('skipped');
               await handleSendMessage(undefined, "I'd like to skip that image for now. Please ask me for visual details instead.");
             }}
             onDescribeInstead={async () => {
-              const label = activeReferenceRequest?.target_label || 'this reference';
+              const label = activeReferenceRequest?.target_label || 'the reference Nico asked for';
               setMessage(`Here is how ${label} looks: `);
             }}
             onDrop={handleDrop}

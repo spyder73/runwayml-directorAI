@@ -10,6 +10,7 @@ type ReferenceUploadRequestProps = {
   request: ReferenceUploadRequestRow | null;
   isSelfieRequest: boolean;
   hasSelfie: boolean;
+  forceVisible?: boolean;
   isUploading: boolean;
   onChooseFiles: () => void;
   onSkip: () => void;
@@ -42,6 +43,7 @@ export default function ReferenceUploadRequest({
   request,
   isSelfieRequest,
   hasSelfie,
+  forceVisible = false,
   isUploading,
   onChooseFiles,
   onSkip,
@@ -49,7 +51,7 @@ export default function ReferenceUploadRequest({
   onDrop,
   onDragOver,
 }: ReferenceUploadRequestProps) {
-  if (!request && !isSelfieRequest) {
+  if (!request && !isSelfieRequest && !forceVisible) {
     if (!hasSelfie) return null;
     return <SelfieSavedBadge />;
   }
@@ -59,11 +61,19 @@ export default function ReferenceUploadRequest({
     : request?.target_label
       ? `Optional reference for ${request.target_label}`
       : 'Optional protagonist reference';
-  const titleText = isSelfieRequest || request?.target_type === 'protagonist'
+  const titleText = forceVisible && !request && !isSelfieRequest
+    ? 'Drop the reference here'
+    : isSelfieRequest || request?.target_type === 'protagonist'
     ? 'Drop your selfie here'
     : title;
-  const body = request?.prompt_text || 'Upload a clear photo only if you want this person or place to appear more faithfully. Skipping is completely fine.';
-  const helper = request?.reason || 'This is creative guidance for the film, not a requirement.';
+  const body = request?.prompt_text
+    || (forceVisible
+      ? 'Upload the image Nico just asked for, describe it instead, or skip it. Any choice is fine.'
+      : 'Upload a clear photo only if you want this person or place to appear more faithfully. Skipping is completely fine.');
+  const helper = request?.reason
+    || (forceVisible
+      ? 'The upload stays optional and only helps guide the film visually.'
+      : 'This is creative guidance for the film, not a requirement.');
 
   return (
     <div className="mb-4 flex w-full max-w-3xl flex-col gap-2">

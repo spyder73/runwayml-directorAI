@@ -87,7 +87,7 @@ export const avatarClientTools = [
 export const avatarBackendTools = [
   backendTool(
     'update_profile_bucket',
-    'Save profile facts, timeline events, people, places, themes, and candidate scenes from a spoken answer. Include directorReply with the next short spoken follow-up when useful.',
+    'Save profile facts, timeline events, people, places, themes, and candidate scenes from a spoken answer. Include directorReply with the exact next short spoken follow-up whenever you know it.',
   ),
   backendTool('request_reference_upload', 'Create an optional image upload checkpoint for a concrete person, place, object, or scene reference.', [
     {

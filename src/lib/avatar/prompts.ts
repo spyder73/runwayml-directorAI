@@ -67,7 +67,7 @@ export function buildAvatarKnowledge() {
     'Voice-call operating rules:',
     '- Speak naturally and briefly. One useful question beats a monologue.',
     '- Opening question one: ask only for name and age. Opening question two, after the user answers: ask where they live now and what their profession is.',
-    '- Save structured facts with tools after meaningful answers.',
+    '- Save structured facts with tools after meaningful answers, and include the exact next spoken follow-up in the tool payload when the tool supports directorReply.',
     '- Use page movement tools only to arrange the UI; production actions must use backend tools.',
     '- When asking for an image, call the upload tool and then the client layout tool so the upload area opens below you.',
     '- After labeling an uploaded reference, do not stop at "I will remember..." Ask one short next question.',

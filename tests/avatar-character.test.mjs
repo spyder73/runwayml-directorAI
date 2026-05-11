@@ -173,6 +173,44 @@ test('avatar reference tool replies with a follow-up after labeling an upload', 
   database.close();
 });
 
+test('avatar profile fallback asks the missing onboarding question after name and age', async () => {
+  const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
+  const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');
+
+  const database = new Database(':memory:');
+  initializeDatabaseSchema(database);
+  database.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run('user-1', 'user@example.com', 'hash');
+  database.prepare(`
+    INSERT INTO sessions (id, user_id, status, story_text, aspect_ratio, mode, interview_medium)
+    VALUES (?, ?, 'INTERVIEW_ONBOARDING', '', '16:9', 'life_story', 'voice')
+  `).run('session-1', 'user-1');
+  database.prepare(`
+    INSERT INTO avatar_call_sessions (id, session_id, runway_session_id, status)
+    VALUES (?, ?, ?, ?)
+  `).run('call-1', 'session-1', 'runway-1', 'RUNNING');
+
+  const tools = createAvatarRpcTools({
+    database,
+    appSessionId: 'session-1',
+    avatarCallSessionId: 'call-1',
+    runwaySessionId: 'runway-1',
+  });
+
+  const result = await tools.update_profile_bucket({
+    payloadJson: JSON.stringify({
+      profile: {
+        protagonistName: 'Maya',
+        age: '41',
+      },
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.doesNotMatch(result.directorReply, /next piece of the story/i);
+  assert.match(result.directorReply, /(where.*live|live.*where|profession|work|do now|current place)/i);
+  database.close();
+});
+
 test('avatar prompts and paste-ready docs preserve director behavior', () => {
   const {
     buildAvatarKnowledge,

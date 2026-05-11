@@ -83,6 +83,8 @@ test('production progress exposes unit retry controls for failed scene work', ()
   assert.match(source, /Retry frame/);
   assert.match(source, /Retry narration/);
   assert.match(source, /Retry motion/);
+  assert.doesNotMatch(source, /Nothing has been replaced with pretend media/);
+  assert.doesNotMatch(source, /onClick=\{\(\) => onRetry\(\)\}/);
 });
 
 test('production progress exposes sub-scene frames while motion is optimized', () => {
@@ -156,11 +158,19 @@ test('home page exposes only the LifeStory start entrypoint', () => {
   assert.match(source, /Hey, I'm Nico Hale, your content director/);
   assert.match(source, /AI content director/);
   assert.match(source, /\/landing\/director-studio/);
-  assert.match(source, /handleStart\(\)/);
+  assert.doesNotMatch(source, /Begin the interview/i);
   assert.doesNotMatch(source, /handleStart\('single_memory'\)/);
   assert.doesNotMatch(source, /Generate a Video of a Memory/);
   assert.doesNotMatch(source, /\/api\/pipeline\/demo/);
   assert.doesNotMatch(source, /Open rehearsal memory/);
+});
+
+test('home page action panel stays to the right of the director image on desktop', () => {
+  const source = fs.readFileSync(new URL('../src/components/home/StudioHome.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /lg:ml-\[44vw\]/);
+  assert.match(source, /lg:w-\[min\(52vw,760px\)\]/);
+  assert.doesNotMatch(source, /lg:ml-\[30vw\]/);
 });
 
 test('frontend brand copy uses yourlifestory in visible surfaces', () => {
@@ -203,14 +213,30 @@ test('voice session renders Runway avatar stage without webcam and docks around 
   assert.match(callSource, /useTranscript/);
   assert.match(callSource, /connectionRequestRef/);
   assert.match(callSource, /set_avatar_layout/);
+  assert.match(callSource, /LiveTranscriptSidebar/);
   assert.match(callSource, /director-call--docked/);
   assert.match(callSource, /splitVisibleMessageContent/);
   assert.match(callSource, /formatScriptPreview/);
   assert.match(callSource, /Image uploaded\./);
+  assert.doesNotMatch(callSource, /TranscriptOverlay/);
+  assert.doesNotMatch(callSource, /participantIdentity/);
   assert.doesNotMatch(callSource, /\{row\.content\}/);
   assert.match(callSource, /!static/);
   assert.match(callSource, /!bg-transparent/);
   assert.match(callSource, /!p-0/);
+});
+
+test('voice upload client event can reveal the upload panel before the backend request arrives', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+  const uploadSource = fs.readFileSync(new URL('../src/components/session/ReferenceUploadRequest.tsx', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /forceShowVoiceUpload/);
+  assert.match(pageSource, /onShowUploadRequested/);
+  assert.match(pageSource, /isVoiceMode && forceShowVoiceUpload/);
+  assert.match(callSource, /onShowUploadRequested/);
+  assert.match(uploadSource, /forceVisible/);
+  assert.match(uploadSource, /Drop the reference here/);
 });
 
 test('voice session shows avatar connection progress and errors instead of a blank stage', () => {

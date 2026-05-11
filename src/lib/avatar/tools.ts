@@ -85,12 +85,49 @@ function advanceInterviewStatus(database: SqliteDatabase, sessionId: string) {
 }
 
 function directorReplyFrom(value: unknown, fallback: string) {
-  const fallbackQuestion = 'What should we explore next for the film?';
+  const fallbackQuestion = /[?？]/.test(fallback)
+    ? fallback
+    : 'What should we explore next for the film?';
   if (!value || typeof value !== 'object') {
     return ensureProactiveDirectorReply(fallback, { fallbackQuestion });
   }
   const reply = (value as { directorReply?: unknown }).directorReply;
   return ensureProactiveDirectorReply(typeof reply === 'string' && reply.trim() ? reply : fallback, { fallbackQuestion });
+}
+
+function avatarProfileFallbackQuestion(database: SqliteDatabase, sessionId: string) {
+  const bucket = loadStoryBucket(database, sessionId);
+  const profile = bucket.profile;
+
+  if (!profile?.protagonist_name) {
+    return 'What should I call you, and how old are you?';
+  }
+  if (!profile.age) {
+    return `Lovely to meet you, ${profile.protagonist_name}. How old are you?`;
+  }
+  if (!profile.current_location && !profile.profession) {
+    return 'Beautiful. Where do you live now, and what work fills your days?';
+  }
+  if (!profile.current_location) {
+    return 'Where are you living now?';
+  }
+  if (!profile.profession) {
+    return 'And what do you do these days?';
+  }
+  if (bucket.timelineEvents.length === 0 && bucket.memoryCandidates.length === 0) {
+    return 'Give me the short version of the path that led you here in life.';
+  }
+  if (bucket.timelineEvents.length < 2) {
+    return 'What early chapter, maybe childhood or school, still feels important to who you became?';
+  }
+  if (bucket.timelineEvents.length < 4) {
+    return 'Which later chapter changed the direction of your life?';
+  }
+  if (bucket.memoryCandidates.length < 2) {
+    return 'What is one specific moment from all of that that still plays like a scene in your mind?';
+  }
+
+  return 'Is there a relationship, turning point, or memory we have not touched yet that belongs in the film?';
 }
 
 function safeErrorMessage(error: unknown) {
@@ -165,7 +202,7 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
       advanceInterviewStatus(database, appSessionId);
       return {
         ok: true,
-        directorReply: directorReplyFrom(payload, 'I have that saved. What is the next piece of the story I should understand?'),
+        directorReply: directorReplyFrom(payload, avatarProfileFallbackQuestion(database, appSessionId)),
       };
     }),
     request_reference_upload: (args) => runTool('request_reference_upload', args, () => {

@@ -113,6 +113,39 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
         </div>
       </section>
 
+      <section className="relative z-10 bg-[#0E1013] px-5 py-14 sm:px-8">
+        <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[0.74fr_1fr] md:items-center">
+          <div className="mx-auto w-full max-w-sm overflow-hidden rounded-lg border border-white/10 bg-black/40 shadow-[0_24px_80px_rgba(0,0,0,0.36)]">
+            <video
+              src="/landing/videos/Welcome.mp4"
+              className="aspect-[9/16] w-full bg-black object-cover"
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
+              preload="metadata"
+              aria-label="Welcome introduction to yourlifestory"
+            />
+          </div>
+          <div className="max-w-2xl">
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/62">Watch first</p>
+            <h2 className="mt-4 font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
+              Nico will show you where to begin.
+            </h2>
+            <p className="mt-5 text-lg leading-8 text-white/64">
+              Start with the welcome, then create your account and step into the studio when you are ready.
+            </p>
+            <Link
+              href={`${appUrl}/register`}
+              className="mt-8 inline-flex min-h-14 items-center justify-center gap-3 border border-white bg-white px-6 py-4 font-mono text-xs uppercase tracking-widest text-black transition-colors hover:bg-[#F4D58D]"
+            >
+              Register now <ArrowRight size={16} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       <section className="relative z-10 bg-[#11100D] px-5 py-14 sm:px-8">
         <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[0.9fr_1.1fr] md:items-center">
           <div className="relative aspect-[4/5] overflow-hidden border border-white/10 md:aspect-[3/4]">

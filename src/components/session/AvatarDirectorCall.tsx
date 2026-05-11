@@ -22,6 +22,7 @@ type AvatarDirectorCallProps = {
   showUpload: boolean;
   hasReviewPanel: boolean;
   shouldEndForProduction: boolean;
+  onShowUploadRequested: () => void;
 };
 
 type AvatarConnectionCredentials = {
@@ -57,31 +58,12 @@ function formatScriptPreview(content: string) {
   return preview || 'Image uploaded.';
 }
 
-function TranscriptOverlay() {
-  const transcript = useTranscript({ interim: true, bufferSize: 8 });
-  const visibleTranscript = transcript.slice(-4);
+type LiveTranscriptEntry = {
+  id: string;
+  text: string;
+};
 
-  if (!visibleTranscript.length) {
-    return (
-      <div className="absolute bottom-4 left-4 right-4 rounded border border-white/10 bg-black/55 px-4 py-3 font-mono text-[11px] uppercase tracking-[0.18em] text-white/38 backdrop-blur-md">
-        Director audio live
-      </div>
-    );
-  }
-
-  return (
-    <div className="absolute bottom-4 left-4 right-4 max-h-36 overflow-hidden rounded border border-white/10 bg-black/62 px-4 py-3 backdrop-blur-md">
-      {visibleTranscript.map((entry) => (
-        <p key={entry.id} className="truncate font-mono text-xs text-white/70">
-          <span className="text-amber-100/60">{entry.participantIdentity}: </span>
-          {entry.text}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-function ConversationTracker({ chatHistory }: { chatHistory: ChatHistoryRow[] }) {
+function ScriptHistorySidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] }) {
   const visibleRows = chatHistory.slice(-8);
 
   return (
@@ -115,11 +97,45 @@ function ConversationTracker({ chatHistory }: { chatHistory: ChatHistoryRow[] })
   );
 }
 
+function LiveTranscriptSidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] }) {
+  const transcript = useTranscript({ interim: true, bufferSize: 12 }) as LiveTranscriptEntry[];
+  const liveRows = transcript
+    .filter((entry) => entry.text.trim().length > 0)
+    .slice(-8);
+
+  if (!liveRows.length) {
+    return <ScriptHistorySidebar chatHistory={chatHistory} />;
+  }
+
+  return (
+    <aside className="hidden h-full min-h-0 flex-col border-l border-white/10 bg-[#08080b] lg:flex">
+      <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/42">Live script</p>
+        <div className="h-2 w-2 animate-pulse rounded-full bg-amber-200/80" />
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-5">
+        {liveRows.map((entry) => (
+          <article key={entry.id} className="border-b border-white/8 pb-3 last:border-b-0">
+            <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/34">
+              Transcript
+            </p>
+            <p className="line-clamp-3 font-mono text-xs leading-relaxed text-amber-100/72">
+              {entry.text}
+            </p>
+          </article>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
 function DirectorCallFrame({
   chatHistory,
+  sidebar,
   children,
 }: {
   chatHistory: ChatHistoryRow[];
+  sidebar?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -135,7 +151,7 @@ function DirectorCallFrame({
         </div>
         {children}
       </div>
-      <ConversationTracker chatHistory={chatHistory} />
+      {sidebar || <ScriptHistorySidebar chatHistory={chatHistory} />}
     </div>
   );
 }
@@ -178,12 +194,21 @@ function AvatarConnectionStatus({
   );
 }
 
-function AvatarClientEvents({ onLayout }: { onLayout: (layout: LayoutMode) => void }) {
+function AvatarClientEvents({
+  onLayout,
+  onShowUploadRequested,
+}: {
+  onLayout: (layout: LayoutMode) => void;
+  onShowUploadRequested: () => void;
+}) {
   useClientEvent('set_avatar_layout', (args) => {
     const layout = layoutFromEvent(args);
     if (layout) onLayout(layout);
   });
-  useClientEvent('show_upload_dropzone', () => onLayout('upload'));
+  useClientEvent('show_upload_dropzone', () => {
+    onShowUploadRequested();
+    onLayout('upload');
+  });
   useClientEvent('highlight_review_panel', () => onLayout('review'));
   useClientEvent('focus_email_prompt', () => onLayout('email'));
 
@@ -208,6 +233,7 @@ export default function AvatarDirectorCall({
   showUpload,
   hasReviewPanel,
   shouldEndForProduction,
+  onShowUploadRequested,
 }: AvatarDirectorCallProps) {
   const [clientLayout, setClientLayout] = useState<LayoutMode>('stage');
   const [callEnded, setCallEnded] = useState(false);
@@ -319,17 +345,19 @@ export default function AvatarDirectorCall({
           onError={(error) => console.error('Director call error', error)}
           className="h-full overflow-hidden rounded border border-black bg-black shadow-[0_26px_90px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.08)]"
         >
-          <DirectorCallFrame chatHistory={chatHistory}>
+          <DirectorCallFrame
+            chatHistory={chatHistory}
+            sidebar={<LiveTranscriptSidebar chatHistory={chatHistory} />}
+          >
             <AvatarVideo className="absolute inset-0 h-full w-full object-cover" />
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0)_45%,rgba(0,0,0,0.74)_100%)]" />
-            <TranscriptOverlay />
             <div className="absolute bottom-4 right-4 z-10">
               <ControlBar showCamera={false} showScreenShare={false} className="!static !inset-auto !w-auto !bg-transparent !p-0 rounded-full border border-white/12 backdrop-blur-md" />
             </div>
           </DirectorCallFrame>
 
           <PageActions />
-          <AvatarClientEvents onLayout={setClientLayout} />
+          <AvatarClientEvents onLayout={setClientLayout} onShowUploadRequested={onShowUploadRequested} />
           <AutoEndOnProduction shouldEnd={shouldEndForProduction} />
         </AvatarCall>
       )}

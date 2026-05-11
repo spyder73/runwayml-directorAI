@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Film, MessageSquareText, PhoneCall, Play, Settings, Smartphone, Sparkles } from 'lucide-react';
+import { Film, MessageSquareText, PhoneCall, Settings, Smartphone, Sparkles } from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 import SettingsModal from '@/components/session/SettingsModal';
 
@@ -126,7 +126,7 @@ export default function StudioHome() {
         <Settings size={18} />
       </button>
 
-      <div className="relative z-10 flex w-full max-w-4xl flex-col items-center lg:ml-[30vw]">
+      <div className="relative z-10 flex w-full max-w-4xl flex-col items-center lg:ml-[44vw] lg:w-[min(52vw,760px)] lg:max-w-none">
         <motion.div
           initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
           animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
@@ -235,17 +235,22 @@ export default function StudioHome() {
                         );
                       })}
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleStart()}
-                      className="inline-flex items-center gap-2 border border-white/12 bg-white/[0.035] px-4 py-2 font-mono text-xs uppercase text-white/44 transition-colors hover:border-white/22 hover:text-white/70"
-                    >
-                      <Play size={14} fill="currentColor" />
-                      Begin the interview
-                    </button>
                   </div>
                 </div>
+              </div>
+
+              <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-white/10 bg-black/36 shadow-[0_20px_70px_rgba(0,0,0,0.36)]">
+                <video
+                  src="/landing/videos/BeforeStart.mp4"
+                  className="aspect-video w-full bg-black object-cover"
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  controls
+                  preload="metadata"
+                  aria-label="Before you start your life story interview"
+                />
               </div>
 
               {readiness && (

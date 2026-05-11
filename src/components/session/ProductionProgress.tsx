@@ -140,7 +140,7 @@ export default function ProductionProgress({ session, scenes, renderProgress, pi
     if (session.status === 'GENERATING_IMAGES') return { eyebrow: 'First pass', title: 'Composing scene frames', body: 'The first still images are taking shape. Each scene will fill in as its frame is ready.' };
     if (session.status === 'AWAITING_APPROVAL') return { eyebrow: 'Frame review', title: 'Approve the stills', body: 'Look over the scene images. If they feel right, I will turn them into narration and motion next.' };
     if (session.status === 'GENERATING_FINAL_ASSETS') return { eyebrow: 'Second pass', title: 'Filming and narration', body: 'The approved frames are becoming moving scenes with voiceover.' };
-    if (session.status === 'FAILED') return { eyebrow: 'Production paused', title: 'One scene needs another pass', body: 'Nothing has been replaced with pretend media. Retry will continue from the missing piece.' };
+    if (session.status === 'FAILED') return { eyebrow: 'Production paused', title: 'One scene needs another pass', body: 'Retry the scene that needs another pass to continue from the missing piece.' };
     if (session.status === 'PREVIEW_READY') return { eyebrow: 'Preview ready', title: "The Director's Cut", body: 'Your generated scenes are ready to watch.' };
     if (session.status === 'RENDERING') return { eyebrow: 'Final pass', title: 'Preparing your film', body: 'The preview is becoming the final downloadable video.' };
     return { eyebrow: 'Complete', title: 'Your film is ready', body: 'The final cut is ready to download.' };
@@ -187,9 +187,6 @@ export default function ProductionProgress({ session, scenes, renderProgress, pi
               <p className="font-mono text-xs uppercase tracking-[0.25em] text-red-100/70">Paused</p>
               <p className="mt-2 font-sans text-sm leading-relaxed text-red-50/80">{safeProductionPauseMessage(pipelineError)}</p>
             </div>
-            <button type="button" onClick={() => onRetry()} className="flex items-center gap-2 rounded-full border border-red-200/30 bg-white/10 px-4 py-2 font-mono text-xs uppercase tracking-widest text-red-50 transition-colors hover:bg-red-100 hover:text-black">
-              <RefreshCw size={14} /> Retry
-            </button>
           </div>
         </div>
       )}
