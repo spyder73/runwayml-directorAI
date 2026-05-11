@@ -22,6 +22,8 @@ test('avatar session tools stay within Runway limits and use max backend timeout
   assert.equal(new Set(avatarSessionTools.map((tool) => tool.name)).size, avatarSessionTools.length);
   assert.equal(avatarClientTools.some((tool) => tool.name === 'set_avatar_layout'), true);
   assert.equal(avatarClientTools.some((tool) => tool.name === 'focus_email_prompt'), true);
+  assert.equal(avatarBackendTools.some((tool) => tool.name === 'propose_film_treatment'), false);
+  assert.equal(avatarBackendTools.some((tool) => tool.name === 'lock_scene_outline'), false);
 
   for (const tool of avatarBackendTools) {
     assert.equal(tool.type, 'backend_rpc');
@@ -211,6 +213,76 @@ test('avatar profile fallback asks the missing onboarding question after name an
   database.close();
 });
 
+test('avatar scene outline draft locks production and ends the call', async () => {
+  const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
+  const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');
+
+  const database = new Database(':memory:');
+  initializeDatabaseSchema(database);
+  database.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run('user-1', 'user@example.com', 'hash');
+  database.prepare(`
+    INSERT INTO sessions (id, user_id, status, story_text, aspect_ratio, mode, interview_medium)
+    VALUES (?, ?, 'INTERVIEW_DYNAMIC', '', '16:9', 'life_story', 'voice')
+  `).run('session-1', 'user-1');
+  database.prepare(`
+    INSERT INTO avatar_call_sessions (id, session_id, runway_session_id, status)
+    VALUES (?, ?, ?, ?)
+  `).run('call-1', 'session-1', 'runway-1', 'RUNNING');
+
+  const productionStarts = [];
+  const tools = createAvatarRpcTools({
+    database,
+    appSessionId: 'session-1',
+    avatarCallSessionId: 'call-1',
+    runwaySessionId: 'runway-1',
+    productionRunner: async (sessionId, options) => {
+      productionStarts.push({ sessionId, sameDatabase: options.database === database });
+    },
+  });
+
+  const result = await tools.propose_scene_outline({
+    payloadJson: JSON.stringify({
+      directorReply: 'Here is the outline.',
+      treatment: {
+        title: 'A Small Film',
+        emotionalThesis: 'A life shaped by curiosity and chosen friends.',
+        narrativeArc: 'arrival, discovery, friendship, and creative purpose',
+        visualMotif: 'warm screens, winter streets, and handwritten plans',
+        narratorStyle: 'intimate first-person essay',
+        endingFeeling: 'quiet momentum',
+      },
+      scenes: [
+        {
+          title: 'Opening the Door',
+          summary: 'The protagonist arrives in a new city and starts looking for a shape to life.',
+          narratorText: 'I arrived with questions, a laptop, and the feeling that the story had only just begun.',
+          imagePrompt: 'Cinematic portrait of a young protagonist near a city window, warm practical light, intimate documentary tone.',
+          videoPrompt: 'Slow dolly toward the window as city lights shimmer and the protagonist turns toward the room.',
+          duration: 5,
+          emotionalPurpose: 'Begin with anticipation and self-recognition.',
+          protagonistVisible: false,
+        },
+      ],
+    }),
+  });
+
+  const session = database.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1');
+  const treatment = database.prepare('SELECT * FROM story_treatments WHERE session_id = ?').get('session-1');
+  const scenes = database.prepare('SELECT * FROM scenes WHERE session_id = ?').all('session-1');
+  const tasks = database.prepare('SELECT kind, status FROM media_tasks WHERE session_id = ? ORDER BY created_at ASC').all('session-1');
+
+  assert.equal(result.ok, true);
+  assert.equal(result.endCall, true);
+  assert.equal(result.layout, 'email');
+  assert.match(result.directorReply, /I'll make sure to send you a draft of my idea\./);
+  assert.equal(session.status, 'GENERATING_IMAGES');
+  assert.equal(treatment.status, 'approved');
+  assert.equal(scenes.length, 1);
+  assert.deepEqual(tasks.map((task) => task.kind), ['generate_scene_frame', 'generate_narration', 'generate_video_shot', 'render_final']);
+  assert.deepEqual(productionStarts, [{ sessionId: 'session-1', sameDatabase: true }]);
+  database.close();
+});
+
 test('avatar prompts and paste-ready docs preserve director behavior', () => {
   const {
     buildAvatarKnowledge,
@@ -230,6 +302,13 @@ test('avatar prompts and paste-ready docs preserve director behavior', () => {
   assert.match(startScript, /what is your name/i);
   assert.match(knowledge, /LifeStory opening/);
   assert.match(knowledge, /Reference gathering/);
+  assert.match(knowledge, /Prioritize photos of the protagonist/i);
+  assert.match(knowledge, /one important friend/i);
+  assert.match(knowledge, /Place images are low priority/i);
+  assert.match(knowledge, /call propose_scene_outline once/i);
+  assert.match(knowledge, /Do not call propose_film_treatment/i);
+  assert.match(knowledge, /I'll make sure to send you a draft of my idea/i);
+  assert.match(knowledge, /end the call/i);
 
   for (const fileName of ['personality.md', 'start-script.md', 'knowledge.md']) {
     const source = fs.readFileSync(new URL(`../docs/runway-character/${fileName}`, import.meta.url), 'utf8');

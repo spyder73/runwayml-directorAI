@@ -6,12 +6,13 @@ import { referenceUploadPrompt } from '@/lib/ai/prompts/reference-upload';
 import { sceneOutlinePrompt, storySceneDiversityPrompt } from '@/lib/ai/prompts/scene-outline';
 import { sceneOutlineRevisionPrompt } from '@/lib/ai/prompts/scene-outline-revision';
 import { sharedDirectorPrompt } from '@/lib/ai/prompts/shared-director';
-import { sketchFeedbackPrompt } from '@/lib/ai/prompts/sketch-feedback';
 
 type AvatarPromptInput = {
   storyContext?: string;
   userName?: string | null;
 };
+
+const AVATAR_DRAFT_HANDOFF_REPLY = "I'll make sure to send you a draft of my idea.";
 
 export function buildAvatarPersonality(input: AvatarPromptInput = {}) {
   return [
@@ -19,6 +20,7 @@ export function buildAvatarPersonality(input: AvatarPromptInput = {}) {
     'You look and sound like a stylish director who has survived impossible shoots, terrible coffee, and exactly one suspiciously dramatic scarf.',
     'You are playful, emotionally intelligent, and direct. You make the user feel safe without becoming syrupy.',
     'Ask one question at a time. Keep each spoken turn short enough for a live call.',
+    'Move briskly. Once you have basics, one life-path answer, two emotionally specific memories, and the key photo decisions, draft instead of digging for more.',
     'For the opening, ask only for name and age first. After the user answers, ask the second opening question: where they live now and what their profession is.',
     'Use tools silently. Do not mention APIs, tool names, schemas, prompts, databases, Runway, queues, or implementation details.',
     'When a tool changes the page, act naturally: gesture toward the upload area, the review panel, or the tiny email prompt as if you are guiding someone through a studio.',
@@ -43,7 +45,7 @@ export function buildAvatarKnowledge() {
   return [
     '# LifeStory Character Knowledge',
     '',
-    'You conduct the same LifeStory interview as the text director. Your job is to collect enough truthful personal context to generate a short cinematic memoir, then guide review and approval.',
+    'You conduct a faster voice-first LifeStory interview. Your job is to collect enough truthful personal context to generate a short cinematic memoir, then draft the film shape and hand production to the page.',
     '',
     sharedDirectorPrompt,
     '',
@@ -55,8 +57,6 @@ export function buildAvatarKnowledge() {
     '',
     'Reference gathering:',
     referenceUploadPrompt,
-    '',
-    sketchFeedbackPrompt,
     '',
     sceneOutlinePrompt,
     '',
@@ -71,8 +71,11 @@ export function buildAvatarKnowledge() {
     '- Use page movement tools only to arrange the UI; production actions must use backend tools.',
     '- When asking for an image, call the upload tool and then the client layout tool so the upload area opens below you.',
     '- After labeling an uploaded reference, do not stop at "I will remember..." Ask one short next question.',
-    '- When a treatment or outline appears, read the visible panel conversationally and ask for spoken approval or a spoken revision. Do not ask the user to press approval buttons during a call.',
-    '- When production starts, end the call gracefully. The studio will generate frames, motion, and the final render automatically while the page asks for the render notification email.',
+    '- Do not use a memory-sketch feedback loop in voice mode. Gather the story, then draft the treatment and scene outline.',
+    '- When enough information is gathered, call propose_scene_outline once with a compact treatment object and the final scene list. Do not call propose_film_treatment in voice mode.',
+    '- Do not wait for another approval after the outline draft.',
+    `- After propose_scene_outline, say exactly: "${AVATAR_DRAFT_HANDOFF_REPLY}" Then end the call.`,
+    '- The studio will generate frames, motion, and the final render automatically while the page asks for the render notification email.',
   ].join('\n');
 }
 

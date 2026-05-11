@@ -239,6 +239,25 @@ test('voice upload client event can reveal the upload panel before the backend r
   assert.match(uploadSource, /Drop the reference here/);
 });
 
+test('voice upload layout releases after the upload panel is no longer visible', () => {
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+
+  assert.match(callSource, /clientLayout === 'upload' && showUpload/);
+  assert.doesNotMatch(callSource, /if \(clientLayout !== 'stage'\) return clientLayout/);
+});
+
+test('voice session keeps avatar frame viewport-bound and scrolls transcript internally', () => {
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
+
+  assert.match(pageSource, /h-\[100dvh\]/);
+  assert.match(pageSource, /max-h-\[100dvh\]/);
+  assert.match(callSource, /max-h-\[calc\(100dvh-2rem\)\]/);
+  assert.match(callSource, /style=\{\{ aspectRatio: 'auto' \}\}/);
+  assert.match(callSource, /data-avatar-transcript-scroll/);
+  assert.match(callSource, /overflow-y-auto/);
+});
+
 test('voice session shows avatar connection progress and errors instead of a blank stage', () => {
   const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
 
@@ -275,6 +294,18 @@ test('render notification email prompt is available after production handoff in 
   assert.match(pageSource, /const showRenderEmailPrompt = shouldOfferRenderNotificationEmail/);
   assert.match(pageSource, /!session\.render_notification_email/);
   assert.doesNotMatch(pageSource, /const showRenderEmailPrompt = isVoiceMode && shouldEndDirectorCall/);
+});
+
+test('render completion email points users to a finished render page', () => {
+  const emailSource = fs.readFileSync(new URL('../src/lib/email/smtp.ts', import.meta.url), 'utf8');
+  const notificationSource = fs.readFileSync(new URL('../src/lib/final-render-notification.ts', import.meta.url), 'utf8');
+  const pageSource = fs.readFileSync(new URL('../src/app/render/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(emailSource, /\/render\/\$\{encodeURIComponent\(sessionId\)\}/);
+  assert.match(notificationSource, /sessionId,/);
+  assert.match(pageSource, /Your film is ready/);
+  assert.match(pageSource, /final_video_url/);
+  assert.match(pageSource, /Download film/);
 });
 
 test('home page checks whether live demo production is ready', () => {

@@ -64,7 +64,7 @@ type LiveTranscriptEntry = {
 };
 
 function ScriptHistorySidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] }) {
-  const visibleRows = chatHistory.slice(-8);
+  const visibleRows = chatHistory.slice(-20);
 
   return (
     <aside className="hidden h-full min-h-0 flex-col border-l border-white/10 bg-[#08080b] lg:flex">
@@ -72,7 +72,7 @@ function ScriptHistorySidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] }
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/42">Live script</p>
         <div className="h-2 w-2 animate-pulse rounded-full bg-amber-200/80" />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-5 pr-3" data-avatar-transcript-scroll>
         {visibleRows.length === 0 ? (
           <p className="mt-auto border-t border-white/10 pt-4 font-mono text-xs leading-relaxed text-white/38">
             Waiting for the first line.
@@ -98,10 +98,10 @@ function ScriptHistorySidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] }
 }
 
 function LiveTranscriptSidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] }) {
-  const transcript = useTranscript({ interim: true, bufferSize: 12 }) as LiveTranscriptEntry[];
+  const transcript = useTranscript({ interim: true, bufferSize: 40 }) as LiveTranscriptEntry[];
   const liveRows = transcript
     .filter((entry) => entry.text.trim().length > 0)
-    .slice(-8);
+    .slice(-20);
 
   if (!liveRows.length) {
     return <ScriptHistorySidebar chatHistory={chatHistory} />;
@@ -113,7 +113,7 @@ function LiveTranscriptSidebar({ chatHistory }: { chatHistory: ChatHistoryRow[] 
         <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/42">Live script</p>
         <div className="h-2 w-2 animate-pulse rounded-full bg-amber-200/80" />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-5">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain p-5 pr-3" data-avatar-transcript-scroll>
         {liveRows.map((entry) => (
           <article key={entry.id} className="border-b border-white/8 pb-3 last:border-b-0">
             <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-white/34">
@@ -247,9 +247,11 @@ export default function AvatarDirectorCall({
   const avatarId = process.env.NEXT_PUBLIC_RUNWAY_CHARACTER_AVATAR_ID || 'lifestory-director';
 
   const computedLayout: LayoutMode = useMemo(() => {
-    if (clientLayout !== 'stage') return clientLayout;
+    if (clientLayout === 'upload' && showUpload) return 'upload';
     if (showUpload) return 'upload';
+    if (hasReviewPanel && (clientLayout === 'review' || clientLayout === 'email' || clientLayout === 'docked')) return clientLayout;
     if (hasReviewPanel) return 'review';
+    if (clientLayout === 'docked') return 'docked';
     return docked ? 'docked' : 'stage';
   }, [clientLayout, docked, hasReviewPanel, showUpload]);
 
@@ -326,7 +328,7 @@ export default function AvatarDirectorCall({
 
   return (
     <section
-      className={`director-call fixed z-20 transition-all duration-500 ${isDocked ? 'director-call--docked left-1/2 -translate-x-1/2' : ''} ${stageClass}`}
+      className={`director-call fixed z-20 max-h-[calc(100dvh-2rem)] min-h-0 overflow-hidden transition-all duration-500 ${isDocked ? 'director-call--docked left-1/2 -translate-x-1/2' : ''} ${stageClass}`}
       data-avatar-target="director-call"
     >
       {connection.status !== 'ready' ? (
@@ -343,7 +345,8 @@ export default function AvatarDirectorCall({
           video={false}
           onEnd={() => setCallEnded(true)}
           onError={(error) => console.error('Director call error', error)}
-          className="h-full overflow-hidden rounded border border-black bg-black shadow-[0_26px_90px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.08)]"
+          className="h-full min-h-0 overflow-hidden rounded border border-black bg-black shadow-[0_26px_90px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.08)]"
+          style={{ aspectRatio: 'auto' }}
         >
           <DirectorCallFrame
             chatHistory={chatHistory}

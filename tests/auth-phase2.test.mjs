@@ -117,6 +117,23 @@ test('SMTP envelope addresses use bare mailboxes for friendly From headers', () 
   assert.equal(smtpEnvelopeAddress('Lifestory <no-reply@example.com>'), '<no-reply@example.com>');
 });
 
+test('final render email links to the render finished page when session id is available', () => {
+  const { buildFinalRenderUrl } = jiti('../src/lib/email/smtp.ts');
+  const previousAppUrl = process.env.APP_URL;
+  process.env.APP_URL = 'https://app.example.com/';
+
+  try {
+    assert.equal(buildFinalRenderUrl('/api/media/final-video', 'session 1'), 'https://app.example.com/render/session%201');
+    assert.equal(buildFinalRenderUrl('/api/media/final-video'), 'https://app.example.com/api/media/final-video');
+  } finally {
+    if (previousAppUrl === undefined) {
+      delete process.env.APP_URL;
+    } else {
+      process.env.APP_URL = previousAppUrl;
+    }
+  }
+});
+
 test('auth routes register, require confirmation for login, verify email, login, and logout', async () => {
   const dbModule = jiti('../src/lib/db.ts');
   const db = dbModule.default;

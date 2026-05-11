@@ -140,10 +140,35 @@ type CreateAvatarRpcToolsInput = {
   appSessionId: string;
   avatarCallSessionId: string;
   runwaySessionId: string;
+  productionRunner?: (sessionId: string, options: { database: SqliteDatabase }) => Promise<unknown>;
 };
+
+const AVATAR_DRAFT_HANDOFF_REPLY = "I'll make sure to send you a draft of my idea.";
+const avatarSceneOutlinePayloadSchema = proposeSceneOutlineSchema.extend({
+  treatment: filmTreatmentSchema.optional(),
+});
+
+async function defaultProductionRunner(sessionId: string, options: { database: SqliteDatabase }) {
+  const { runAutomaticProductionPipeline } = await import('@/lib/pipeline_media');
+  return runAutomaticProductionPipeline(sessionId, { database: options.database });
+}
 
 export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<string, ToolHandler> {
   const { database, appSessionId, avatarCallSessionId, runwaySessionId } = input;
+  const productionRunner = input.productionRunner || defaultProductionRunner;
+
+  function startAutomaticProduction(toolName: string) {
+    productionRunner(appSessionId, { database }).catch((error) => {
+      recordAvatarCallEvent(database, {
+        avatarCallSessionId,
+        sessionId: appSessionId,
+        runwaySessionId,
+        eventType: 'production_queue_error',
+        toolName,
+        errorMessage: safeErrorMessage(error),
+      });
+    });
+  }
 
   async function runTool(
     toolName: string,
@@ -272,17 +297,22 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
       };
     }),
     propose_scene_outline: (args) => runTool('propose_scene_outline', args, () => {
-      const payload = parsePayloadJson(args, proposeSceneOutlineSchema);
+      const payload = parsePayloadJson(args, avatarSceneOutlinePayloadSchema);
+      const existingTreatment = loadStoryBucket(database, appSessionId).treatment;
+      if (!existingTreatment && payload.treatment) {
+        proposeFilmTreatment(database, appSessionId, payload.treatment);
+      }
       approveFilmTreatment(database, appSessionId);
       const outline = proposeSceneOutline(database, appSessionId, payload);
+      const result = lockSceneOutlineForProduction(database, appSessionId);
+      startAutomaticProduction('propose_scene_outline');
       return {
         ok: true,
         sceneCount: outline.length,
-        directorReply: ensureProactiveDirectorReply(
-          payload.directorReply || payload.chatMessage || 'I drafted the scene outline below.',
-          { fallbackQuestion: 'Do these scenes feel right enough to send into production?' },
-        ),
-        layout: 'review',
+        createdScenes: result.createdScenes,
+        endCall: true,
+        directorReply: AVATAR_DRAFT_HANDOFF_REPLY,
+        layout: 'email',
       };
     }),
     revise_scene_outline: (args) => runTool('revise_scene_outline', args, () => {
@@ -297,16 +327,7 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
     lock_scene_outline: (args) => runTool('lock_scene_outline', args, () => {
       lockSceneOutlineSchema.parse(args);
       const result = lockSceneOutlineForProduction(database, appSessionId);
-      import('@/lib/pipeline_media').then(({ runAutomaticProductionPipeline }) => runAutomaticProductionPipeline(appSessionId)).catch((error) => {
-        recordAvatarCallEvent(database, {
-          avatarCallSessionId,
-          sessionId: appSessionId,
-          runwaySessionId,
-          eventType: 'production_queue_error',
-          toolName: 'lock_scene_outline',
-          errorMessage: safeErrorMessage(error),
-        });
-      });
+      startAutomaticProduction('lock_scene_outline');
       return {
         ok: true,
         endCall: true,

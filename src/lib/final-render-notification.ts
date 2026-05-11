@@ -17,6 +17,7 @@ export async function notifyFinalRenderReady(database: SqliteDatabase, sessionId
   const result = await sendFinalRenderEmail({
     to: session.render_notification_email,
     videoUrl,
+    sessionId,
   });
 
   if (result.sent) {

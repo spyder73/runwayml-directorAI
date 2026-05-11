@@ -11,6 +11,7 @@ export type SendVerificationEmailInput = {
 export type SendFinalRenderEmailInput = {
   to: string;
   videoUrl: string;
+  sessionId?: string;
 };
 
 export type SendEmailResult = {
@@ -28,7 +29,8 @@ export function buildVerificationUrl(token: string) {
   return `${appUrl()}/verify-email?token=${encodeURIComponent(token)}`;
 }
 
-export function buildFinalRenderUrl(videoUrl: string) {
+export function buildFinalRenderUrl(videoUrl: string, sessionId?: string) {
+  if (sessionId) return `${appUrl()}/render/${encodeURIComponent(sessionId)}`;
   if (/^https?:\/\//i.test(videoUrl)) return videoUrl;
   return `${appUrl()}${videoUrl.startsWith('/') ? videoUrl : `/${videoUrl}`}`;
 }
@@ -206,7 +208,7 @@ export async function sendVerificationEmail(input: SendVerificationEmailInput): 
 }
 
 export async function sendFinalRenderEmail(input: SendFinalRenderEmailInput): Promise<SendEmailResult> {
-  const videoUrl = buildFinalRenderUrl(input.videoUrl);
+  const videoUrl = buildFinalRenderUrl(input.videoUrl, input.sessionId);
 
   if (!smtpHostConfigured()) {
     return { sent: false, reason: 'SMTP not configured', videoUrl };

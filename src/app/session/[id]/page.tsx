@@ -434,7 +434,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         : 'Type your response...';
 
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden bg-[#0A0A0F] font-serif text-white">
+    <main className="relative flex h-[100dvh] max-h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-[#0A0A0F] font-serif text-white">
       <AmbientFractalBackground intensity="session" />
 
       {isVoiceMode && (
@@ -464,8 +464,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </button>
       </header>
 
-      <div className={`relative z-[1] flex flex-1 flex-col overflow-y-auto px-4 md:px-20 ${
-        isVoiceMode ? (callShouldDock ? 'pt-[23rem]' : 'pt-[calc(100vh+2rem)]') : 'pt-24'
+      <div className={`relative z-[1] flex min-h-0 flex-1 flex-col overflow-y-auto px-4 md:px-20 ${
+        isVoiceMode ? (callShouldDock ? 'pt-[23rem]' : 'pt-[calc(100dvh+2rem)]') : 'pt-24'
       } ${showReferenceRequest && !isReferenceDescribeDraft ? 'pb-80 md:pb-72' : 'pb-36'}`}>
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
           {!isVoiceMode && (

@@ -138,18 +138,8 @@ export const avatarBackendTools = [
   ]),
   backendTool('add_reference_subject', 'Attach an uploaded or described reference to a named person, place, or object. Pass payloadJson. The reply must keep the conversation moving with one follow-up.'),
   backendTool('save_reference_description', 'Save visual details when the user describes a reference instead of uploading. Pass payloadJson with one next follow-up question.'),
-  backendTool('record_memory_sketch', 'Record a lightweight memory sketch candidate without waiting on image generation. Pass payloadJson.'),
-  backendTool('save_sketch_feedback', 'Record whether the user accepted, rejected, or revised a memory sketch. Pass payloadJson.'),
-  backendTool('propose_film_treatment', 'Save the reviewable film treatment before scene outline. Pass payloadJson.'),
-  backendTool('propose_scene_outline', 'Save the reviewable scene outline. Pass payloadJson.'),
+  backendTool('propose_scene_outline', 'Save the film treatment and scene outline in one final draft, immediately lock it for automatic production, and end the voice call. Pass payloadJson with treatment when no treatment exists yet.'),
   backendTool('revise_scene_outline', 'Revise one scene outline item from the user feedback. Pass payloadJson.'),
-  backendTool('lock_scene_outline', 'Lock the approved outline and start automatic production through final render. Use only after clear spoken user approval.', [
-    {
-      name: 'confirmation',
-      type: 'string',
-      description: 'Short approval phrase from the user.',
-    },
-  ]),
 ] satisfies AvatarBackendTool[];
 
 export const avatarSessionTools = [
