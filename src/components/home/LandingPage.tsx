@@ -11,12 +11,12 @@ const steps = [
   {
     icon: Sparkles,
     title: 'Tell the story',
-    body: 'Start with the people, places, turning points, and small details that still feel alive when you say them out loud.',
+    body: 'Nico begins with the people, places, turning points, and small details that still feel alive when you say them out loud.',
   },
   {
     icon: WandSparkles,
     title: 'Shape the treatment',
-    body: 'A warm director voice turns your answers into a film shape you can read, revise, and approve before anything gets made.',
+    body: 'He turns your answers into a film shape you can read, revise, and approve before anything gets made.',
   },
   {
     icon: Film,
@@ -28,17 +28,19 @@ const steps = [
 const memoryImages = [
   {
     src: '/landing/memory-detail.png',
-    alt: 'A blue radio and family photos on a sunlit kitchen counter',
+    alt: 'Nico Hale listening beside a blue radio and family photos on a sunlit kitchen counter',
     title: 'It starts where real stories always start: a detail.',
-    body: 'The blue radio. The summer kitchen. The way someone laughed before telling the same story again. Lifestory listens for the pieces that make a life feel unmistakably yours.',
+    body: 'The blue radio. The summer kitchen. The way someone laughed before telling the same story again. Nico listens for the pieces that make a life feel unmistakably yours.',
   },
   {
     src: '/landing/director-desk.png',
-    alt: 'Hands arranging old photographs beside a film editing desk',
+    alt: 'Nico Hale arranging old photographs beside a film editing desk',
     title: "Not a prompt box. A director's room.",
-    body: 'You are not asked to engineer a perfect prompt. You talk through the memories, choose what feels true, and approve the film treatment before the story moves into scenes.',
+    body: 'You are not asked to engineer a perfect prompt. You talk with a director, choose what feels true, and approve the film treatment before the story moves into scenes.',
   },
 ];
+
+const heroIntroLine = "Hey, I'm Nico Hale, your content director.";
 
 export default function LandingPage({ appUrl }: LandingPageProps) {
   return (
@@ -69,7 +71,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
         <div className="absolute inset-x-0 top-0 -z-10 h-full overflow-hidden border-y border-white/10">
           <Image
             src="/landing/hero.png"
-            alt="A family gathered around old photos in warm projector light"
+            alt="Nico Hale guiding a family through old photos in warm projector light"
             fill
             priority
             sizes="100vw"
@@ -81,15 +83,18 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
 
         <div className="flex min-h-[58svh] max-w-3xl flex-col justify-center">
           <p className="mb-6 font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/78">
-            A short film from a life only you can tell
+            Meet Nico Hale
           </p>
           <h1 className="max-w-4xl font-serif text-6xl font-light leading-[0.92] tracking-normal text-white sm:text-7xl lg:text-8xl">
             Lifestory
           </h1>
+          <p className="mt-6 max-w-2xl font-serif text-3xl font-light leading-tight text-white/92 sm:text-4xl">
+            {heroIntroLine}
+          </p>
           <p className="mt-7 max-w-2xl text-xl leading-8 text-white/78 sm:text-2xl sm:leading-9">
-            Tell it the way you remember it: the kitchen light, the street you grew up on,
-            the laugh everyone still quotes. Lifestory turns those details into a cinematic
-            memoir you can watch, share, and keep.
+            Tell it the way you remember it: bring me the kitchen light, the street you grew up on,
+            the laugh everyone still quotes. I&apos;ll help shape those details into a short film
+            from a life only you can tell.
           </p>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <Link
@@ -109,18 +114,31 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
       </section>
 
       <section className="relative z-10 bg-[#11100D] px-5 py-14 sm:px-8">
-        <div className="mx-auto grid w-full max-w-6xl gap-8 md:grid-cols-[0.88fr_1.12fr] md:items-end">
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#9ED8C9]/62">The invitation</p>
-            <h2 className="mt-4 max-w-2xl font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
-              Your life already has the scenes. The film is waiting for a way in.
-            </h2>
+        <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[0.9fr_1.1fr] md:items-center">
+          <div className="relative aspect-[4/5] overflow-hidden border border-white/10 md:aspect-[3/4]">
+            <Image
+              src="/landing/director-studio.png"
+              alt="Nico Hale, the AI content director, seated in his warm library studio"
+              fill
+              sizes="(max-width: 768px) 100vw, 38vw"
+              className="object-cover object-[50%_30%]"
+            />
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_48%,rgba(8,8,12,0.64)_100%)]" />
           </div>
-          <p className="max-w-2xl text-lg leading-8 text-white/62">
-            Lifestory is for the stories that feel too good to leave in a camera roll:
-            a childhood street, a parent&apos;s kitchen, a first apartment, a goodbye, a comeback,
-            the little rituals that somehow explain everything.
-          </p>
+          <div className="max-w-2xl">
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#9ED8C9]/62">AI content director</p>
+            <h2 className="mt-4 max-w-2xl font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
+              The room matters. So does the person asking the questions.
+            </h2>
+            <p className="mt-6 text-lg leading-8 text-white/62">
+              Nico is the steady presence inside Lifestory: part interviewer, part film editor,
+              part patient listener. He helps you find the thread in the stories that feel too
+              good to leave in a camera roll.
+            </p>
+            <p className="mt-5 font-mono text-xs uppercase tracking-[0.24em] text-[#F4D58D]/58">
+              A short film from a life only you can tell
+            </p>
+          </div>
         </div>
       </section>
 
@@ -192,7 +210,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
           <div className="relative aspect-[16/10] overflow-hidden border border-white/10">
             <Image
               src="/landing/final-screening.png"
-              alt="A family watching a personal film projected in a cozy living room"
+              alt="Nico Hale seated beside a family watching a personal film projection"
               fill
               sizes="(max-width: 768px) 100vw, 45vw"
               className="object-cover"

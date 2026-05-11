@@ -40,6 +40,9 @@ test('home route chooses between landing and studio from request host', () => {
 test('public landing page links visitors into the app subdomain', () => {
   const source = fs.readFileSync(new URL('../src/components/home/LandingPage.tsx', import.meta.url), 'utf8');
 
+  assert.match(source, /Meet Nico Hale/);
+  assert.match(source, /Hey, I'm Nico Hale, your content director/);
+  assert.match(source, /AI content director/);
   assert.match(source, /A short film from a life only you can tell/);
   assert.match(source, /Tell it the way you remember it/);
   assert.match(source, /href=\{`\$\{appUrl\}\/register`\}/);
@@ -51,6 +54,7 @@ test('public landing page links visitors into the app subdomain', () => {
   assert.match(source, /\/landing\/memory-detail/);
   assert.match(source, /\/landing\/director-desk/);
   assert.match(source, /\/landing\/final-screening/);
+  assert.match(source, /\/landing\/director-studio/);
   assert.doesNotMatch(source, /Your account owns its media/);
   assert.doesNotMatch(source, /authenticated routes/);
   assert.doesNotMatch(source, /generation keys stay encrypted/);
