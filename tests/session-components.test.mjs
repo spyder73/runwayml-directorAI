@@ -292,6 +292,16 @@ test('voice uploads notify the live avatar room after a reference lands', () => 
   assert.match(uploadRouteSource, /session\.interview_medium !== 'voice'/);
 });
 
+test('voice uploads before a formal request count as the protagonist reference', () => {
+  const uploadRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/upload/route.ts', import.meta.url), 'utf8');
+
+  assert.match(uploadRouteSource, /voiceProtagonistUpload/);
+  assert.match(uploadRouteSource, /session\.interview_medium === 'voice'/);
+  assert.match(uploadRouteSource, /!session\.user_selfie_url/);
+  assert.match(uploadRouteSource, /uploadedProtagonistPath/);
+  assert.match(uploadRouteSource, /targetType === 'protagonist'/);
+});
+
 test('voice upload layout releases after the upload panel is no longer visible', () => {
   const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
 

@@ -184,6 +184,52 @@ test('avatar reference tool replies with a follow-up after labeling an upload', 
   database.close();
 });
 
+test('avatar reference request tool continues when protagonist photo is already handled', async () => {
+  const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
+  const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');
+  const { createReferenceAsset } = jiti('../src/lib/story-bucket.ts');
+
+  const database = new Database(':memory:');
+  initializeDatabaseSchema(database);
+  database.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run('user-1', 'user@example.com', 'hash');
+  database.prepare(`
+    INSERT INTO sessions (id, user_id, status, story_text, aspect_ratio, mode, interview_medium, user_selfie_url)
+    VALUES (?, ?, 'INTERVIEW_DYNAMIC', '', '16:9', 'life_story', 'voice', ?)
+  `).run('session-1', 'user-1', '/api/media/selfie');
+  database.prepare(`
+    INSERT INTO avatar_call_sessions (id, session_id, runway_session_id, status)
+    VALUES (?, ?, ?, ?)
+  `).run('call-1', 'session-1', 'runway-1', 'RUNNING');
+  createReferenceAsset(database, 'session-1', {
+    localUrl: '/api/media/selfie',
+    targetType: 'protagonist',
+    targetLabel: 'Maya',
+    usagePermissions: 'allowed',
+    source: 'upload',
+  });
+
+  const tools = createAvatarRpcTools({
+    database,
+    appSessionId: 'session-1',
+    avatarCallSessionId: 'call-1',
+    runwaySessionId: 'runway-1',
+  });
+
+  const result = await tools.request_reference_upload({
+    targetType: 'protagonist',
+    targetLabel: 'Maya',
+    promptText: 'Do you have a photo you would like to use?',
+    reason: 'Keep the protagonist visually consistent.',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.requestId, null);
+  assert.equal(result.alreadyHandled, true);
+  assert.doesNotMatch(result.directorReply, /photo.*upload|upload.*photo/i);
+  assert.notEqual(result.layout, 'upload');
+  database.close();
+});
+
 test('avatar profile fallback asks the missing onboarding question after name and age', async () => {
   const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
   const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');

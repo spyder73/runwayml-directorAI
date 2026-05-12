@@ -66,7 +66,9 @@ export async function POST(req: NextRequest) {
       targetLabel: string;
       stableTag: string;
     }> = [];
+    let uploadedProtagonistPath: string | null = null;
     const activeRequest = getActiveReferenceRequest(db, sessionId);
+    const voiceProtagonistUpload = session.interview_medium === 'voice' && !session.user_selfie_url && !activeRequest;
     const visionModel = files.length > 0 ? openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite') : null;
 
     // Save files locally
@@ -123,8 +125,8 @@ export async function POST(req: NextRequest) {
       db.prepare('INSERT INTO user_uploads (id, session_id, file_path, vision_description) VALUES (?, ?, ?, ?)')
         .run(uuidv4(), sessionId, filePath, visionDescription);
 
-      const targetType = activeRequest?.target_type || (session.status === 'AWAITING_SELFIE' ? 'protagonist' : 'reference');
-      const targetLabel = activeRequest?.target_label || (targetType === 'protagonist' ? 'protagonist' : 'reference');
+      const targetType = activeRequest?.target_type || (session.status === 'AWAITING_SELFIE' || voiceProtagonistUpload ? 'protagonist' : 'reference');
+      const targetLabel = activeRequest?.target_label || (targetType === 'protagonist' ? (session.user_name || 'protagonist') : 'reference');
       const referenceAsset = createReferenceAsset(db, sessionId, {
         localUrl: filePath,
         targetType,
@@ -135,6 +137,9 @@ export async function POST(req: NextRequest) {
       });
         
       uploadedPaths.push(filePath);
+      if (targetType === 'protagonist' && !uploadedProtagonistPath) {
+        uploadedProtagonistPath = filePath;
+      }
       uploadedReferences.push({
         path: filePath,
         targetType,
@@ -150,8 +155,8 @@ export async function POST(req: NextRequest) {
        db.prepare('INSERT INTO chat_history (id, session_id, role, content) VALUES (?, ?, ?, ?)')
         .run(messageId, sessionId, 'user', userMsg);
         
-       if (session.status === 'AWAITING_SELFIE' || activeRequest?.target_type === 'protagonist') {
-           db.prepare('UPDATE sessions SET user_selfie_url = ? WHERE id = ?').run(uploadedPaths[0], sessionId);
+       if (uploadedProtagonistPath) {
+           db.prepare('UPDATE sessions SET user_selfie_url = ? WHERE id = ?').run(uploadedProtagonistPath, sessionId);
        }
 
        if (session.status === 'AWAITING_SELFIE' || session.status === 'AWAITING_REFERENCE') {

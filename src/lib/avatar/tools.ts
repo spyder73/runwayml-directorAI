@@ -9,6 +9,7 @@ import {
   approveFilmTreatment,
   createReferenceUploadRequest,
   getActiveReferenceRequest,
+  hasProtagonistReferenceDecision,
   loadStoryBucket,
   lockSceneOutlineForProduction,
   proposeFilmTreatment,
@@ -233,6 +234,14 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
     request_reference_upload: (args) => runTool('request_reference_upload', args, () => {
       const payload = requestReferenceUploadSchema.parse(args);
       const request = createReferenceUploadRequest(database, appSessionId, payload);
+      if (!request && payload.targetType === 'protagonist' && payload.referenceScope !== 'scene' && hasProtagonistReferenceDecision(database, appSessionId)) {
+        return {
+          ok: true,
+          alreadyHandled: true,
+          requestId: null,
+          directorReply: 'I have your photo, thank you. Give me the short version of the path that led you here in life.',
+        };
+      }
       return {
         ok: true,
         requestId: request?.id || null,
