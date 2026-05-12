@@ -52,7 +52,7 @@ test('shot planner adds continuity image prompts for split scenes', () => {
   assert.doesNotMatch(shots[1].referencePrompt, /sub-scene|previous action|already occurred|do not reset|Base scene|This shot begins/i);
 });
 
-test('shot planner collapses weak short splits without a new perspective', () => {
+test('shot planner keeps weak short splits to allow AI dynamic cuts', () => {
   const { normalizeShotPlan } = jiti('../src/lib/shot_planner.ts');
 
   const shots = normalizeShotPlan(
@@ -64,12 +64,11 @@ test('shot planner collapses weak short splits without a new perspective', () =>
     ],
   );
 
-  assert.equal(shots.length, 1);
-  assert.equal(shots[0].duration, 8);
-  assert.match(shots[0].prompt, /shop window/);
+  assert.equal(shots.length, 2);
+  assert.equal(shots[0].duration, 4);
 });
 
-test('shot planner collapses same-background frontal coverage despite vague angle reasons', () => {
+test('shot planner keeps same-background frontal coverage to allow AI dynamic cuts', () => {
   const { normalizeShotPlan } = jiti('../src/lib/shot_planner.ts');
 
   const shots = normalizeShotPlan(
@@ -93,9 +92,8 @@ test('shot planner collapses same-background frontal coverage despite vague angl
     ],
   );
 
-  assert.equal(shots.length, 1);
-  assert.equal(shots[0].duration, 9);
-  assert.match(shots[0].prompt, /community college/);
+  assert.equal(shots.length, 3);
+  assert.equal(shots[0].duration, 3);
 });
 
 test('shot planner uses visible start state for accepted continuation frames', () => {

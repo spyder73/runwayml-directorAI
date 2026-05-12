@@ -20,6 +20,7 @@ import { parseReferenceAssetIds, prepareSceneReferences } from './production-ref
 import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
 import { logMediaGeneration, type MediaGenerationLogDetails } from './media-logging';
 import { repairRunwayVideoPromptForValidation } from './video-prompt-repair';
+import { repairRunwayImagePromptForValidation } from './image-prompt-repair';
 import {
   generateImageAsset,
   generateSpeechAsset,
@@ -478,7 +479,22 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     assets: referenceAssets,
     entities: storyEntities,
   });
-  const promptText = await ensureSafePrompt(preparedReferences.promptText, { openrouterApiKey });
+  const moderatedPromptText = await ensureSafePrompt(preparedReferences.promptText, { openrouterApiKey });
+
+  const repairedPrompt = await repairRunwayImagePromptForValidation({
+    promptText: moderatedPromptText,
+    referenceImages: preparedReferences.referenceImages,
+    openrouterApiKey,
+  });
+  const promptText = repairedPrompt.promptText;
+
+  if (repairedPrompt.repaired) {
+    logMediaGeneration('scene_image_prompt_repaired', {
+      ...mediaTaskLogContext(session, task, scene),
+      mediaType: 'image',
+      promptText,
+    });
+  }
 
   assertRunwayImagePrompt({
     promptText,
@@ -545,8 +561,6 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
     narrationText: scene.narrator_text,
     durationSeconds: scene.duration,
     sceneTitle: scene.title,
-    sceneSummary: scene.summary,
-    emotionalPurpose: scene.emotional_purpose,
     openrouterApiKey,
   });
   const narrationText = narrationRepair.narrationText;
@@ -626,9 +640,23 @@ async function generateContinuityReferenceImage(params: {
     promptText: params.shot.referencePrompt || params.shot.prompt,
   });
   const openingReference = await loadReferenceImage(params.openingReferenceImageUrl, OPENING_FRAME_REFERENCE_TAG, params.database);
-  const promptText = await ensureSafePrompt(buildContinuityReferencePrompt(params.shot, params.shotIndex), {
+  const moderatedPromptText = await ensureSafePrompt(buildContinuityReferencePrompt(params.shot, params.shotIndex), {
     openrouterApiKey: params.openrouterApiKey,
   });
+
+  const repairedPrompt = await repairRunwayImagePromptForValidation({
+    promptText: moderatedPromptText,
+    referenceImages: [openingReference],
+    openrouterApiKey: params.openrouterApiKey,
+  });
+  const promptText = repairedPrompt.promptText;
+
+  if (repairedPrompt.repaired) {
+    logMediaGeneration('continuity_frame_prompt_repaired', {
+      ...logContext,
+      promptText,
+    });
+  }
 
   assertRunwayImagePrompt({
     promptText,

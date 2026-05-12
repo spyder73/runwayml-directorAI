@@ -18,6 +18,7 @@ export type PromptReferenceImage = {
 const TAG_PATTERN = /^[a-z][a-z0-9_]{2,15}$/;
 const TAG_CAPTURE_PATTERN = /@([a-zA-Z][a-zA-Z0-9_]*)/g;
 const PRIVATE_NOTE_PATTERN = /\b(sourceTurnId|story bucket|private story context|tool call|api key|implementation note|confidence score)\b/i;
+const NEGATIVE_PROMPT_PATTERN = /\b(do not|don't|without showing|no visible|avoid showing|must not)\b/i;
 const MOTION_PATTERN = /\b(camera|pushes?|pulls?|pans?|tilts?|tracks?|dollies?|zooms?|moves?|drifts?|passes?|turns?|walks?|runs?|looks?|breathes?|exhales?|falls?|rises?|opens?|closes?|flickers?|shifts?|sways?|glides?|reveals?)\b/i;
 
 function extractPromptTags(promptText: string) {
@@ -27,6 +28,7 @@ function basePromptErrors(promptText: string) {
   const errors: string[] = [];
   if (!promptText.trim()) errors.push('Prompt text is required.');
   if (PRIVATE_NOTE_PATTERN.test(promptText)) errors.push('Prompt contains private implementation notes.');
+  if (NEGATIVE_PROMPT_PATTERN.test(promptText)) errors.push('Prompt should use positive descriptions instead of negative prompt language.');
   return errors;
 }
 

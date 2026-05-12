@@ -9,6 +9,7 @@ import { planShots } from './shot_planner';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
 import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
 import { repairRunwayVideoPromptForValidation } from './video-prompt-repair';
+import { repairRunwayImagePromptForValidation } from './image-prompt-repair';
 import { FINAL_IMAGE_QUALITY } from './production-config';
 import {
   completeMediaTasksForScenePhase,
@@ -155,7 +156,15 @@ export async function generateImagesPhase(sessionId: string) {
           assets: referenceAssets,
           entities: storyEntities,
         });
-        const promptText = await ensureSafePrompt(preparedReferences.promptText, { openrouterApiKey });
+        const moderatedPromptText = await ensureSafePrompt(preparedReferences.promptText, { openrouterApiKey });
+
+        const repairedPrompt = await repairRunwayImagePromptForValidation({
+          promptText: moderatedPromptText,
+          referenceImages: preparedReferences.referenceImages,
+          openrouterApiKey,
+        });
+        const promptText = repairedPrompt.promptText;
+
         assertRunwayImagePrompt({
           promptText,
           referenceImages: preparedReferences.referenceImages,
@@ -240,8 +249,6 @@ export async function generateVideoAudioPhase(sessionId: string) {
             narrationText: scene.narrator_text,
             durationSeconds: scene.duration,
             sceneTitle: scene.title,
-            sceneSummary: scene.summary,
-            emotionalPurpose: scene.emotional_purpose,
             openrouterApiKey,
           });
           const narrationText = narrationRepair.narrationText;

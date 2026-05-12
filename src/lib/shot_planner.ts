@@ -174,11 +174,8 @@ function hasMeaningfulPerspectiveChange(previous: ProposedShotPlan, shot: Propos
 }
 
 function shouldKeepShortSplit(totalDuration: number, usableShots: ProposedShotPlan[]) {
-  if (totalDuration > 10 || usableShots.length <= 1) return true;
-
-  return usableShots.slice(1).every((shot, index) => (
-    hasMeaningfulPerspectiveChange(usableShots[index], shot)
-  ));
+  // Relaxed shot splitting constraint: allow the AI to cut scenes dynamically
+  return true;
 }
 
 function singleShotPlan(visualPrompt: string, totalDuration: number): ShotPlan[] {
@@ -379,11 +376,10 @@ export async function planShots(visualPrompt: string, durationSeconds: number, o
       maxOutputTokens: MAX_SHOT_PLAN_OUTPUT_TOKENS,
       system: `You are an AI Video Director. The user will provide a visual description of a scene and its total duration based on the audio voiceover length.
 Your job is to decide if this scene should be one continuous shot or cut into multiple angles.
-Prefer one continuous shot whenever the scene is 10 seconds or shorter and one camera setup can express the whole visual beat.
-Only split a short scene when the next shot has a genuinely different perspective, camera distance, angle, or visual view. Do not split just to repeat the same action from the same setup.
-Treat coverage-style variations of the same background, including alternate frontal angles, as one shot rather than separate shots.
+Use dynamic, varied camera angles (wides, close-ups, cutaways) to keep the scene visually engaging and cinematic.
+If a scene naturally benefits from a change in perspective or distance to maintain visual interest, split it into multiple shots (each between 2 and 10 seconds).
 If the visual description spans multiple physical locations, the outline should carry those as separate scenes; keep this shot plan focused on the current scene's visible action.
-For scenes longer than 10 seconds, split only as much as needed so every generated clip stays between 2 and 10 seconds.
+For scenes longer than 10 seconds, you must split them so every generated clip stays between 2 and 10 seconds.
 Each shot must have a specific duration (between 2 and 10 seconds), and the sum of all shot durations must exactly equal the total duration provided.
 For each shot, provide a slightly adjusted cinematic prompt to reflect the camera angle or action (e.g. "Close up of...", "Wide shot of...").
 For each shot, also provide reference_prompt: a still-image prompt for the exact starting frame of that shot.

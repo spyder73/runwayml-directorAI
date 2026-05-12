@@ -55,6 +55,7 @@ async function defaultRepairGenerator(input: RepairGeneratorInput & { openrouter
       'The prompt must not contain @tag references; the input frame already carries identity and composition.',
       'Preserve the people, place, mood, and action in plain language.',
       'Describe visible motion, camera movement, or action.',
+      'If fixing negative language (like "do not", "avoid"), describe what *should* be seen or happen instead.',
     ].join(' '),
     prompt: [
       `Validation error: ${input.validationError}`,

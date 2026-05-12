@@ -248,10 +248,10 @@ export function buildFallbackSceneOutlineFromBucket(bucket: StoryBucket) {
       summary: seed.summary,
       narratorText: shortenForNarration(seed.emotionalPurpose, seed.summary),
       imagePrompt: [
-        `Single cinematic starting frame for a movie scene: ${seed.visualSummary}.`,
-        'One physical location, one moment, one visible action, one camera perspective.',
+        `Cinematic atmosphere for a movie scene: ${seed.visualSummary}.`,
+        'Focus on lighting, mood, film stock, and atmospheric aesthetics.',
         `Let the motif appear as practical atmosphere and production design: ${motif}.`,
-        'Composed as the first frame of a moving shot with natural depth, lens perspective, and cinematic light.',
+        'Composed with natural depth, lens perspective, and cinematic light.',
       ].join(' '),
       videoPrompt: `The camera slowly moves through the scene as ${seed.visualSummary} unfolds with subtle motion and changing light.`,
       duration: 8,

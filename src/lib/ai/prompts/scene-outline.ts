@@ -1,11 +1,11 @@
 export const cinematicFramePromptRules = `Cinematic frame prompt rules:
-- imagePrompt must describe one exact starting frame for a movie scene, not a poster, documentary graphic, chapter card, moodboard, or summary illustration.
-- Use one physical location, one time of day, one visible action, and one single camera perspective per imagePrompt.
+- imagePrompt must describe the visual tone and atmosphere of the scene, not a poster, documentary graphic, chapter card, moodboard, or summary illustration.
+- Use poetic, cinematic language to describe lighting, mood, film stock, and atmospheric aesthetics instead of just literal descriptions.
 - No title cards, captions, subtitles, quotes, labels, badges, diagrams, logos, watermarks, UI, graphic design, or decorative typography in imagePrompt.
 - No collages, montages, split screens, multi-panel layouts, before/after comparisons, timelines, or several eras shown in one frame.
 - If a life chapter contains several facts, places, or eras, split those beats into separate scenes instead of condensing them into one imagePrompt.
 - Real-world writing may appear only when it is an incidental physical prop that the story specifically needs, never as overlaid explanatory text.
-- Prefer concrete camera language such as close-up, medium-wide, over-the-shoulder, tracking starting frame, low angle, or quiet locked-off frame.`;
+- Use evocative camera language (e.g. tracking, sweeping, drifting, intimate close-up) combined with rich environmental descriptions.`;
 
 export const sceneOutlinePrompt = `Scene outline:
 - Before production, create a film treatment with propose_film_treatment unless one already exists in private context.

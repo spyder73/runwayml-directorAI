@@ -10,7 +10,7 @@ test('Phase 13 backup script captures SQLite and private media paths', () => {
   const script = readText('../deploy/backup-lifestory.sh');
 
   assert.match(script, /set -euo pipefail/);
-  assert.match(script, /APP_DIR="\$\{APP_DIR:-\/opt\/lifestory\}"/);
+  assert.match(script, /APP_DIR="\$\{APP_DIR:-\$DEFAULT_APP_DIR\}"/);
   assert.match(script, /BACKUP_DIR="\$\{BACKUP_DIR:-\/opt\/backups\/lifestory\}"/);
   assert.match(script, /DB_PATH="\$APP_DIR\/data\/lifestory\.sqlite"/);
   assert.match(script, /MEDIA_DIR="\$APP_DIR\/data\/media"/);

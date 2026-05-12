@@ -69,7 +69,7 @@ test('prompt linting rejects unsynchronized image reference tags before credits 
   assert.match(result.errors.join('\n'), /station_01/);
 });
 
-test('prompt linting allows image prompts to describe exclusions explicitly', () => {
+test('prompt linting flags image prompts that describe exclusions explicitly', () => {
   const { lintRunwayImagePrompt } = jiti('../src/lib/prompt-lint.ts');
 
   const result = lintRunwayImagePrompt({
@@ -79,8 +79,8 @@ test('prompt linting allows image prompts to describe exclusions explicitly', ()
     ],
   });
 
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.errors, []);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /negative prompt language/);
 });
 
 test('prompt linting rejects video prompts without motion and invalid durations', () => {
@@ -194,14 +194,14 @@ test('scene outline prompt asks for cinematic whole-film narration with per-scen
   assert.match(outlinePrompt, /Do not write lines like "To demonstrate/i);
 });
 
-test('scene outline prompts require single cinematic starting frames without title cards or collages', () => {
+test('scene outline prompts require cinematic atmosphere without title cards or collages', () => {
   const outlinePrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/scene-outline.ts', import.meta.url), 'utf8');
   const revisionPrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/scene-outline-revision.ts', import.meta.url), 'utf8');
   const pipelineSource = fs.readFileSync(new URL('../src/lib/pipeline.ts', import.meta.url), 'utf8');
   const productionReferenceSource = fs.readFileSync(new URL('../src/lib/production-references.ts', import.meta.url), 'utf8');
 
-  assert.match(outlinePrompt, /starting frame/i);
-  assert.match(outlinePrompt, /single camera perspective/i);
+  assert.match(outlinePrompt, /visual tone and atmosphere/i);
+  assert.match(outlinePrompt, /poetic, cinematic language/i);
   assert.match(outlinePrompt, /No title cards/i);
   assert.match(outlinePrompt, /No collages/i);
   assert.match(outlinePrompt, /split.*into separate scenes/i);
@@ -340,9 +340,9 @@ test('fallback treatment outline creates scene rows from the approved story buck
   assert.ok(outline.scenes.length >= 1);
   assert.match(outline.scenes[0].title, /Drin River|Currents and Beats/);
   assert.match(outline.scenes[0].videoPrompt, /camera/i);
-  assert.match(outline.scenes[0].imagePrompt, /single cinematic starting frame/i);
-  assert.match(outline.scenes[0].imagePrompt, /camera perspective/i);
-  assert.doesNotMatch(outline.scenes[0].imagePrompt, /Cinematic life-story frame|Visual motif|collage|title card|poster/i);
+  assert.match(outline.scenes[0].imagePrompt, /Cinematic atmosphere for a movie scene/i);
+  assert.match(outline.scenes[0].imagePrompt, /lighting, mood/i);
+  assert.doesNotMatch(outline.scenes[0].imagePrompt, /Cinematic life-story frame|collage|title card|poster/i);
   assert.ok(outline.scenes[0].duration >= 2);
   assert.ok(outline.scenes[0].duration <= 10);
 });
