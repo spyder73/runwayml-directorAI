@@ -13,6 +13,7 @@ import {
   updateRenderProgressForSession,
 } from './media-tasks';
 import { ensureSafePrompt } from './moderation';
+import { limitNarrationForSceneDuration } from './narration-budget';
 import { canRenderFinal } from './pipeline-guards';
 import { FINAL_IMAGE_QUALITY } from './production-config';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
@@ -516,9 +517,13 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
   setSessionStatus(database, session.id, 'GENERATING_FINAL_ASSETS');
   broadcastProgress(database, session.id);
   const runwayClient = createRunwayClientForSession(database, session);
+  const narrationText = limitNarrationForSceneDuration(scene.narrator_text, scene.duration);
+  if (narrationText !== scene.narrator_text) {
+    database.prepare('UPDATE scenes SET narrator_text = ? WHERE id = ?').run(narrationText, scene.id);
+  }
 
   const audioAsset = await generateSpeechAsset({
-    promptText: scene.narrator_text,
+    promptText: narrationText,
     sessionId: session.id,
     runwayClient,
     database,
