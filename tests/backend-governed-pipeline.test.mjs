@@ -178,6 +178,17 @@ test('LifeStory prompts cover childhood briefly and emphasize young adult and ad
   assert.match(outlinePrompt, /younger adult/i);
 });
 
+test('scene outline prompt tells the director exact narration word budgets', () => {
+  const outlinePrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/scene-outline.ts', import.meta.url), 'utf8');
+
+  assert.match(outlinePrompt, /narratorText/i);
+  assert.match(outlinePrompt, /word budget/i);
+  assert.match(outlinePrompt, /duration \* 2\.2/i);
+  assert.match(outlinePrompt, /5-second scene.*11 words/i);
+  assert.match(outlinePrompt, /10-second scene.*22 words/i);
+  assert.match(outlinePrompt, /entire film/i);
+});
+
 test('cost estimator uses gpt_image_2 low sketches and high final frames', () => {
   const { estimateProductionCost } = jiti('../src/lib/cost-estimator.ts');
 

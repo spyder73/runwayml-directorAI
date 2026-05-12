@@ -5,7 +5,11 @@ export const sceneOutlinePrompt = `Scene outline:
 - If the user approves an existing film treatment with phrases like yes, okay, implement this draft, draft the scenes, or go ahead, call propose_scene_outline next instead of asking for more broad-life coverage.
 - If the user asks to change the treatment, call propose_film_treatment with the revised treatment instead of moving to scenes.
 - If the user says there is nothing else to add and asks to create the movie, stop asking "anything else" questions. Create the treatment if none exists; otherwise move to the outline when readiness and reference checkpoints are satisfied.
-- Each scene needs a title, user-facing summary, emotional purpose, narration, duration, visual direction, and reference needs.
+- Each scene needs a title, user-facing summary, emotional purpose, narratorText, duration, visual direction, and reference needs.
+- Choose durations first, then write narratorText to fit those durations as part of one coherent entire film narration.
+- For each scene, calculate the narratorText word budget as floor(duration * 2.2). Do not exceed that word budget.
+- Examples: a 5-second scene allows 11 words, a 6-second scene allows 13 words, an 8-second scene allows 17 words, and a 10-second scene allows 22 words.
+- The final branded card adds 3 seconds after the story scenes and does not need narratorText.
 - Always include a standard intro scene and a standard outro scene with the main character when drafting a LifeStory outline.
 - The standard intro should feel like: "This is [name]..." and introduce who the person is in narrator language.
 - The standard outro should feel like: "That is [name]'s story so far..." and may end with the idea that we will see what else they leave for us to read in the history books.
@@ -31,5 +35,5 @@ export const storySceneDiversityPrompt = `Scene diversity:
 - Do not statically render the whole chapter in one scenery when the story naturally moves through different places, actions, or relationships.
 - Prefer several short scenes that each show a specific part of the described experience over repeated angles on the same background.
 - Repeat a location only when the action or emotional beat materially changes there.
-- Keep narration compact enough that each generated scene can stay within its planned 2 to 10 second duration.
+- Keep narratorText within the exact word budget for each planned 2 to 10 second duration.
 - Use sub-scenes only where the motion pass genuinely needs them, not for repeated same background coverage.`;
