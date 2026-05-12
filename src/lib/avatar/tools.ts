@@ -298,10 +298,7 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
       return {
         ok: true,
         treatmentId: treatment.id,
-        directorReply: ensureProactiveDirectorReply(
-          typeof payload.directorReply === 'string' ? payload.directorReply : 'I put the film treatment on the page.',
-          { fallbackQuestion: 'Does this feel true enough to turn into scenes?' },
-        ),
+        directorReply: 'I put the film treatment on the page. Does this feel true enough to turn into scenes?',
         layout: 'review',
       };
     }),

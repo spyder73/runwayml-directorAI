@@ -4,7 +4,7 @@ import { narrationWordBudgetForDuration, narrationWordCount } from './narration-
 
 export const MAX_NARRATION_REPAIR_OUTPUT_TOKENS = 220;
 
-const PRODUCTION_NOTE_PATTERN = /\b(?:to\s+(?:show|highlight|demonstrate|set|illustrate|explain)|this\s+scene|the\s+purpose\s+of|we\s+show|to\s+tell\s+the\s+audience|to\s+make\s+clear)\b/i;
+const PRODUCTION_NOTE_PATTERN = /\b(?:(?:to\s+)?(?:show|highlight|demonstrate|set|illustrate|explain)(?:ing|s)?|this\s+scene|the\s+purpose\s+of|we\s+show|to\s+tell\s+the\s+audience|to\s+make\s+clear|visual\s+motif:|profession:|location:)\b/i;
 
 type NarrationRepairInput = {
   narrationText: string;

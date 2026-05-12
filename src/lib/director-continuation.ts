@@ -73,9 +73,5 @@ export function ensureProactiveDirectorReply(
   const fallbackQuestion = options.fallbackQuestion.trim();
 
   if (!trimmedReply) return fallbackQuestion;
-  if (/[?？]/.test(trimmedReply)) return trimmedReply;
-  if (!fallbackQuestion) return trimmedReply;
-
-  const normalizedReply = /[.!]$/.test(trimmedReply) ? trimmedReply : `${trimmedReply}.`;
-  return `${normalizedReply} ${fallbackQuestion}`;
+  return trimmedReply;
 }

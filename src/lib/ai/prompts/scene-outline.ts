@@ -14,17 +14,14 @@ export const sceneOutlinePrompt = `Scene outline:
 - If the user approves an existing film treatment with phrases like yes, okay, implement this draft, draft the scenes, or go ahead, call propose_scene_outline next instead of asking for more broad-life coverage.
 - If the user asks to change the treatment, call propose_film_treatment with the revised treatment instead of moving to scenes.
 - If the user says there is nothing else to add and asks to create the movie, stop asking "anything else" questions. Create the treatment if none exists; otherwise move to the outline when readiness and reference checkpoints are satisfied.
-- Each scene needs a title, user-facing summary, emotional purpose, narratorText, duration, visual direction, and reference needs.
+- Each scene needs a title, user-facing summary, narratorText, duration, visual direction, and reference needs.
 - Think of the full movie voiceover before writing individual scenes: the narration should flow in order like a fantastic cinematic life-story narrator telling one inspiring story.
 - First draft the emotional arc of the entire voiceover in your head, then divide it into scene narratorText entries that connect naturally from one scene to the next.
 - Choose durations first, then write each narratorText to fit its duration while keeping the whole film organic, fascinating, and human.
-- For each scene, calculate the narratorText word budget as floor(duration * 2.3). Do not exceed that word budget.
-- Examples: a 5-second scene allows 11 words, a 6-second scene allows 13 words, an 8-second scene allows 18 words, and a 10-second scene allows 23 words.
-- narratorText must be actual movie narration, not production notes, labels, summaries, or explanations of what the scene demonstrates.
-- Do not write lines like "To demonstrate his interest in physics" or "This is Martin to show him." Write cinematic narration like: "This is Martin, a restless mind chasing invisible laws, driven by rare ambition."
+- Keep the narratorText extremely brief, roughly one short sentence per 5 seconds of video. You are writing the literal spoken voiceover script for a professional voice actor. Write poetic, evocative, story-driven dialogue that sounds like a premium documentary. Never write production notes or summarize the visual action.
 - The final branded card adds 3 seconds after the story scenes and does not need narratorText.
 - Always include a standard intro scene and a standard outro scene with the main character when drafting a LifeStory outline.
-- The standard intro should feel like: "This is [name]..." and introduce who the person is in narrator language.
+- The standard intro should be exactly one short, poetic sentence introducing the person's core driving feeling, starting with "This is [name]..." Do not list their profession or location here.
 - The standard outro should feel like: "That is [name]'s story so far..." and may end with the idea that we will see what else they leave for us to read in the history books.
 - Intro and outro must use the same rendering and perspective of the person: a medium-wide three-quarter back/side view, consistent lens/camera height, and the same visible identity reference when one exists.
 - Place the person in a fantastic, stunning natural or cinematic setting that matches their life. For example, a scientist could stand in a vast field under the Milky Way looking up and thinking deeply.
@@ -50,5 +47,5 @@ export const storySceneDiversityPrompt = `Scene diversity:
 - Prefer several short scenes that each show a specific part of the described experience over repeated angles on the same background.
 - If the story jumps between places, eras, achievements, or emotional states, split those beats into separate scenes instead of compressing them into a collage-like visual summary.
 - Repeat a location only when the action or emotional beat materially changes there.
-- Keep narratorText within the exact word budget for each planned 2 to 10 second duration, while preserving the feeling of one continuous cinematic life story.
+- Keep narratorText extremely brief for each planned 2 to 10 second duration, while preserving the feeling of one continuous cinematic life story.
 - Use sub-scenes only where the motion pass genuinely needs them, not for repeated same background coverage.`;

@@ -733,9 +733,10 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
     ...(shot.camera_role ? { cameraRole: shot.camera_role } : {}),
     ...(shot.angle_change_reason ? { angleChangeReason: shot.angle_change_reason } : {}),
   }));
+  const combinedPrompt = `${scene.image_prompt || ''} ${scene.video_prompt || scene.visual_prompt || ''}`.trim();
   const shots = reusablePlannedShots.length
     ? reusablePlannedShots
-    : await planShots(scene.video_prompt || scene.visual_prompt, exactDuration, { openrouterApiKey });
+    : await planShots(combinedPrompt, exactDuration, { openrouterApiKey });
   logMediaGeneration('scene_video_shots_planned', {
     ...mediaTaskLogContext(session, task, scene),
     mediaType: 'video',
