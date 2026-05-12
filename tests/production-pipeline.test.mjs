@@ -565,20 +565,47 @@ test('pipeline preserves exact narration duration for final subtitle timing', ()
   assert.doesNotMatch(legacySource, /Math\.ceil\(exactDuration\)/);
 });
 
-test('narration budget uses cinematic voice pacing before TTS', () => {
+test('narration budget uses 2.3 words/sec pacing before TTS', () => {
   const {
-    limitNarrationForSceneDuration,
     narrationWordBudgetForDuration,
   } = jiti('../src/lib/narration-budget.ts');
 
-  assert.equal(narrationWordBudgetForDuration(6), 16);
-  assert.equal(narrationWordBudgetForDuration(8), 22);
+  assert.equal(narrationWordBudgetForDuration(6), 13);
+  assert.equal(narrationWordBudgetForDuration(8), 18);
+});
 
-  const longNarration = 'This is Martin, a restless mind chasing invisible laws, driven by a rare and luminous ambition. The world would slowly learn why.';
-  const limited = limitNarrationForSceneDuration(longNarration, 6);
+test('narration repair rewrites production-note phrasing into cinematic narration within budget', async () => {
+  const {
+    repairNarrationForSceneDuration,
+  } = jiti('../src/lib/narration-repair.ts');
 
-  assert.equal(limited, 'This is Martin, a restless mind chasing invisible laws, driven by a rare and luminous ambition.');
-  assert.ok(limited.split(/\s+/).length <= 16);
+  const repaired = await repairNarrationForSceneDuration({
+    narrationText: 'To highlight the bridge between Moritz\'s studies and what came next.',
+    durationSeconds: 6,
+    sceneTitle: 'Aachen Foundations',
+    sceneSummary: 'Moritz studies mechanical engineering in Aachen.',
+    emotionalPurpose: 'Show discipline and patience before later risk.',
+    generateRepairText: async () => 'Aachen taught Moritz patience: build carefully, then wait for the right moment.',
+  });
+
+  assert.equal(repaired.repaired, true);
+  assert.doesNotMatch(repaired.narrationText, /\bto\s+(?:show|highlight|demonstrate|set|illustrate|explain)\b/i);
+  assert.ok(repaired.narrationText.split(/\s+/).length <= 13);
+});
+
+test('narration repair throws when rewrite is still invalid', async () => {
+  const {
+    repairNarrationForSceneDuration,
+  } = jiti('../src/lib/narration-repair.ts');
+
+  await assert.rejects(
+    () => repairNarrationForSceneDuration({
+      narrationText: 'To show the audience what this scene does for the film.',
+      durationSeconds: 5,
+      generateRepairText: async () => 'To highlight what this scene is designed to explain for the audience today.',
+    }),
+    /Narration repair failed validation/i,
+  );
 });
 
 test('final render bundle resolver reuses one in-flight bundle', async () => {

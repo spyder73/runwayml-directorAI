@@ -2,7 +2,7 @@ import db from './db';
 import { broadcastSessionUpdate } from './sse';
 import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './types';
 import { ensureSafePrompt } from './moderation';
-import { limitNarrationForSceneDuration } from './narration-budget';
+import { repairNarrationForSceneDuration } from './narration-repair';
 import { getAudioDurationInSeconds } from 'get-audio-duration';
 import path from 'path';
 import { planShots } from './shot_planner';
@@ -236,7 +236,15 @@ export async function generateVideoAudioPhase(sessionId: string) {
 
         if (!audioUrl || scene.status === 'audio_failed') {
           activePhase = 'audio';
-          const narrationText = limitNarrationForSceneDuration(scene.narrator_text, scene.duration);
+          const narrationRepair = await repairNarrationForSceneDuration({
+            narrationText: scene.narrator_text,
+            durationSeconds: scene.duration,
+            sceneTitle: scene.title,
+            sceneSummary: scene.summary,
+            emotionalPurpose: scene.emotional_purpose,
+            openrouterApiKey,
+          });
+          const narrationText = narrationRepair.narrationText;
           if (narrationText !== scene.narrator_text) {
             db.prepare('UPDATE scenes SET narrator_text = ? WHERE id = ?').run(narrationText, scene.id);
             scene.narrator_text = narrationText;

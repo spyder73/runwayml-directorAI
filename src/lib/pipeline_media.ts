@@ -13,7 +13,7 @@ import {
   updateRenderProgressForSession,
 } from './media-tasks';
 import { ensureSafePrompt } from './moderation';
-import { limitNarrationForSceneDuration } from './narration-budget';
+import { repairNarrationForSceneDuration } from './narration-repair';
 import { canRenderFinal } from './pipeline-guards';
 import { FINAL_IMAGE_QUALITY } from './production-config';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
@@ -539,8 +539,17 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
     .run('generating_audio', scene.id);
   setSessionStatus(database, session.id, 'GENERATING_FINAL_ASSETS');
   broadcastProgress(database, session.id);
+  const openrouterApiKey = requireOpenRouterApiKeyForSession(database, session);
   const runwayClient = createRunwayClientForSession(database, session);
-  const narrationText = limitNarrationForSceneDuration(scene.narrator_text, scene.duration);
+  const narrationRepair = await repairNarrationForSceneDuration({
+    narrationText: scene.narrator_text,
+    durationSeconds: scene.duration,
+    sceneTitle: scene.title,
+    sceneSummary: scene.summary,
+    emotionalPurpose: scene.emotional_purpose,
+    openrouterApiKey,
+  });
+  const narrationText = narrationRepair.narrationText;
   if (narrationText !== scene.narrator_text) {
     database.prepare('UPDATE scenes SET narrator_text = ? WHERE id = ?').run(narrationText, scene.id);
   }

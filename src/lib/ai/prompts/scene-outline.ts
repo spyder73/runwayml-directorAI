@@ -18,8 +18,8 @@ export const sceneOutlinePrompt = `Scene outline:
 - Think of the full movie voiceover before writing individual scenes: the narration should flow in order like a fantastic cinematic life-story narrator telling one inspiring story.
 - First draft the emotional arc of the entire voiceover in your head, then divide it into scene narratorText entries that connect naturally from one scene to the next.
 - Choose durations first, then write each narratorText to fit its duration while keeping the whole film organic, fascinating, and human.
-- For each scene, calculate the narratorText word budget as floor(duration * 2.8). Do not exceed that word budget.
-- Examples: a 5-second scene allows 14 words, a 6-second scene allows 16 words, an 8-second scene allows 22 words, and a 10-second scene allows 28 words.
+- For each scene, calculate the narratorText word budget as floor(duration * 2.3). Do not exceed that word budget.
+- Examples: a 5-second scene allows 11 words, a 6-second scene allows 13 words, an 8-second scene allows 18 words, and a 10-second scene allows 23 words.
 - narratorText must be actual movie narration, not production notes, labels, summaries, or explanations of what the scene demonstrates.
 - Do not write lines like "To demonstrate his interest in physics" or "This is Martin to show him." Write cinematic narration like: "This is Martin, a restless mind chasing invisible laws, driven by rare ambition."
 - The final branded card adds 3 seconds after the story scenes and does not need narratorText.
