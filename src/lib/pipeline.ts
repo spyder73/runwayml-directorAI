@@ -6,7 +6,7 @@ import { runAutomaticProductionPipeline } from './pipeline_media';
 import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
 import { buildContextualInterviewFollowUp, buildDirectorContinuationPrompt, ensureProactiveDirectorReply } from './director-continuation';
 import { filmTreatmentReviewHandoff } from './treatment-reply';
-import { storySceneDiversityPrompt } from './ai/prompts/scene-outline';
+import { cinematicFramePromptRules, storySceneDiversityPrompt } from './ai/prompts/scene-outline';
 import {
   aiTools,
   addReferenceSubjectSchema,
@@ -247,7 +247,12 @@ export function buildFallbackSceneOutlineFromBucket(bucket: StoryBucket) {
       title: seed.title,
       summary: seed.summary,
       narratorText: shortenForNarration(seed.emotionalPurpose, seed.summary),
-      imagePrompt: `Cinematic life-story frame: ${seed.visualSummary}. Visual motif: ${motif}.`,
+      imagePrompt: [
+        `Single cinematic starting frame for a movie scene: ${seed.visualSummary}.`,
+        'One physical location, one moment, one visible action, one camera perspective.',
+        `Let the motif appear as practical atmosphere and production design: ${motif}.`,
+        'Composed as the first frame of a moving shot with natural depth, lens perspective, and cinematic light.',
+      ].join(' '),
       videoPrompt: `The camera slowly moves through the scene as ${seed.visualSummary} unfolds with subtle motion and changing light.`,
       duration: 8,
       emotionalPurpose: seed.emotionalPurpose,
@@ -263,6 +268,7 @@ export function buildTreatmentApprovedOutlineDraftPrompt(bucket: StoryBucket) {
     'Create a concise reviewable LifeStory scene outline from this approved film treatment and private story bucket.',
     'Each scene must be cinematic, emotionally specific, and ready for image/video generation.',
     'Return only the structured scene outline. Keep narratorText short.',
+    cinematicFramePromptRules,
     storySceneDiversityPrompt,
     formatStoryBucketForPrompt(bucket),
   ].join('\n\n');

@@ -1,3 +1,12 @@
+export const cinematicFramePromptRules = `Cinematic frame prompt rules:
+- imagePrompt must describe one exact starting frame for a movie scene, not a poster, documentary graphic, chapter card, moodboard, or summary illustration.
+- Use one physical location, one time of day, one visible action, and one single camera perspective per imagePrompt.
+- No title cards, captions, subtitles, quotes, labels, badges, diagrams, logos, watermarks, UI, graphic design, or decorative typography in imagePrompt.
+- No collages, montages, split screens, multi-panel layouts, before/after comparisons, timelines, or several eras shown in one frame.
+- If a life chapter contains several facts, places, or eras, split those beats into separate scenes instead of condensing them into one imagePrompt.
+- Real-world writing may appear only when it is an incidental physical prop that the story specifically needs, never as overlaid explanatory text.
+- Prefer concrete camera language such as close-up, medium-wide, over-the-shoulder, tracking starting frame, low angle, or quiet locked-off frame.`;
+
 export const sceneOutlinePrompt = `Scene outline:
 - Before production, create a film treatment with propose_film_treatment unless one already exists in private context.
 - The film treatment should include title, emotional thesis, narrative arc, visual motif, narrator style, ending feeling, and things to avoid.
@@ -26,6 +35,7 @@ export const sceneOutlinePrompt = `Scene outline:
 - Image generation prompts must not say "provided reference image"; name the exact @tag instead. Video prompts may refer to the provided input/reference image because the generated frame carries the visual reference there.
 - Every @tag in imagePrompt must have the matching asset in referenceAssetIds; every asset in referenceAssetIds should appear as its exact @tag in imagePrompt.
 - If multiple references exist for the same person, prefer the uploaded/usable generation tag over description-only tags, even when the description-only tag has a simpler name.
+${cinematicFramePromptRules}
 - For LifeStory, do not propose an outline until there is broad life coverage plus at least three emotionally specific moments across different chapters.
 - Include younger adult and adult chapters when they carry the emotional change; do not let childhood become the whole film by default.
 - Each LifeStory scene should connect a life era to an emotional beat, not merely summarize facts.
@@ -38,6 +48,7 @@ export const storySceneDiversityPrompt = `Scene diversity:
 - When a user describes a life chapter, identify the concrete parts that can be shown as distinct locations or action beats.
 - Do not statically render the whole chapter in one scenery when the story naturally moves through different places, actions, or relationships.
 - Prefer several short scenes that each show a specific part of the described experience over repeated angles on the same background.
+- If the story jumps between places, eras, achievements, or emotional states, split those beats into separate scenes instead of compressing them into a collage-like visual summary.
 - Repeat a location only when the action or emotional beat materially changes there.
 - Keep narratorText within the exact word budget for each planned 2 to 10 second duration, while preserving the feeling of one continuous cinematic life story.
 - Use sub-scenes only where the motion pass genuinely needs them, not for repeated same background coverage.`;

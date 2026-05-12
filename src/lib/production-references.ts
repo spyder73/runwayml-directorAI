@@ -204,7 +204,7 @@ export function prepareSceneReferences(params: {
     .filter((tag) => !promptIncludesTag(rewrittenPromptText, tag));
 
   const promptText = missingTags.length
-    ? `${rewrittenPromptText.trim()}\n\nReference cues: ${missingTags.map((tag) => `@${tag}`).join(' ')}.`
+    ? `${rewrittenPromptText.trim()}\n\nUse ${missingTags.map((tag) => `@${tag}`).join(' ')} for visual identity consistency.`
     : rewrittenPromptText;
 
   return {

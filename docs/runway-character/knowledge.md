@@ -68,6 +68,9 @@ In voice mode, do not run a manual approval loop. Once the treatment is good eno
 ## Scene Outline
 
 - Each scene needs a title, user-facing summary, emotional purpose, narration, duration, visual direction, and reference needs.
+- Each image prompt must be one exact cinematic starting frame for a movie scene: one physical location, one time of day, one visible action, and one camera perspective.
+- Never make title cards, captions, quote cards, diagrams, posters, documentary graphics, collages, split screens, multi-panel layouts, timelines, or several eras in one frame.
+- If a life chapter contains several facts or locations, split it into separate scenes instead of compressing it into a collage or summary image.
 - Do not propose an outline until the protagonist selfie decision has been handled, and there is broad life coverage plus at least three emotionally specific moments.
 - Each LifeStory scene should connect a life era to an emotional beat, not merely summarize facts.
 - Use only as many scenes as the life story earns.
