@@ -1,56 +1,78 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowRight, Film, Sparkles, WandSparkles } from 'lucide-react';
+import {
+  ArrowRight,
+  BadgeCheck,
+  Clapperboard,
+  Film,
+  Infinity,
+  MessageCircle,
+  Play,
+} from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
 
 type LandingPageProps = {
   appUrl: string;
 };
 
+const proofPoints = [
+  'Tell it anything: childhood, migration, grief, love, survival, reinvention.',
+  'Nico interviews you like a film director, then builds a treatment you can approve.',
+  'RunwayML generates cinematic scenes. Modal powers the heavy rendering work behind the cut.',
+];
+
 const steps = [
   {
-    icon: Sparkles,
-    title: 'Tell the story',
-    body: 'Nico begins with the people, places, turning points, and small details that still feel alive when you say them out loud.',
+    icon: MessageCircle,
+    title: 'Tell the life, not a prompt',
+    body: 'Talk naturally about the people, places, turning points, and fragments that made you. The studio pulls the movie out of the details.',
   },
   {
-    icon: WandSparkles,
-    title: 'Shape the treatment',
-    body: 'He turns your answers into a film shape you can read, revise, and approve before anything gets made.',
+    icon: Clapperboard,
+    title: 'Shape the film before it renders',
+    body: 'Review the narration, scene outline, and visual direction before the system moves into production.',
   },
   {
     icon: Film,
-    title: 'Watch the cut take form',
-    body: 'Your scenes, narration, references, and final MP4 come together as a short film made to be kept close and shared well.',
+    title: 'Receive a narrated cinematic movie',
+    body: 'Your approved story becomes scenes, voice, music, pacing, and a final MP4 built around a life nobody else could have lived.',
   },
 ];
 
 const memoryImages = [
   {
     src: '/landing/memory-detail.png',
-    alt: 'Nico Hale listening beside a blue radio and family photos on a sunlit kitchen counter',
-    title: 'It starts where real stories always start: a detail.',
-    body: 'The blue radio. The summer kitchen. The way someone laughed before telling the same story again. Nico listens for the pieces that make a life feel unmistakably yours.',
+    alt: 'A blue radio and family photos on a sunlit kitchen counter',
+    eyebrow: 'Personal detail',
+    title: 'The movie starts where your memory still has texture.',
+    body: 'A kitchen light. A street corner. A voice you can still hear. yourlifestory is built to catch the details that make a film feel personal instead of generated.',
   },
   {
     src: '/landing/director-desk.png',
-    alt: 'Nico Hale arranging old photographs beside a film editing desk',
-    title: "Not a prompt box. A director's room.",
-    body: 'You are not asked to engineer a perfect prompt. You talk with a director, choose what feels true, and approve the film treatment before the story moves into scenes.',
+    alt: 'A film editing desk with photographs arranged beside a notebook',
+    eyebrow: 'Guided production',
+    title: 'You do not need to know how to make films.',
+    body: 'Nico asks the questions, organizes the material, writes the treatment, plans the scenes, and keeps you in control before the final movie is made.',
   },
 ];
-
-const heroIntroLine = "Hey, I'm Nico Hale, your content director.";
 
 export default function LandingPage({ appUrl }: LandingPageProps) {
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#08080C] text-white">
       <AmbientFractalBackground intensity="landing" />
 
-      <nav className="relative z-20 mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
+      <nav className="relative z-20 mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-5 sm:px-8">
         <Link href="/" className="font-serif text-2xl font-light tracking-wide text-white/92">
           yourlifestory
         </Link>
+        <div className="order-3 flex w-full justify-start sm:order-none sm:w-auto sm:justify-center">
+          <div className="inline-flex items-center gap-2 border border-white/12 bg-white/[0.045] px-3 py-2 font-mono text-[0.64rem] uppercase tracking-[0.22em] text-white/68 backdrop-blur-md">
+            <span>Powered by</span>
+            <span className="text-runway">RunwayML</span>
+            <span className="text-white/28">+</span>
+            <span className="text-[#9ED8C9]">Modal</span>
+          </div>
+        </div>
         <div className="flex items-center gap-3">
           <Link
             href={`${appUrl}/login`}
@@ -67,41 +89,50 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
         </div>
       </nav>
 
-      <section className="relative z-10 mx-auto min-h-[68svh] w-full max-w-6xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
+      <section className="relative z-10 mx-auto min-h-[76svh] w-full max-w-6xl px-5 pb-16 pt-8 sm:px-8 sm:pt-12">
         <div className="absolute inset-x-0 top-0 -z-10 h-full overflow-hidden border-y border-white/10">
           <Image
             src="/landing/hero.png"
-            alt="Nico Hale guiding a family through old photos in warm projector light"
+            alt="A cinematic family memory scene in warm projector light"
             fill
             priority
             sizes="100vw"
             className="object-cover object-center"
           />
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,8,12,0.96)_0%,rgba(8,8,12,0.72)_42%,rgba(8,8,12,0.18)_100%)]" />
-          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,8,12,0.18)_0%,rgba(8,8,12,0.08)_58%,rgba(8,8,12,0.9)_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,8,12,0.97)_0%,rgba(8,8,12,0.74)_42%,rgba(8,8,12,0.2)_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(8,8,12,0.12)_0%,rgba(8,8,12,0.1)_58%,rgba(8,8,12,0.96)_100%)]" />
+          <div className="lifestory-stage-rays absolute inset-0" />
         </div>
 
-        <div className="flex min-h-[58svh] max-w-3xl flex-col justify-center">
-          <p className="mb-6 font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/78">
-            Meet Nico Hale
+        <div className="flex min-h-[62svh] max-w-4xl flex-col justify-center">
+          <p className="mb-6 inline-flex w-fit items-center gap-2 border border-[#F4D58D]/24 bg-black/24 px-3 py-2 font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/82 backdrop-blur-sm">
+            <Infinity size={14} /> No boundaries
           </p>
-          <h1 className="max-w-4xl font-serif text-6xl font-light leading-[0.92] tracking-normal text-white sm:text-7xl lg:text-8xl">
-            Turn your memories into a cinematic short film.
+          <h1 className="lifestory-soft-reveal max-w-5xl font-serif text-6xl font-light leading-[0.92] tracking-normal text-white sm:text-7xl lg:text-8xl">
+            Your life story can become a narrated cinematic movie.
           </h1>
-          <p className="mt-6 max-w-2xl font-serif text-3xl font-light leading-tight text-white/92 sm:text-4xl">
-            {heroIntroLine}
-          </p>
           <p className="mt-7 max-w-2xl text-xl leading-8 text-white/78 sm:text-2xl sm:leading-9">
-            Tell it the way you remember it. Bring the kitchen light, the street you grew up on,
-            the laugh everyone still quotes. I&apos;ll help shape those details into a breathtaking 
-            short film from a life only you can tell.
+            Everyone has a film inside their life. Tell yourlifestory what happened, who mattered,
+            what changed you, and what still feels unfinished. The studio turns it into a guided
+            treatment, cinematic scenes, narration, and a finished movie made from your truth.
           </p>
+          <div className="mt-9 grid max-w-3xl gap-3 sm:grid-cols-3">
+            {proofPoints.map((point) => (
+              <div key={point} className="border border-white/10 bg-black/24 p-4 backdrop-blur-sm">
+                <BadgeCheck className="mb-3 text-[#9ED8C9]" size={18} />
+                <p className="text-sm leading-6 text-white/68">{point}</p>
+              </div>
+            ))}
+          </div>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <Link
               href={`${appUrl}/register`}
-              className="inline-flex min-h-14 items-center justify-center gap-3 border border-[#F4D58D] bg-[#F4D58D] px-6 py-4 font-mono text-xs uppercase tracking-widest text-black transition-colors hover:bg-white hover:border-white"
+              className="relative inline-flex min-h-14 items-center justify-center gap-3 overflow-hidden border border-[#F4D58D] bg-[#F4D58D] px-6 py-4 font-mono text-xs uppercase tracking-widest text-black transition-colors hover:border-white hover:bg-white"
             >
-              Start your film <ArrowRight size={16} />
+              <span className="lifestory-button-sheen absolute inset-0" />
+              <span className="relative inline-flex items-center gap-3">
+                Make your movie <ArrowRight size={16} />
+              </span>
             </Link>
             <Link
               href={`${appUrl}/login`}
@@ -112,6 +143,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
           </div>
         </div>
       </section>
+
       <section className="relative z-10 bg-[#0E1013] px-5 py-16 sm:px-8">
         <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[minmax(20rem,38rem)_1fr] md:items-center">
           <div className="mx-auto w-full max-w-[min(88vw,38rem)] border border-[#4A3420]/80 bg-black p-1 shadow-[0_28px_90px_rgba(0,0,0,0.46)]">
@@ -132,18 +164,22 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
             </div>
           </div>
           <div className="max-w-2xl">
-            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/62">Watch first</p>
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/62">
+              Meet your director
+            </p>
             <h2 className="mt-4 font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
-              Nico will show you where to begin.
+              Nico helps you turn a lifetime into scenes people can feel.
             </h2>
             <p className="mt-5 text-lg leading-8 text-white/64">
-              Start with the welcome, then create your account and step into the studio when you are ready.
+              The welcome video shows the tone of the studio: personal, cinematic, and direct.
+              When you enter, Nico interviews you, finds the emotional thread, and helps build the
+              film around what actually matters.
             </p>
             <Link
               href={`${appUrl}/register`}
-              className="mt-8 inline-flex min-h-14 items-center justify-center gap-3 border border-[#F4D58D] bg-[#F4D58D] px-6 py-4 font-mono text-xs uppercase tracking-widest text-black transition-colors hover:bg-white hover:border-white"
+              className="mt-8 inline-flex min-h-14 items-center justify-center gap-3 border border-[#F4D58D] bg-[#F4D58D] px-6 py-4 font-mono text-xs uppercase tracking-widest text-black transition-colors hover:border-white hover:bg-white"
             >
-              Register now <ArrowRight size={16} />
+              Enter the studio <ArrowRight size={16} />
             </Link>
           </div>
         </div>
@@ -154,25 +190,28 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
           <div className="relative aspect-[4/5] overflow-hidden border border-white/10 md:aspect-[3/4]">
             <Image
               src="/landing/director-studio.png"
-              alt="Nico Hale, the AI content director, seated in his warm library studio"
+              alt="Nico Hale seated in a warm cinematic studio"
               fill
               sizes="(max-width: 768px) 100vw, 38vw"
               className="object-cover object-[50%_30%]"
             />
             <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_48%,rgba(8,8,12,0.64)_100%)]" />
+            <div className="lifestory-portal-ring absolute inset-5" />
           </div>
           <div className="max-w-2xl">
-            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#9ED8C9]/62">AI content director</p>
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#9ED8C9]/62">
+              Cinematic life-story studio
+            </p>
             <h2 className="mt-4 max-w-2xl font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
-              The room matters. So does the person asking the questions.
+              Not a slideshow. Not a generic AI montage. A movie built around your life.
             </h2>
             <p className="mt-6 text-lg leading-8 text-white/62">
-              Nico is the steady presence inside yourlifestory: part interviewer, part film editor,
-              part patient listener. He helps you find the thread in the stories that feel too
-              good to leave in a camera roll.
+              This is for the story you have carried for years, the person you want remembered, or
+              the chapter you need to see from the outside. There is no narrow template to fit into.
+              If it belongs to your life, it can belong in the film.
             </p>
             <p className="mt-5 font-mono text-xs uppercase tracking-[0.24em] text-[#F4D58D]/58">
-              A short film from a life only you can tell
+              A narrated cinematic movie from a life only you can tell
             </p>
           </div>
         </div>
@@ -181,10 +220,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
       <section className="relative z-10 bg-[#0B0B11] px-5 py-16 sm:px-8">
         <div className="mx-auto grid w-full max-w-6xl gap-12">
           {memoryImages.map((memory, index) => (
-            <article
-              key={memory.title}
-              className="grid gap-8 md:grid-cols-2 md:items-center"
-            >
+            <article key={memory.title} className="grid gap-8 md:grid-cols-2 md:items-center">
               <div className={index % 2 === 1 ? 'md:order-2' : ''}>
                 <div className="relative aspect-[3/2] overflow-hidden border border-white/10">
                   <Image
@@ -192,13 +228,13 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
                     alt={memory.alt}
                     fill
                     sizes="(max-width: 768px) 100vw, 50vw"
-                    className="object-cover"
+                    className="object-cover transition-transform duration-700 hover:scale-[1.03]"
                   />
                 </div>
               </div>
               <div className="max-w-xl">
                 <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#F4D58D]/58">
-                  {index === 0 ? 'Memory becomes cinema' : 'Guided, not generic'}
+                  {memory.eyebrow}
                 </p>
                 <h2 className="mt-4 font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
                   {memory.title}
@@ -209,10 +245,14 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
           ))}
         </div>
       </section>
-      <section className="relative z-10 bg-[#0A0A0E] px-5 py-20 sm:px-8 border-b border-white/5">
+
+      <section className="relative z-10 border-b border-white/5 bg-[#0A0A0E] px-5 py-20 sm:px-8">
         <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
+          <p className="mb-4 inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.28em] text-[#D98B70]/70">
+            <Play size={14} /> Finished-film example
+          </p>
           <h2 className="mb-10 text-center font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
-            yourlifestory.io - Your Life as a Movie.
+            See how a personal story can feel on screen.
           </h2>
           <div className="w-full border border-white/10 bg-black/50 p-1 shadow-2xl">
             <div className="relative aspect-video overflow-hidden bg-black">
@@ -220,7 +260,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
                 src="/landing/videos/example.mp4"
                 width={1920}
                 height={1080}
-                className="absolute inset-0 w-full h-full object-cover"
+                className="absolute inset-0 h-full w-full object-cover"
                 autoPlay
                 muted
                 loop
@@ -252,25 +292,28 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
       <section className="relative z-10 bg-[#08080C] px-5 py-16 sm:px-8">
         <div className="mx-auto grid w-full max-w-6xl gap-10 md:grid-cols-[1.05fr_0.95fr] md:items-center">
           <div className="max-w-2xl">
-            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#D98B70]/70">The keepsake</p>
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-[#D98B70]/70">
+              The keepsake
+            </p>
             <h2 className="mt-4 font-serif text-5xl font-light leading-tight text-white/94 sm:text-6xl">
-              Give your memories a screen.
+              Make the movie your family wishes already existed.
             </h2>
             <p className="mt-6 text-lg leading-8 text-white/62">
-              Make the short film you wish already existed. Start with a few real details,
-              then let yourlifestory help you shape them into something your people can gather around.
+              Start with the truth. Add the names, places, choices, losses, jokes, regrets, and
+              impossible little details. yourlifestory turns them into a cinematic artifact that can
+              be kept, shared, and watched together.
             </p>
             <Link
               href={`${appUrl}/register`}
-              className="mt-9 inline-flex min-h-14 items-center justify-center gap-3 border border-[#F4D58D] bg-[#F4D58D] px-6 py-4 font-mono text-xs uppercase tracking-widest text-black transition-colors hover:bg-white hover:border-white"
+              className="mt-9 inline-flex min-h-14 items-center justify-center gap-3 border border-[#F4D58D] bg-[#F4D58D] px-6 py-4 font-mono text-xs uppercase tracking-widest text-black transition-colors hover:border-white hover:bg-white"
             >
-              Create your film <ArrowRight size={16} />
+              Create your movie <ArrowRight size={16} />
             </Link>
           </div>
           <div className="relative aspect-[16/10] overflow-hidden border border-white/10">
             <Image
               src="/landing/final-screening.png"
-              alt="Nico Hale seated beside a family watching a personal film projection"
+              alt="A family watching a personal film projection together"
               fill
               sizes="(max-width: 768px) 100vw, 45vw"
               className="object-cover"
@@ -282,7 +325,7 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
       <footer className="relative z-10 border-t border-white/10 bg-[#08080C] px-5 py-10 sm:px-8">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-6 sm:flex-row">
           <p className="font-mono text-xs uppercase tracking-[0.2em] text-white/40">
-            Powered by RunwayML and Modal
+            yourlifestory.io - narrated cinematic movies from real lives
           </p>
           <a
             href="https://instagram.com/yourlifestory.io"

@@ -145,6 +145,10 @@
     animation: lifestory-icon-ring 3.4s ease-in-out infinite;
   }
 
+  .lifestory-soft-reveal {
+    animation: lifestory-soft-reveal 900ms ease-out both;
+  }
+
   @keyframes lifestory-aurora-drift {
     from {
       opacity: 0.78;
@@ -200,6 +204,17 @@
       transform: scale(1.05);
     }
   }
+
+  @keyframes lifestory-soft-reveal {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 18px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0);
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -207,6 +222,7 @@
   .lifestory-stage-rays,
   .lifestory-portal-ring,
   .lifestory-button-sheen,
+  .lifestory-soft-reveal,
   .lifestory-icon-ring,
   .avatar-loader-ring,
   .avatar-loader-scan {
