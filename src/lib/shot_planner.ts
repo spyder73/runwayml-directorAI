@@ -129,50 +129,6 @@ function proposedAngleChangeReason(shot: ProposedShotPlan | undefined) {
   return cleanOptionalText(shot?.angleChangeReason || shot?.angle_change_reason);
 }
 
-const PERSPECTIVE_PATTERNS = [
-  ['wide', /\bwide\b|\bestablishing\b|\bfull[- ]?body\b/i],
-  ['medium', /\bmedium\b|\bwaist[- ]?up\b/i],
-  ['close', /\bclose[- ]?up\b|\btight\b|\bportrait\b/i],
-  ['detail', /\bdetail\b|\binsert\b|\bmacro\b|\bhands?\b/i],
-  ['reverse', /\breverse\b|\bopposite\b/i],
-  ['over_shoulder', /\bover[- ]the[- ]shoulder\b|\bover the shoulder\b/i],
-  ['pov', /\bpov\b|\bpoint[- ]of[- ]view\b|\bpoint of view\b/i],
-  ['behind', /\bfrom behind\b|\brear\b|\bfollowing\b/i],
-  ['exterior', /\bfrom outside\b|\boutside\b|\bexterior\b/i],
-  ['interior', /\bfrom inside\b|\binside\b|\binterior\b/i],
-  ['reflection', /\breflection\b|\breflected\b|\bmirror\b|\bglass\b/i],
-  ['high', /\bhigh angle\b|\boverhead\b|\btop[- ]down\b|\bbird'?s[- ]eye\b/i],
-  ['low', /\blow angle\b|\bground[- ]level\b/i],
-] as const;
-
-function perspectiveKeys(text: string) {
-  const keys = new Set<string>();
-  for (const [key, pattern] of PERSPECTIVE_PATTERNS) {
-    if (pattern.test(text)) keys.add(key);
-  }
-  return keys;
-}
-
-function hasMeaningfulPerspectiveChange(previous: ProposedShotPlan, shot: ProposedShotPlan) {
-  const reason = proposedAngleChangeReason(shot);
-  const previousText = [
-    cleanGeneratorPrompt(previous.prompt),
-    cleanGeneratorPrompt(previous.referencePrompt || previous.reference_prompt),
-    proposedCameraRole(previous),
-  ].filter(Boolean).join(' ');
-  const nextText = [
-    cleanGeneratorPrompt(shot.prompt),
-    cleanGeneratorPrompt(shot.referencePrompt || shot.reference_prompt),
-    proposedVisualStartState(shot),
-    proposedCameraRole(shot),
-    reason,
-  ].filter(Boolean).join(' ');
-  const previousKeys = perspectiveKeys(previousText);
-  const nextKeys = perspectiveKeys(nextText);
-
-  return [...nextKeys].some((key) => !previousKeys.has(key));
-}
-
 function shouldKeepShortSplit(totalDuration: number, usableShots: ProposedShotPlan[]) {
   // Relaxed shot splitting constraint: allow the AI to cut scenes dynamically
   return true;
