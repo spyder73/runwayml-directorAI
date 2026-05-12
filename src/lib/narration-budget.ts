@@ -1,5 +1,5 @@
-const WORDS_PER_SECOND = 2.2;
-const MIN_NARRATION_WORDS = 4;
+const WORDS_PER_SECOND = 2.8;
+const MIN_NARRATION_WORDS = 6;
 
 export function narrationWordBudgetForDuration(durationSeconds: number | null | undefined) {
   const duration = Number.isFinite(durationSeconds) && durationSeconds && durationSeconds > 0
@@ -25,4 +25,3 @@ export function limitNarrationForSceneDuration(text: string, durationSeconds: nu
   limitedWords[limitedWords.length - 1] = lastWord.replace(/[,:;]+$/, '');
   return `${limitedWords.join(' ')}.`;
 }
-

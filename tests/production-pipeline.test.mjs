@@ -565,20 +565,20 @@ test('pipeline preserves exact narration duration for final subtitle timing', ()
   assert.doesNotMatch(legacySource, /Math\.ceil\(exactDuration\)/);
 });
 
-test('narration budget deterministically limits scene text before TTS', () => {
+test('narration budget uses cinematic voice pacing before TTS', () => {
   const {
     limitNarrationForSceneDuration,
     narrationWordBudgetForDuration,
   } = jiti('../src/lib/narration-budget.ts');
 
-  assert.equal(narrationWordBudgetForDuration(5), 11);
-  assert.equal(narrationWordBudgetForDuration(10), 22);
+  assert.equal(narrationWordBudgetForDuration(6), 16);
+  assert.equal(narrationWordBudgetForDuration(8), 22);
 
-  const longNarration = 'The train was already leaving, and the platform felt impossibly quiet as everyone pretended this goodbye would be simple.';
-  const limited = limitNarrationForSceneDuration(longNarration, 5);
+  const longNarration = 'This is Martin, a restless mind chasing invisible laws, driven by a rare and luminous ambition. The world would slowly learn why.';
+  const limited = limitNarrationForSceneDuration(longNarration, 6);
 
-  assert.equal(limited, 'The train was already leaving, and the platform felt impossibly quiet.');
-  assert.ok(limited.split(/\s+/).length <= 11);
+  assert.equal(limited, 'This is Martin, a restless mind chasing invisible laws, driven by a rare and luminous ambition.');
+  assert.ok(limited.split(/\s+/).length <= 16);
 });
 
 test('final render bundle resolver reuses one in-flight bundle', async () => {

@@ -6,9 +6,13 @@ export const sceneOutlinePrompt = `Scene outline:
 - If the user asks to change the treatment, call propose_film_treatment with the revised treatment instead of moving to scenes.
 - If the user says there is nothing else to add and asks to create the movie, stop asking "anything else" questions. Create the treatment if none exists; otherwise move to the outline when readiness and reference checkpoints are satisfied.
 - Each scene needs a title, user-facing summary, emotional purpose, narratorText, duration, visual direction, and reference needs.
-- Choose durations first, then write narratorText to fit those durations as part of one coherent entire film narration.
-- For each scene, calculate the narratorText word budget as floor(duration * 2.2). Do not exceed that word budget.
-- Examples: a 5-second scene allows 11 words, a 6-second scene allows 13 words, an 8-second scene allows 17 words, and a 10-second scene allows 22 words.
+- Think of the full movie voiceover before writing individual scenes: the narration should flow in order like a fantastic cinematic life-story narrator telling one inspiring story.
+- First draft the emotional arc of the entire voiceover in your head, then divide it into scene narratorText entries that connect naturally from one scene to the next.
+- Choose durations first, then write each narratorText to fit its duration while keeping the whole film organic, fascinating, and human.
+- For each scene, calculate the narratorText word budget as floor(duration * 2.8). Do not exceed that word budget.
+- Examples: a 5-second scene allows 14 words, a 6-second scene allows 16 words, an 8-second scene allows 22 words, and a 10-second scene allows 28 words.
+- narratorText must be actual movie narration, not production notes, labels, summaries, or explanations of what the scene demonstrates.
+- Do not write lines like "To demonstrate his interest in physics" or "This is Martin to show him." Write cinematic narration like: "This is Martin, a restless mind chasing invisible laws, driven by rare ambition."
 - The final branded card adds 3 seconds after the story scenes and does not need narratorText.
 - Always include a standard intro scene and a standard outro scene with the main character when drafting a LifeStory outline.
 - The standard intro should feel like: "This is [name]..." and introduce who the person is in narrator language.
@@ -35,5 +39,5 @@ export const storySceneDiversityPrompt = `Scene diversity:
 - Do not statically render the whole chapter in one scenery when the story naturally moves through different places, actions, or relationships.
 - Prefer several short scenes that each show a specific part of the described experience over repeated angles on the same background.
 - Repeat a location only when the action or emotional beat materially changes there.
-- Keep narratorText within the exact word budget for each planned 2 to 10 second duration.
+- Keep narratorText within the exact word budget for each planned 2 to 10 second duration, while preserving the feeling of one continuous cinematic life story.
 - Use sub-scenes only where the motion pass genuinely needs them, not for repeated same background coverage.`;

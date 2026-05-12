@@ -178,15 +178,20 @@ test('LifeStory prompts cover childhood briefly and emphasize young adult and ad
   assert.match(outlinePrompt, /younger adult/i);
 });
 
-test('scene outline prompt tells the director exact narration word budgets', () => {
+test('scene outline prompt asks for cinematic whole-film narration with per-scene budgets', () => {
   const outlinePrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/scene-outline.ts', import.meta.url), 'utf8');
 
+  assert.match(outlinePrompt, /full movie voiceover/i);
+  assert.match(outlinePrompt, /fantastic cinematic life-story narrator/i);
+  assert.match(outlinePrompt, /then divide it into scene narratorText/i);
   assert.match(outlinePrompt, /narratorText/i);
   assert.match(outlinePrompt, /word budget/i);
-  assert.match(outlinePrompt, /duration \* 2\.2/i);
-  assert.match(outlinePrompt, /5-second scene.*11 words/i);
-  assert.match(outlinePrompt, /10-second scene.*22 words/i);
-  assert.match(outlinePrompt, /entire film/i);
+  assert.match(outlinePrompt, /duration \* 2\.8/i);
+  assert.match(outlinePrompt, /6-second scene.*16 words/i);
+  assert.match(outlinePrompt, /10-second scene.*28 words/i);
+  assert.match(outlinePrompt, /whole film/i);
+  assert.match(outlinePrompt, /not production notes/i);
+  assert.match(outlinePrompt, /Do not write lines like "To demonstrate/i);
 });
 
 test('cost estimator uses gpt_image_2 low sketches and high final frames', () => {
