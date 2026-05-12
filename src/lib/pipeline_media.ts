@@ -413,6 +413,29 @@ function markSceneFailure(database: SqliteDatabase, task: MediaTaskRow, error: s
   `).run(sceneStatus, error, task.scene_id);
 }
 
+function clearSceneFailure(database: SqliteDatabase, task: MediaTaskRow) {
+  if (!task.scene_id) return;
+  database.prepare('UPDATE scenes SET last_failure = NULL WHERE id = ?').run(task.scene_id);
+}
+
+function failedTaskSnapshot(database: SqliteDatabase, taskId: string) {
+  return database.prepare('SELECT * FROM media_tasks WHERE id = ?').get(taskId) as MediaTaskRow | undefined;
+}
+
+function requeueAutomaticRetry(database: SqliteDatabase, task: MediaTaskRow) {
+  database.prepare(`
+    UPDATE media_tasks
+    SET status = 'queued',
+        started_at = NULL,
+        completed_at = NULL,
+        progress = 0,
+        progress_message = NULL,
+        progress_detail_json = NULL,
+        progress_updated_at = NULL
+    WHERE id = ?
+  `).run(task.id);
+}
+
 async function executeFrameTask(params: { database: SqliteDatabase; task: MediaTaskRow; session: SessionRow }) {
   const { database, task, session } = params;
   const scene = getScene(database, task.scene_id);
@@ -903,6 +926,7 @@ async function runOneTask(params: {
   try {
     const outputAssetId = await executor({ database, task, session });
     completeMediaTask(database, task.id, typeof outputAssetId === 'string' ? outputAssetId : undefined);
+    clearSceneFailure(database, task);
     logMediaGeneration('media_task_succeeded', {
       sessionId: task.session_id,
       taskId: task.id,
@@ -914,18 +938,27 @@ async function runOneTask(params: {
   } catch (error) {
     const message = safeCredentialErrorMessage(error, formatError(error));
     failMediaTask(database, task.id, message);
-    markSceneFailure(database, task, message);
-    setSessionStatus(database, task.session_id, 'FAILED');
-    broadcastProgress(database, task.session_id, message);
+    const failedTask = failedTaskSnapshot(database, task.id) || task;
+    const willRetry = failedTask.attempts < failedTask.max_attempts;
+    markSceneFailure(database, failedTask, message);
+    if (willRetry) {
+      requeueAutomaticRetry(database, failedTask);
+      broadcastProgress(database, task.session_id, message);
+    } else {
+      setSessionStatus(database, task.session_id, 'FAILED');
+      broadcastProgress(database, task.session_id, message);
+    }
     logMediaGeneration('media_task_failed', {
       sessionId: task.session_id,
       taskId: task.id,
       kind: task.kind,
       sceneId: task.scene_id,
       provider: task.provider,
+      attempt: failedTask.attempts,
+      maxAttempts: failedTask.max_attempts,
       error,
     }, 'error');
-    return { ok: false as const, error };
+    return { ok: false as const, retryable: willRetry, error };
   }
 }
 
@@ -965,10 +998,10 @@ export async function runMediaTaskRunner(sessionId: string, options: MediaTaskRu
       }
     }
 
-    if (outcomes.some((outcome) => !outcome.ok)) {
-      const firstFailure = outcomes.find((outcome) => !outcome.ok);
+    const exhaustedFailure = outcomes.find((outcome) => !outcome.ok && !outcome.retryable);
+    if (exhaustedFailure) {
       result.remainingQueued = countRemainingQueued(database, sessionId, allowedKinds);
-      throw firstFailure?.error instanceof Error ? firstFailure.error : new Error('Media task runner failed.');
+      throw exhaustedFailure.error instanceof Error ? exhaustedFailure.error : new Error('Media task runner failed.');
     }
 
     syncSessionProgress(database, sessionId, Boolean(options.includeRender), options.completionMode);

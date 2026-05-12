@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       aspectRatio,
       'life_story',
       interviewMedium,
-      interviewMedium === 'voice' ? null : auth.user.email,
+      null,
     );
 
     const msgId = uuidv4();

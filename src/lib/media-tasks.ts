@@ -16,6 +16,7 @@ export type MediaTaskKind =
 
 export type MediaTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export type MediaTaskProvider = 'runway' | 'remotion' | 'local' | 'modal';
+export const DEFAULT_AUTOMATIC_GENERATION_ATTEMPTS = 6;
 
 export type RenderProgressDetail = {
   renderedFrames?: number | null;
@@ -81,7 +82,7 @@ export function initializeMediaTaskTables(database: SqliteDatabase) {
       request_json TEXT,
       output_asset_id TEXT,
       attempts INTEGER NOT NULL DEFAULT 0,
-      max_attempts INTEGER NOT NULL DEFAULT 3,
+      max_attempts INTEGER NOT NULL DEFAULT 6,
       last_error TEXT,
       progress REAL NOT NULL DEFAULT 0,
       progress_message TEXT,
@@ -150,7 +151,7 @@ export function createMediaTask(database: SqliteDatabase, input: {
     jsonArray(input.dependsOnTaskIds),
     input.provider,
     input.requestJson ? JSON.stringify(input.requestJson) : null,
-    input.maxAttempts || 3,
+    input.maxAttempts ?? DEFAULT_AUTOMATIC_GENERATION_ATTEMPTS,
   );
 
   return database.prepare('SELECT * FROM media_tasks WHERE id = ?').get(id) as MediaTaskRow;

@@ -134,6 +134,25 @@ test('final render email links to the render finished page when session id is av
   }
 });
 
+test('final render notifications include extra render email and account email once each', () => {
+  const { finalRenderNotificationRecipients } = jiti('../src/lib/final-render-notification.ts');
+
+  assert.deepEqual(
+    finalRenderNotificationRecipients({
+      render_notification_email: 'film@example.com',
+      account_email: 'owner@example.com',
+    }),
+    ['film@example.com', 'owner@example.com'],
+  );
+  assert.deepEqual(
+    finalRenderNotificationRecipients({
+      render_notification_email: 'OWNER@example.com',
+      account_email: 'owner@example.com',
+    }),
+    ['owner@example.com'],
+  );
+});
+
 test('auth routes register, require confirmation for login, verify email, login, and logout', async () => {
   const dbModule = jiti('../src/lib/db.ts');
   const db = dbModule.default;

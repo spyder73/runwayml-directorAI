@@ -703,6 +703,54 @@ test('automatic production pipeline runs frames, final assets, and render', asyn
   assert.equal(session.final_video_url, 'final-url');
 });
 
+test('media task runner automatically retries transient generation failures before exhausting attempts', async () => {
+  const {
+    createMediaTask,
+    initializeMediaTaskTables,
+  } = jiti('../src/lib/media-tasks.ts');
+  const { runMediaTaskRunner } = jiti('../src/lib/pipeline_media.ts');
+
+  const db = createDb();
+  initializeMediaTaskTables(db);
+  db.prepare(`
+    INSERT INTO scenes (id, session_id, title, scene_index, narrator_text, visual_prompt)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run('scene-1', 'session-1', 'Scene 1', 0, 'Narration', 'Visual prompt');
+
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_scene_frame',
+    provider: 'runway',
+  });
+
+  let attempts = 0;
+  const result = await runMediaTaskRunner('session-1', {
+    database: db,
+    onlyKinds: ['generate_scene_frame'],
+    executors: {
+      generate_scene_frame: async () => {
+        attempts += 1;
+        if (attempts < 3) throw new Error(`temporary runway failure ${attempts}`);
+        return 'frame-url';
+      },
+    },
+  });
+
+  const task = db.prepare('SELECT status, attempts, max_attempts, output_asset_id, last_error FROM media_tasks WHERE kind = ?').get('generate_scene_frame');
+  const scene = db.prepare('SELECT status, retry_attempts, last_failure FROM scenes WHERE id = ?').get('scene-1');
+  assert.equal(attempts, 3);
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.failed, 2);
+  assert.equal(task.status, 'succeeded');
+  assert.equal(task.attempts, 2);
+  assert.equal(task.max_attempts, 6);
+  assert.equal(task.output_asset_id, 'frame-url');
+  assert.equal(task.last_error, null);
+  assert.equal(scene.retry_attempts, 2);
+  assert.equal(scene.last_failure, null);
+});
+
 test('media task runner defaults to serial runway task execution', async () => {
   const {
     createMediaTask,
@@ -861,7 +909,7 @@ test('LifeStory frame approval separates stills from final motion generation', a
   assert.equal(db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1').status, 'PREVIEW_READY');
 });
 
-test('media task runner records failed task attempts without advancing dependents', async () => {
+test('media task runner exhausts automatic retries without advancing dependents', async () => {
   const {
     createMediaTask,
     initializeMediaTaskTables,
@@ -899,7 +947,7 @@ test('media task runner records failed task attempts without advancing dependent
 
   const tasks = db.prepare('SELECT kind, status, attempts, last_error FROM media_tasks ORDER BY created_at ASC').all();
   assert.deepEqual(tasks.map((task) => [task.kind, task.status, task.attempts]), [
-    ['generate_scene_frame', 'failed', 1],
+    ['generate_scene_frame', 'failed', 6],
     ['generate_video_shot', 'queued', 0],
   ]);
   assert.match(tasks[0].last_error, /runway is unavailable/);
