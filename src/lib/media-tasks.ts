@@ -49,6 +49,7 @@ export type MediaTaskRow = {
   progress_message: string | null;
   progress_detail_json: string | null;
   progress_updated_at: string | null;
+  auto_failure_notification_sent_at: string | null;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
@@ -88,6 +89,7 @@ export function initializeMediaTaskTables(database: SqliteDatabase) {
       progress_message TEXT,
       progress_detail_json TEXT,
       progress_updated_at DATETIME,
+      auto_failure_notification_sent_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       started_at DATETIME,
       completed_at DATETIME
@@ -101,6 +103,7 @@ export function initializeMediaTaskTables(database: SqliteDatabase) {
   addColumnIfMissing(database, 'media_tasks', 'progress_message', 'progress_message TEXT');
   addColumnIfMissing(database, 'media_tasks', 'progress_detail_json', 'progress_detail_json TEXT');
   addColumnIfMissing(database, 'media_tasks', 'progress_updated_at', 'progress_updated_at DATETIME');
+  addColumnIfMissing(database, 'media_tasks', 'auto_failure_notification_sent_at', 'auto_failure_notification_sent_at DATETIME');
 }
 
 function jsonArray(value: string[] | undefined) {
@@ -286,7 +289,8 @@ export function resetFailedMediaTasks(database: SqliteDatabase, params: {
         progress = 0,
         progress_message = NULL,
         progress_detail_json = NULL,
-        progress_updated_at = NULL
+        progress_updated_at = NULL,
+        auto_failure_notification_sent_at = NULL
     WHERE ${clauses.join(' AND ')}
   `).run(...values);
 }
@@ -319,7 +323,8 @@ export function requeueMediaTasks(database: SqliteDatabase, params: {
         progress = 0,
         progress_message = NULL,
         progress_detail_json = NULL,
-        progress_updated_at = NULL
+        progress_updated_at = NULL,
+        auto_failure_notification_sent_at = NULL
     WHERE ${clauses.join(' AND ')}
   `).run(...values);
 }

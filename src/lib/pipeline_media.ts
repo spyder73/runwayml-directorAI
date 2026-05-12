@@ -33,7 +33,7 @@ import {
 import { cleanGeneratorPrompt, planShots, referencePromptFromGeneratorText, type ShotPlan } from './shot_planner';
 import { broadcastSessionUpdate } from './sse';
 import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './types';
-import { notifyFinalRenderReady } from './final-render-notification';
+import { notifyFinalRenderReady, notifyGenerationRetriesExhausted } from './final-render-notification';
 import {
   createRunwayClientForSession,
   getRunwayConcurrencyModeForSession,
@@ -947,6 +947,11 @@ async function runOneTask(params: {
     } else {
       setSessionStatus(database, task.session_id, 'FAILED');
       broadcastProgress(database, task.session_id, message);
+      if (!failedTask.auto_failure_notification_sent_at) {
+        notifyGenerationRetriesExhausted(database, failedTask).catch((notificationError) => {
+          console.error('Failed to send generation failure notification', notificationError);
+        });
+      }
     }
     logMediaGeneration('media_task_failed', {
       sessionId: task.session_id,

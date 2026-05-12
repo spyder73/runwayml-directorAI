@@ -954,6 +954,16 @@ test('media task runner exhausts automatic retries without advancing dependents'
   assert.equal(db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1').status, 'FAILED');
 });
 
+test('media task exhaustion triggers a manual regeneration notification', () => {
+  const pipelineSource = fs.readFileSync(new URL('../src/lib/pipeline_media.ts', import.meta.url), 'utf8');
+  const notificationSource = fs.readFileSync(new URL('../src/lib/final-render-notification.ts', import.meta.url), 'utf8');
+
+  assert.match(pipelineSource, /notifyGenerationRetriesExhausted/);
+  assert.match(pipelineSource, /!failedTask\.auto_failure_notification_sent_at/);
+  assert.match(notificationSource, /sendGenerationFailureEmail/);
+  assert.match(notificationSource, /auto_failure_notification_sent_at = CURRENT_TIMESTAMP/);
+});
+
 test('shot plan progress keeps completed sub-shots and only reports complete when every shot has a url', () => {
   const {
     mergeShotPlanProgress,
