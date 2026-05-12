@@ -77,6 +77,13 @@ test('production progress exposes frame approval before motion generation', () =
   assert.match(pageSource, /\/api\/pipeline\/synthesize/);
 });
 
+test('frame approval route continues through final render automatically', () => {
+  const routeSource = fs.readFileSync(new URL('../src/app/api/pipeline/synthesize/route.ts', import.meta.url), 'utf8');
+
+  assert.match(routeSource, /runAutomaticProductionPipeline/);
+  assert.doesNotMatch(routeSource, /runFinalAssetsPhase/);
+});
+
 test('outline approval failures remain visible in the outline review panel', () => {
   const source = fs.readFileSync(new URL('../src/components/session/SceneOutlineReview.tsx', import.meta.url), 'utf8');
   const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
