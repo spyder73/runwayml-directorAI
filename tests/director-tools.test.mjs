@@ -192,7 +192,8 @@ test('story outline prompt generalizes multi-part memories into distinct scenes'
   assert.match(prompt, /life chapter/i);
   assert.match(prompt, /distinct locations or action beats/i);
   assert.match(prompt, /one scenery/i);
-  assert.match(prompt, /repeated.*same background/i);
+  assert.match(prompt, /visually rich journey across time and space/i);
+  assert.match(prompt, /Never generate consecutive scenes in the exact same setting/i);
   assert.doesNotMatch(prompt, /Heidelberg|Kareem|German course|classroom|cafe/i);
 });
 

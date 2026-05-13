@@ -8,6 +8,7 @@ const optionalText = textValue.optional();
 const optionalStringArray = z.array(textValue).optional();
 
 export const updateProfileBucketSchema = z.object({
+  directorReply: z.string().min(1).optional(),
   profile: z.object({
     protagonistName: optionalText,
     age: optionalText,
@@ -62,6 +63,7 @@ export const requestReferenceUploadSchema = z.object({
 });
 
 export const addReferenceSubjectSchema = z.object({
+  directorReply: z.string().min(1).optional(),
   referenceAssetId: z.string().min(1).optional(),
   referenceTag: z.string().min(1).optional(),
   entityId: z.string().min(1).optional(),
@@ -75,6 +77,7 @@ export const addReferenceSubjectSchema = z.object({
 });
 
 export const saveReferenceDescriptionSchema = z.object({
+  directorReply: z.string().min(1).optional(),
   targetType: z.string().min(1),
   targetLabel: z.string().min(1),
   description: z.string().min(1),
@@ -82,6 +85,7 @@ export const saveReferenceDescriptionSchema = z.object({
 });
 
 export const memorySketchSchema = z.object({
+  directorReply: z.string().min(1).optional(),
   candidateId: z.string().optional(),
   title: z.string().min(1),
   description: z.string().min(1),
@@ -91,12 +95,14 @@ export const memorySketchSchema = z.object({
 });
 
 export const saveSketchFeedbackSchema = z.object({
+  directorReply: z.string().min(1).optional(),
   candidateId: z.string().min(1),
   feedback: z.enum(['accepted', 'rejected', 'revised']),
   note: z.string().optional(),
 });
 
 export const filmTreatmentSchema = z.object({
+  directorReply: z.string().min(1).optional(),
   title: z.string().min(1),
   emotionalThesis: z.string().min(1),
   narrativeArc: z.string().min(1),
@@ -120,11 +126,13 @@ const outlineSceneSchema = z.object({
 });
 
 export const proposeSceneOutlineSchema = z.object({
+  directorReply: z.string().min(1).optional(),
   scenes: z.array(outlineSceneSchema).min(1).max(30),
   chatMessage: z.string().optional(),
 });
 
 export const reviseSceneOutlineSchema = z.object({
+  directorReply: z.string().min(1).optional(),
   comment: z.string().optional(),
   sceneOutlineId: z.string().optional(),
   sceneIndex: z.number().int().nonnegative().min(0),
@@ -147,7 +155,7 @@ export const lockSceneOutlineSchema = z.object({
 
 export const aiTools = {
   update_profile_bucket: tool({
-    description: 'Preserve profile facts, timeline events, people, places, themes, and candidate scenes after an interview turn.',
+    description: 'Preserve profile facts, timeline events, people, places, themes, and candidate scenes after an interview turn. Include directorReply with the exact warm user-facing response and next question.',
     inputSchema: updateProfileBucketSchema,
   }),
   request_reference_upload: tool({
@@ -155,11 +163,11 @@ export const aiTools = {
     inputSchema: requestReferenceUploadSchema,
   }),
   add_reference_subject: tool({
-    description: 'When the user identifies an uploaded or described reference, attach that reference to a named person, place, or object. Prefer referenceTag from the current References list, or omit it to label the most recent unassigned reference.',
+    description: 'When the user identifies an uploaded or described reference, attach that reference to a named person, place, or object. Prefer referenceTag from the current References list, or omit it to label the most recent unassigned reference. Return a warm directorReply with one short follow-up question.',
     inputSchema: addReferenceSubjectSchema,
   }),
   save_reference_description: tool({
-    description: 'Save visual details when the user skips or describes a reference instead of uploading an image.',
+    description: 'Save visual details when the user skips or describes a reference instead of uploading an image. Include directorReply with the next natural question.',
     inputSchema: saveReferenceDescriptionSchema,
   }),
   generate_memory_sketch: tool({
@@ -167,19 +175,19 @@ export const aiTools = {
     inputSchema: memorySketchSchema,
   }),
   save_sketch_feedback: tool({
-    description: 'Record whether the user accepted, rejected, or revised a generated memory sketch.',
+    description: 'Record whether the user accepted, rejected, or revised a generated memory sketch. Include directorReply with the next natural response.',
     inputSchema: saveSketchFeedbackSchema,
   }),
   propose_film_treatment: tool({
-    description: 'Create the short film treatment before scene outline: title, emotional thesis, narrative arc, visual motif, narrator style, ending feeling, and things to avoid.',
+    description: 'Create the short film treatment before scene outline: title, emotional thesis, narrative arc, visual motif, narrator style, ending feeling, and things to avoid. The treatment card renders the full structure, so keep directorReply to a short handoff asking the user to review it below.',
     inputSchema: filmTreatmentSchema,
   }),
   propose_scene_outline: tool({
-    description: 'Create a reviewable scene outline with durations, narration, prompts, and reference needs. Include chatMessage for the user-facing introduction.',
+    description: 'Create a reviewable scene outline with durations, narration, prompts, and reference needs. Include directorReply or chatMessage for the user-facing introduction.',
     inputSchema: proposeSceneOutlineSchema,
   }),
   revise_scene_outline: tool({
-    description: 'Apply a user comment or requested change to the reviewable scene outline without starting production.',
+    description: 'Apply a user comment or requested change to the reviewable scene outline without starting production. Include directorReply with the next natural response.',
     inputSchema: reviseSceneOutlineSchema,
   }),
   lock_scene_outline: tool({

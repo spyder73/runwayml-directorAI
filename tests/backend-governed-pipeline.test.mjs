@@ -178,20 +178,16 @@ test('LifeStory prompts cover childhood briefly and emphasize young adult and ad
   assert.match(outlinePrompt, /younger adult/i);
 });
 
-test('scene outline prompt asks for cinematic whole-film narration with per-scene budgets', () => {
+test('scene outline prompt asks for cinematic whole-film narration', () => {
   const outlinePrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/scene-outline.ts', import.meta.url), 'utf8');
 
   assert.match(outlinePrompt, /full movie voiceover/i);
   assert.match(outlinePrompt, /fantastic cinematic life-story narrator/i);
   assert.match(outlinePrompt, /then divide it into scene narratorText/i);
   assert.match(outlinePrompt, /narratorText/i);
-  assert.match(outlinePrompt, /word budget/i);
-  assert.match(outlinePrompt, /duration \* 2\.3/i);
-  assert.match(outlinePrompt, /6-second scene.*13 words/i);
-  assert.match(outlinePrompt, /10-second scene.*23 words/i);
-  assert.match(outlinePrompt, /whole film/i);
-  assert.match(outlinePrompt, /not production notes/i);
-  assert.match(outlinePrompt, /Do not write lines like "To demonstrate/i);
+  assert.match(outlinePrompt, /roughly one short sentence per 5 seconds/i);
+  assert.match(outlinePrompt, /Write poetic, evocative, story-driven dialogue/i);
+  assert.doesNotMatch(outlinePrompt, /duration \* 2\.3/i);
 });
 
 test('scene outline prompts require cinematic atmosphere without title cards or collages', () => {
@@ -382,7 +378,8 @@ test('approved treatment outline draft prompt carries scene diversity guidance',
   assert.match(prompt, /life chapter/i);
   assert.match(prompt, /distinct locations or action beats/i);
   assert.match(prompt, /one scenery/i);
-  assert.match(prompt, /repeated.*same background/i);
+  assert.match(prompt, /visually rich journey across time and space/i);
+  assert.match(prompt, /Never generate consecutive scenes in the exact same setting/i);
   assert.doesNotMatch(prompt, /Heidelberg|Kareem|German course|classroom|cafe/i);
 });
 
