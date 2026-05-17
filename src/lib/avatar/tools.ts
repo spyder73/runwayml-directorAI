@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { ToolHandler } from '@runwayml/avatars-node-rpc';
 import type { ChatHistoryRow, SceneRow, SessionRow } from '@/lib/types';
+import { logConversationEvent } from '@/lib/conversation-logs';
 import { buildContextualInterviewFollowUp, ensureProactiveDirectorReply } from '@/lib/director-continuation';
 import { broadcastSessionUpdate } from '@/lib/sse';
 import {
@@ -136,6 +137,18 @@ function safeErrorMessage(error: unknown) {
   return 'The director tool failed.';
 }
 
+function hasUnassignedUploadedReference(database: SqliteDatabase, sessionId: string) {
+  const row = database.prepare(`
+    SELECT 1 FROM reference_assets
+    WHERE session_id = ?
+      AND owner_entity_id IS NULL
+      AND usage_permissions = 'allowed'
+      AND (local_url IS NOT NULL OR runway_uri IS NOT NULL)
+    LIMIT 1
+  `).get(sessionId);
+  return Boolean(row);
+}
+
 type CreateAvatarRpcToolsInput = {
   database: SqliteDatabase;
   appSessionId: string;
@@ -186,6 +199,18 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
       toolName,
       payload: args,
     });
+    logConversationEvent({
+      sessionId: appSessionId,
+      event: 'ai_tool_call',
+      role: 'tool',
+      metadata: {
+        source: 'avatar',
+        avatarCallSessionId,
+        runwaySessionId,
+        toolName,
+        input: args,
+      },
+    });
 
     try {
       const result = await action();
@@ -199,6 +224,22 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
         durationMs,
         payload: result,
       });
+      const directorReply = typeof result.directorReply === 'string' ? result.directorReply : null;
+      if (directorReply) {
+        logConversationEvent({
+          sessionId: appSessionId,
+          event: 'assistant_message',
+          role: 'assistant',
+          content: directorReply,
+          metadata: {
+            source: 'avatar',
+            toolName,
+            durationMs,
+            layout: typeof result.layout === 'string' ? result.layout : null,
+            endCall: result.endCall === true,
+          },
+        });
+      }
       avatarDebugLog(`tool_result:${toolName}`, result);
       broadcastAvatarSessionUpdate(database, appSessionId);
       return result;
@@ -214,6 +255,16 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
         durationMs,
         payload: args,
         errorMessage: message,
+      });
+      logConversationEvent({
+        sessionId: appSessionId,
+        event: 'interview_turn_error',
+        metadata: {
+          source: 'avatar',
+          toolName,
+          durationMs,
+          error: message,
+        },
       });
       avatarDebugLog(`tool_error:${toolName}`, message);
       broadcastAvatarSessionUpdate(database, appSessionId);
@@ -251,6 +302,13 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
     }),
     add_reference_subject: (args) => runTool('add_reference_subject', args, () => {
       const payload = parsePayloadJson(args, addReferenceSubjectSchema);
+      if (!hasUnassignedUploadedReference(database, appSessionId)) {
+        return {
+          ok: true,
+          ignored: true,
+          directorReply: buildContextualInterviewFollowUp(loadStoryBucket(database, appSessionId)),
+        };
+      }
       const result = addReferenceSubject(database, appSessionId, payload);
       return {
         ok: true,
@@ -261,6 +319,13 @@ export function createAvatarRpcTools(input: CreateAvatarRpcToolsInput): Record<s
     }),
     save_reference_description: (args) => runTool('save_reference_description', args, () => {
       const payload = parsePayloadJson(args, saveReferenceDescriptionSchema);
+      if (!getActiveReferenceRequest(database, appSessionId)) {
+        return {
+          ok: true,
+          ignored: true,
+          directorReply: buildContextualInterviewFollowUp(loadStoryBucket(database, appSessionId)),
+        };
+      }
       const referenceAsset = saveReferenceDescription(database, appSessionId, payload);
       return {
         ok: true,

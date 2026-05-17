@@ -225,6 +225,28 @@ test('production references strip unusable prompt tags to keep generation prompt
   assert.doesNotMatch(references.promptText, /@dorian\b/);
 });
 
+test('production references convert invented prompt tags to plain language before validation', () => {
+  const { lintRunwayImagePrompt } = jiti('../src/lib/prompt-lint.ts');
+  const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
+
+  const references = prepareSceneReferences({
+    promptText: '@dorian reading complex @hugenholtz diagrams in a dim university library.',
+    sceneReferenceAssetIds: ['dorian-upload'],
+    protagonistVisible: true,
+    assets: [
+      { id: 'dorian-upload', local_url: '/uploads/dorian.jpg', runway_uri: null, stable_tag: 'dorian', usage_permissions: 'allowed', target_type: 'protagonist', vision_description: null },
+    ],
+  });
+
+  assert.match(references.promptText, /@dorian reading/i);
+  assert.match(references.promptText, /Hugenholtz diagrams/i);
+  assert.doesNotMatch(references.promptText, /@hugenholtz\b/i);
+  assert.equal(lintRunwayImagePrompt({
+    promptText: references.promptText,
+    referenceImages: references.referenceImages,
+  }).ok, true);
+});
+
 test('production references attach uploaded assets for plain named entities in the scene prompt', () => {
   const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
 
@@ -250,6 +272,27 @@ test('production references attach uploaded assets for plain named entities in t
   assert.match(references.promptText, /@protagonist_mart/);
   assert.match(references.promptText, /@dorian/);
   assert.match(references.promptText, /@carl/);
+});
+
+test('production references bind selected people inline instead of appending reference cues', () => {
+  const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
+
+  const references = prepareSceneReferences({
+    promptText: 'A wide, intense shot of a kayak in rough ocean waves near a rocky coast, @moritz paddling hard, Dorian struggling in the background, dramatic lighting.',
+    sceneReferenceAssetIds: ['dorian-upload', 'moritz-upload'],
+    protagonistVisible: true,
+    assets: [
+      { id: 'dorian-upload', local_url: '/uploads/dorian.jpg', runway_uri: null, stable_tag: 'dorian', usage_permissions: 'allowed', target_type: 'protagonist', owner_entity_id: 'dorian-entity', vision_description: null },
+      { id: 'moritz-upload', local_url: '/uploads/moritz.jpg', runway_uri: null, stable_tag: 'moritz', usage_permissions: 'allowed', target_type: 'friend', owner_entity_id: 'moritz-entity', vision_description: null },
+    ],
+    entities: [
+      { id: 'dorian-entity', display_name: 'Dorian', reference_asset_id: 'dorian-upload' },
+      { id: 'moritz-entity', display_name: 'Moritz', reference_asset_id: 'moritz-upload' },
+    ],
+  });
+
+  assert.match(references.promptText, /@moritz paddling hard, @dorian struggling/i);
+  assert.doesNotMatch(references.promptText, /Reference cues/i);
 });
 
 test('production references add exact tags for referenced assets before Runway prompt validation', () => {
@@ -555,6 +598,33 @@ test('final render plan times subtitles to exact narration instead of rounded su
   assert.equal(plan.audioInputs[0].tempo, undefined);
   assert.equal(plan.remotionInputProps.scenes[0].duration_in_frames, 210);
   assert.equal(plan.remotionInputProps.scenes[0].narration_duration_in_frames, 186);
+});
+
+test('final render plan separates spoken narration duration from visual tail padding', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+
+  const plan = buildFinalRenderPlan({
+    sessionId: 'session-1',
+    aspectRatio: '16:9',
+    scenes: [
+      {
+        id: 'scene-1',
+        scene_index: 0,
+        narrator_text: 'The line ends, and the image gets a breath.',
+        video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4']),
+        shot_plan_json: JSON.stringify([{ duration: 4 }]),
+        audio_url: '/generated/audio/session-1/scene-1.mp3',
+        duration: 4,
+        narration_duration: 4,
+      },
+    ],
+  });
+
+  assert.equal(plan.audioInputs[0].duration, 4);
+  assert.equal(plan.audioInputs[0].targetDuration, 4);
+  assert.equal(plan.audioInputs[0].tempo, undefined);
+  assert.equal(plan.remotionInputProps.scenes[0].duration_in_frames, 129);
+  assert.equal(plan.remotionInputProps.scenes[0].narration_duration_in_frames, 120);
 });
 
 test('pipeline preserves exact narration duration for final subtitle timing', () => {

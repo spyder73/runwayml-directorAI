@@ -14,7 +14,7 @@ import MemorySketchCard from '@/components/session/MemorySketchCard';
 import ProductionProgress from '@/components/session/ProductionProgress';
 import ReferenceUploadRequest from '@/components/session/ReferenceUploadRequest';
 import RenderEmailPrompt from '@/components/session/RenderEmailPrompt';
-import SceneOutlineReview from '@/components/session/SceneOutlineReview';
+import SceneOutlineReview, { type OutlineRevisionMessage } from '@/components/session/SceneOutlineReview';
 import SettingsModal from '@/components/session/SettingsModal';
 import { shouldIgnoreStaleProductionUpdate } from '@/lib/session-update-guards';
 import type {
@@ -116,6 +116,9 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [isDraftingOutline, setIsDraftingOutline] = useState(false);
   const [isLockingOutline, setIsLockingOutline] = useState(false);
   const [outlineApprovalError, setOutlineApprovalError] = useState<string | null>(null);
+  const [pendingOutlineSceneId, setPendingOutlineSceneId] = useState<string | null>(null);
+  const [outlineRevisionMessages, setOutlineRevisionMessages] = useState<Record<string, OutlineRevisionMessage>>({});
+  const [showInterviewTranscript, setShowInterviewTranscript] = useState(false);
   const [isSavingRenderEmail, setIsSavingRenderEmail] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [renderProgress, setRenderProgress] = useState<RenderProgressPayload | null>(null);
@@ -175,7 +178,12 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     if ('render_progress' in data) setRenderProgress(isRenderProgressPayload(data.render_progress) ? data.render_progress : null);
     if (data.error) setPipelineError(data.error);
     if (incomingStatus && incomingStatus !== 'FAILED') setPipelineError(null);
-    if (incomingStatus && incomingStatus !== 'OUTLINE_REVIEW') setOutlineApprovalError(null);
+    if (incomingStatus && incomingStatus !== 'OUTLINE_REVIEW') {
+      setOutlineApprovalError(null);
+      setPendingOutlineSceneId(null);
+      setOutlineRevisionMessages({});
+      setShowInterviewTranscript(false);
+    }
     if (incomingStatus && incomingStatus !== 'RENDERING') setRenderProgress(null);
     if (data.chat_chunk) {
       setChatHistory((current) => current.map((row, index) => {
@@ -317,12 +325,51 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   };
 
   const handleOutlineComment = async (scene: SceneOutlineRow, comment: string) => {
-    await fetch('/api/pipeline/outline', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, action: 'comment', sceneOutlineId: scene.id, comment }),
-    });
-    await handleSendMessage(undefined, `For scene ${scene.scene_index + 1}, please revise this: ${comment}`);
+    if (pendingOutlineSceneId) return;
+    setOutlineApprovalError(null);
+    setPendingOutlineSceneId(scene.id);
+    setOutlineRevisionMessages((current) => ({
+      ...current,
+      [scene.id]: { status: 'loading', text: 'Revising this scene...' },
+    }));
+
+    try {
+      const response = await fetch('/api/pipeline/outline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, action: 'ai_revise', sceneOutlineId: scene.id, comment }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to revise the outline.');
+      }
+
+      if (data.story_bucket || data.session || data.chat_history || data.scenes) {
+        applySessionUpdate(data as SessionUpdatePayload);
+      }
+
+      if (data.revisionStatus === 'needs_clarification' && data.question) {
+        setOutlineRevisionMessages((current) => ({
+          ...current,
+          [scene.id]: { status: 'clarification', text: data.question },
+        }));
+      } else {
+        setOutlineRevisionMessages((current) => ({
+          ...current,
+          [scene.id]: { status: 'updated', text: data.revisionMessage || 'I updated the outline.' },
+        }));
+      }
+    } catch (error) {
+      setOutlineRevisionMessages((current) => ({
+        ...current,
+        [scene.id]: {
+          status: 'error',
+          text: error instanceof Error ? error.message : 'Failed to revise the outline.',
+        },
+      }));
+    } finally {
+      setPendingOutlineSceneId(null);
+    }
   };
 
   const handleLockOutline = async () => {
@@ -488,7 +535,6 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const backendReferenceRequest = Boolean(activeReferenceRequest) || (session.status === 'AWAITING_SELFIE' && !session.user_selfie_url);
   const showReferenceRequest = backendReferenceRequest || (isVoiceMode && forceShowVoiceUpload);
   const isReferenceDescribeDraft = showReferenceRequest && message.trim().length > 0;
-  const showComposer = (!isVoiceMode && !showReferenceRequest) || isReferenceDescribeDraft;
   const productionStarted = [
     'GENERATING_IMAGES',
     'AWAITING_APPROVAL',
@@ -500,9 +546,12 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const hasUnlockedOutline = Boolean(storyBucket?.sceneOutline.some((scene) => scene.status !== 'locked'));
   const hasTreatmentAwaitingDecision = Boolean(storyBucket?.treatment && !hasUnlockedOutline && !productionStarted && !showReferenceRequest);
   const hasOutlineAwaitingDecision = Boolean(hasUnlockedOutline && session.status === 'OUTLINE_REVIEW' && !showReferenceRequest);
+  const showComposer = (!isVoiceMode && !showReferenceRequest && !hasOutlineAwaitingDecision) || isReferenceDescribeDraft;
+  const shouldShowInterviewChat = hasOutlineAwaitingDecision ? showInterviewTranscript : true;
   const hasSceneOutline = (storyBucket?.sceneOutline.length || 0) > 0;
   const isDraftingFilmShape = isDraftingOutline && !hasSceneOutline && !showReferenceRequest && !pipelineError && !productionStarted;
-  const freeChatDisabled = isUploading || isSending || isLockingOutline || isDraftingFilmShape || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision;
+  const isOutlineRevisionPending = Boolean(pendingOutlineSceneId);
+  const freeChatDisabled = isUploading || isSending || isLockingOutline || isOutlineRevisionPending || isDraftingFilmShape || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision;
   const callShouldDock = showReferenceRequest || hasTreatmentAwaitingDecision || hasOutlineAwaitingDecision || productionStarted;
   const shouldEndDirectorCall = [
     'GENERATING_IMAGES',
@@ -561,10 +610,22 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         isVoiceMode ? (callShouldDock ? 'pt-[23rem]' : 'pt-[calc(100dvh+2rem)]') : 'pt-24'
       } ${showReferenceRequest && !isReferenceDescribeDraft ? 'pb-80 md:pb-72' : 'pb-36'}`}>
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-          {!isVoiceMode && (
+          {!isVoiceMode && hasOutlineAwaitingDecision && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowInterviewTranscript((current) => !current)}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-white/45 transition-colors hover:border-white/20 hover:text-white/70"
+              >
+                Interview transcript {showInterviewTranscript ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          )}
+
+          {!isVoiceMode && shouldShowInterviewChat && (
             <InterviewChat
               chatHistory={chatHistory}
-              isThinking={isSending || isUploading}
+              isThinking={isSending || isUploading || isOutlineRevisionPending}
               onOption={(option) => handleSendMessage(undefined, option)}
               onOpenImage={setModalImage}
             />
@@ -601,6 +662,9 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                   onComment={handleOutlineComment}
                   onLock={handleLockOutline}
                   isLocking={isLockingOutline}
+                  pendingSceneId={pendingOutlineSceneId}
+                  revisionMessages={outlineRevisionMessages}
+                  lockDisabled={isOutlineRevisionPending}
                   approvalError={outlineApprovalError}
                   readOnly={isVoiceMode}
                 />

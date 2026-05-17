@@ -13,10 +13,11 @@ export const sceneOutlinePrompt = `Scene outline:
 - Examples: a 5-second scene allows 14 words, a 6-second scene allows 16 words, an 8-second scene allows 22 words, and a 10-second scene allows 28 words.
 - narratorText must be actual movie narration, not production notes, labels, summaries, or explanations of what the scene demonstrates.
 - Do not write lines like "To demonstrate his interest in physics" or "This is Martin to show him." Write cinematic narration like: "This is Martin, a restless mind chasing invisible laws, driven by rare ambition."
+- narratorText must not copy emotionalPurpose, treatment emotional thesis, visual motif, or any private planning label. Turn those private notes into spoken human narration.
 - The final branded card adds 3 seconds after the story scenes and does not need narratorText.
 - Always include a standard intro scene and a standard outro scene with the main character when drafting a LifeStory outline.
 - The standard intro should feel like: "This is [name]..." and introduce who the person is in narrator language.
-- The standard outro should feel like: "That is [name]'s story so far..." and may end with the idea that we will see what else they leave for us to read in the history books.
+- The standard outro should feel like: "That is [name]'s story so far..." and close with a specific sense of continuation. Do not use "history books" unless the user explicitly asked for that phrase.
 - Intro and outro must use the same rendering and perspective of the person: a medium-wide three-quarter back/side view, consistent lens/camera height, and the same visible identity reference when one exists.
 - Place the person in a fantastic, stunning natural or cinematic setting that matches their life. For example, a scientist could stand in a vast field under the Milky Way looking up and thinking deeply.
 - The intro scene should fade in from black slowly. The outro scene should echo the intro perspective and create a graceful closing beat before the final branded card.
@@ -33,6 +34,19 @@ export const sceneOutlinePrompt = `Scene outline:
 - Use only as many scenes as the life story earns; prefer emotionally specific scenes over a generic chronology.
 - Ask for approval or comments after proposing the outline.
 - Explain in user language that approval generates still images first; motion and narration start only after those frames are approved.`;
+
+export const sceneOutlineFieldContract = `Scene outline field contract:
+- title: distinct 2-6 word card label, not a sentence, not identical to summary. Example: "Interstellar Catalyst".
+- summary: one sentence of 12-25 words explaining what happens in the scene and why it matters emotionally.
+- narratorText: spoken movie narration only, never a title, label, summary, or production note.
+- narratorText must be distinct from summary and emotionalPurpose, and must read aloud as voiceover.
+- imagePrompt: still-frame generation prompt using exact usable @tags only when matching referenceAssetIds are included.
+- videoPrompt: motion/camera prompt for animating the generated frame.
+- duration: number from 2 to 10 seconds.
+- emotionalPurpose: short private note about the scene's role in the emotional arc.
+- referenceNeeds: missing references in plain language only.
+- referenceAssetIds: usable generation reference IDs only; never description-only references.
+- protagonistVisible: false only when the protagonist is not visible on screen.`;
 
 export const storySceneDiversityPrompt = `Scene diversity:
 - When a user describes a life chapter, identify the concrete parts that can be shown as distinct locations or action beats.
