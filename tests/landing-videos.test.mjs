@@ -27,3 +27,29 @@ test('studio home embeds the before-start video below the life story start box',
   assert.match(source, /muted/);
   assert.match(source, /playsInline/);
 });
+
+test('public landing page shows two finished-film examples with the newest one first', () => {
+  const source = fs.readFileSync(new URL('../src/components/home/LandingPage.tsx', import.meta.url), 'utf8');
+  const componentUrl = new URL('../src/components/home/LandingVideoExamples.tsx', import.meta.url);
+
+  assert.match(source, /<LandingVideoExamples \/>/);
+  assert.equal(fs.existsSync(componentUrl), true);
+
+  const componentSource = fs.readFileSync(componentUrl, 'utf8');
+  assert.match(componentSource, /\/landing\/videos\/example\.mp4[\s\S]*\/landing\/videos\/example_2\.mp4/);
+  assert.match(componentSource, /\/landing\/videos\/example-poster\.jpg[\s\S]*\/landing\/videos\/example_2-poster\.jpg/);
+  assert.match(componentSource, /grid[\s\S]*md:grid-cols-2/);
+});
+
+test('public landing example videos lazy-load behind poster cards', () => {
+  const componentUrl = new URL('../src/components/home/LandingVideoExamples.tsx', import.meta.url);
+  assert.equal(fs.existsSync(componentUrl), true);
+
+  const source = fs.readFileSync(componentUrl, 'utf8');
+  assert.match(source, /^'use client';/);
+  assert.match(source, /useState/);
+  assert.match(source, /poster cards/i);
+  assert.match(source, /selectedExample \?/);
+  assert.match(source, /preload="metadata"/);
+  assert.doesNotMatch(source, /autoPlay/);
+});
