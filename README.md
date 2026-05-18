@@ -98,3 +98,7 @@ sqlite3 data/lifestory.db "select created_at,event_type,runway_session_id,payloa
 ```
 
 Paste-ready Character fields live in `docs/runway-character/`.
+
+## Optional Conversation Debug Logs
+
+Set `LOG_CONVERSATIONS=true` to write append-only JSONL conversation traces under `data/conversation-logs` by default. Each session gets one `<session-id>.jsonl` file with user text, upload placeholders, AI tool calls, and final assistant replies. Use `CONVERSATION_LOG_DIR=/path/to/folder` to point the reference corpus somewhere else while iterating on the interview flow.

@@ -54,6 +54,13 @@ test('Phase 9 Docker defaults keep Remotion conservative on VPS hosts', () => {
   }
 });
 
+test('Phase 9 Docker build avoids opening the runtime SQLite database', () => {
+  const dockerfile = readText('../Dockerfile');
+
+  assert.match(dockerfile, /FROM base AS builder[\s\S]*ENV LIFESTORY_DB_PATH=:memory:[\s\S]*RUN npm run build/);
+  assert.match(dockerfile, /FROM base AS runner[\s\S]*ENV MEDIA_STORAGE_DIR=\/app\/data\/media/);
+});
+
 test('Phase 9 final render code consumes Remotion deployment knobs', () => {
   const source = readText('../src/lib/final-render.ts');
 

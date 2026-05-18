@@ -4,8 +4,13 @@ import { Audio, Video } from '@remotion/media';
 import { TransitionSeries, linearTiming } from '@remotion/transitions';
 import { fade } from '@remotion/transitions/fade';
 import { AnimatedSubtitles } from './components/AnimatedSubtitles';
-
-const BRANDED_OUTRO_DURATION_FRAMES = 90;
+import {
+  BRANDED_OUTRO_DURATION_FRAMES,
+  SCENE_TRANSITION_DURATION_FRAMES,
+  narrativeContentDurationInFrames,
+  sceneStartFrames,
+  visualDurationForScene,
+} from './timing';
 
 export type RemotionScene = {
   id: string;
@@ -14,6 +19,7 @@ export type RemotionScene = {
   audio_playback_rate?: number;
   narrator_text: string;
   duration_in_frames: number;
+  narration_duration_in_frames?: number;
 };
 
 const Watermark = () => (
@@ -57,21 +63,47 @@ const BrandedOutro = () => (
   </AbsoluteFill>
 );
 
+const NarrationTrack = ({ scenes }: { scenes: RemotionScene[] }) => {
+  const startFrames = sceneStartFrames(scenes);
+
+  return (
+    <>
+      {scenes.map((scene, index) => {
+        const narrationDuration = Math.max(
+          1,
+          Math.min(scene.duration_in_frames, scene.narration_duration_in_frames || scene.duration_in_frames),
+        );
+
+        return (
+          <Sequence key={`${scene.id}-narration`} from={startFrames[index]} durationInFrames={narrationDuration}>
+            {scene.audio_url && (
+              <Audio src={scene.audio_url} playbackRate={scene.audio_playback_rate || 1} />
+            )}
+            <AnimatedSubtitles text={scene.narrator_text} durationInFrames={narrationDuration} />
+          </Sequence>
+        );
+      })}
+    </>
+  );
+};
+
 export const MainComposition = ({ scenes }: { scenes: RemotionScene[] }) => {
   const children: React.ReactNode[] = [];
-  const contentDuration = scenes.reduce((total, scene) => total + scene.duration_in_frames, 0);
+  const contentDuration = narrativeContentDurationInFrames(scenes);
 
   scenes.forEach((scene, i) => {
+    const visualDuration = visualDurationForScene(scene, i, scenes.length);
+
     children.push(
       <TransitionSeries.Sequence
         key={scene.id}
-        durationInFrames={scene.duration_in_frames}
+        durationInFrames={visualDuration}
       >
         <AbsoluteFill>
           {scene.clips.map((clip, j) => {
             const fromFrame = scene.clips.slice(0, j).reduce((total, item) => total + item.duration_in_frames, 0);
             const isLast = j === scene.clips.length - 1;
-            const finalShotDuration = isLast ? scene.duration_in_frames - fromFrame : clip.duration_in_frames;
+            const finalShotDuration = isLast ? Math.max(1, visualDuration - fromFrame) : clip.duration_in_frames;
 
             return (
               <Sequence key={`${scene.id}-${j}`} from={fromFrame} durationInFrames={finalShotDuration}>
@@ -84,12 +116,6 @@ export const MainComposition = ({ scenes }: { scenes: RemotionScene[] }) => {
               </Sequence>
             );
           })}
-
-          {scene.audio_url && (
-            <Audio src={scene.audio_url} playbackRate={scene.audio_playback_rate || 1} />
-          )}
-          
-          <AnimatedSubtitles text={scene.narrator_text} durationInFrames={scene.duration_in_frames} />
         </AbsoluteFill>
       </TransitionSeries.Sequence>
     );
@@ -99,7 +125,7 @@ export const MainComposition = ({ scenes }: { scenes: RemotionScene[] }) => {
         <TransitionSeries.Transition
           key={`transition-${i}`}
           presentation={fade()}
-          timing={linearTiming({ durationInFrames: 15 })}
+          timing={linearTiming({ durationInFrames: SCENE_TRANSITION_DURATION_FRAMES })}
         />
       );
     }
@@ -110,6 +136,7 @@ export const MainComposition = ({ scenes }: { scenes: RemotionScene[] }) => {
       <TransitionSeries>
         {children}
       </TransitionSeries>
+      <NarrationTrack scenes={scenes} />
       <Sequence from={contentDuration} durationInFrames={BRANDED_OUTRO_DURATION_FRAMES}>
         <BrandedOutro />
       </Sequence>

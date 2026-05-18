@@ -225,6 +225,28 @@ test('production references strip unusable prompt tags to keep generation prompt
   assert.doesNotMatch(references.promptText, /@dorian\b/);
 });
 
+test('production references convert invented prompt tags to plain language before validation', () => {
+  const { lintRunwayImagePrompt } = jiti('../src/lib/prompt-lint.ts');
+  const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
+
+  const references = prepareSceneReferences({
+    promptText: '@dorian reading complex @hugenholtz diagrams in a dim university library.',
+    sceneReferenceAssetIds: ['dorian-upload'],
+    protagonistVisible: true,
+    assets: [
+      { id: 'dorian-upload', local_url: '/uploads/dorian.jpg', runway_uri: null, stable_tag: 'dorian', usage_permissions: 'allowed', target_type: 'protagonist', vision_description: null },
+    ],
+  });
+
+  assert.match(references.promptText, /@dorian reading/i);
+  assert.match(references.promptText, /Hugenholtz diagrams/i);
+  assert.doesNotMatch(references.promptText, /@hugenholtz\b/i);
+  assert.equal(lintRunwayImagePrompt({
+    promptText: references.promptText,
+    referenceImages: references.referenceImages,
+  }).ok, true);
+});
+
 test('production references attach uploaded assets for plain named entities in the scene prompt', () => {
   const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
 
@@ -250,6 +272,27 @@ test('production references attach uploaded assets for plain named entities in t
   assert.match(references.promptText, /@protagonist_mart/);
   assert.match(references.promptText, /@dorian/);
   assert.match(references.promptText, /@carl/);
+});
+
+test('production references bind selected people inline instead of appending reference cues', () => {
+  const { prepareSceneReferences } = jiti('../src/lib/production-references.ts');
+
+  const references = prepareSceneReferences({
+    promptText: 'A wide, intense shot of a kayak in rough ocean waves near a rocky coast, @moritz paddling hard, Dorian struggling in the background, dramatic lighting.',
+    sceneReferenceAssetIds: ['dorian-upload', 'moritz-upload'],
+    protagonistVisible: true,
+    assets: [
+      { id: 'dorian-upload', local_url: '/uploads/dorian.jpg', runway_uri: null, stable_tag: 'dorian', usage_permissions: 'allowed', target_type: 'protagonist', owner_entity_id: 'dorian-entity', vision_description: null },
+      { id: 'moritz-upload', local_url: '/uploads/moritz.jpg', runway_uri: null, stable_tag: 'moritz', usage_permissions: 'allowed', target_type: 'friend', owner_entity_id: 'moritz-entity', vision_description: null },
+    ],
+    entities: [
+      { id: 'dorian-entity', display_name: 'Dorian', reference_asset_id: 'dorian-upload' },
+      { id: 'moritz-entity', display_name: 'Moritz', reference_asset_id: 'moritz-upload' },
+    ],
+  });
+
+  assert.match(references.promptText, /@moritz paddling hard, @dorian struggling/i);
+  assert.doesNotMatch(references.promptText, /Reference cues/i);
 });
 
 test('production references add exact tags for referenced assets before Runway prompt validation', () => {
@@ -528,6 +571,84 @@ test('final render plan gently speeds narration when it is longer than planned c
   assert.ok(plan.audioInputs[0].tempo && plan.audioInputs[0].tempo > 1);
   assert.equal(Number(plan.audioInputs[0].tempo.toFixed(3)), 1.067);
   assert.equal(Number(plan.remotionInputProps.scenes[0].audio_playback_rate?.toFixed(3)), 1.067);
+  assert.equal(plan.remotionInputProps.scenes[0].narration_duration_in_frames, 180);
+});
+
+test('final render plan times subtitles to exact narration instead of rounded sub-scene duration', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+
+  const plan = buildFinalRenderPlan({
+    sessionId: 'session-1',
+    aspectRatio: '16:9',
+    scenes: [
+      {
+        id: 'scene-1',
+        scene_index: 0,
+        narrator_text: 'The voice ends before the longer visual tail.',
+        video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4', '/generated/video/session-1/shot-2.mp4']),
+        shot_plan_json: JSON.stringify([{ duration: 4 }, { duration: 3 }]),
+        audio_url: '/generated/audio/session-1/scene-1.mp3',
+        duration: 6.2,
+      },
+    ],
+  });
+
+  assert.equal(plan.audioInputs[0].duration, 6.2);
+  assert.equal(plan.audioInputs[0].targetDuration, 7);
+  assert.equal(plan.audioInputs[0].tempo, undefined);
+  assert.equal(plan.remotionInputProps.scenes[0].duration_in_frames, 210);
+  assert.equal(plan.remotionInputProps.scenes[0].narration_duration_in_frames, 186);
+});
+
+test('final render plan separates spoken narration duration from visual tail padding', () => {
+  const { buildFinalRenderPlan } = jiti('../src/lib/final-render.ts');
+
+  const plan = buildFinalRenderPlan({
+    sessionId: 'session-1',
+    aspectRatio: '16:9',
+    scenes: [
+      {
+        id: 'scene-1',
+        scene_index: 0,
+        narrator_text: 'The line ends, and the image gets a breath.',
+        video_url: JSON.stringify(['/generated/video/session-1/shot-1.mp4']),
+        shot_plan_json: JSON.stringify([{ duration: 4 }]),
+        audio_url: '/generated/audio/session-1/scene-1.mp3',
+        duration: 4,
+        narration_duration: 4,
+      },
+    ],
+  });
+
+  assert.equal(plan.audioInputs[0].duration, 4);
+  assert.equal(plan.audioInputs[0].targetDuration, 4);
+  assert.equal(plan.audioInputs[0].tempo, undefined);
+  assert.equal(plan.remotionInputProps.scenes[0].duration_in_frames, 129);
+  assert.equal(plan.remotionInputProps.scenes[0].narration_duration_in_frames, 120);
+});
+
+test('pipeline preserves exact narration duration for final subtitle timing', () => {
+  const mediaSource = fs.readFileSync(new URL('../src/lib/pipeline_media.ts', import.meta.url), 'utf8');
+  const legacySource = fs.readFileSync(new URL('../src/lib/pipeline_final.ts', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(mediaSource, /Math\.ceil\(exactDuration\)/);
+  assert.doesNotMatch(legacySource, /Math\.ceil\(exactDuration\)/);
+});
+
+test('narration budget uses cinematic voice pacing before TTS', () => {
+  const {
+    limitNarrationForSceneDuration,
+    narrationWordBudgetForDuration,
+  } = jiti('../src/lib/narration-budget.ts');
+
+  assert.equal(narrationWordBudgetForDuration(6), 16);
+  assert.equal(narrationWordBudgetForDuration(8), 22);
+
+  const longNarration = 'This is Martin, a restless mind chasing invisible laws, driven by a rare and luminous ambition. The world would slowly learn why.';
+  const limited = limitNarrationForSceneDuration(longNarration, 6);
+
+  assert.equal(limited, 'This is Martin, a restless mind chasing invisible laws, driven by a rare and luminous ambition.');
+  assert.ok(limited.split(/\s+/).length <= 16);
 });
 
 test('final render bundle resolver reuses one in-flight bundle', async () => {
@@ -573,6 +694,65 @@ test('Runway video model can be configured from the environment', () => {
   assert.equal(getRunwayVideoModel({ video_model: 'gen4_aleph' }), DEFAULT_VIDEO_MODEL);
   assert.equal(getRunwayVideoModel({ VIDEO_MODEL: 'gen4_turbo' }), 'gen4_turbo');
   assert.equal(getRunwayVideoModel({ RUNWAY_VIDEO_MODEL: 'gen4_aleph' }), DEFAULT_VIDEO_MODEL);
+});
+
+test('Runway image, audio, and video generation wait up to thirty minutes for task output', async () => {
+  const {
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+  } = jiti('../src/lib/production-config.ts');
+  const {
+    generateImageAsset,
+    generateSpeechAsset,
+    generateVideoAsset,
+  } = jiti('../src/lib/runway.ts');
+  const seenTimeouts = [];
+
+  const task = (id) => ({
+    id,
+    async waitForTaskOutput(options) {
+      seenTimeouts.push(options.timeout);
+      throw new Error(`stop-${id}`);
+    },
+  });
+  const runwayClient = {
+    textToImage: {
+      create: async () => task('image'),
+    },
+    textToSpeech: {
+      create: async () => task('audio'),
+    },
+    imageToVideo: {
+      create: async () => task('video'),
+    },
+  };
+
+  await assert.rejects(generateImageAsset({
+    promptText: 'A warm kitchen memory.',
+    quality: 'high',
+    ratio: '1920:1088',
+    sessionId: 'session-1',
+    runwayClient,
+  }), /stop-image/);
+  await assert.rejects(generateSpeechAsset({
+    promptText: 'Narration line.',
+    sessionId: 'session-1',
+    runwayClient,
+  }), /stop-audio/);
+  await assert.rejects(generateVideoAsset({
+    promptImageUrl: 'runway://asset',
+    promptText: 'The camera slowly drifts forward.',
+    ratio: '1280:720',
+    duration: 5,
+    sessionId: 'session-1',
+    runwayClient,
+  }), /stop-video/);
+
+  assert.equal(RUNWAY_TASK_WAIT_TIMEOUT_MS, 30 * 60 * 1000);
+  assert.deepEqual(seenTimeouts, [
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+    RUNWAY_TASK_WAIT_TIMEOUT_MS,
+  ]);
 });
 
 test('Runway video task helper normalizes Veo 3.1 Fast payload constraints', async () => {

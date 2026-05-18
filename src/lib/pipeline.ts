@@ -1,12 +1,19 @@
 import db from './db';
 import { broadcastSessionUpdate } from './sse';
-import { generateObject, generateText, streamText } from 'ai';
+import { generateText, streamText } from 'ai';
 import { v4 as uuidv4 } from 'uuid';
+import { logConversationEvent } from './conversation-logs';
+import { releaseInterviewTurn, tryAcquireInterviewTurn } from './interview-turns';
 import { runAutomaticProductionPipeline } from './pipeline_media';
-import type { ChatHistoryRow, InterviewMessage, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
-import { buildDirectorContinuationPrompt, ensureProactiveDirectorReply } from './director-continuation';
+import type { ChatHistoryRow, InterviewMessage, ReferenceUploadRequestRow, SceneRow, SessionRow, StoryBucket, UserUploadRow } from './types';
+import {
+  buildDirectorContinuationPrompt,
+  extractAssistantQuestions,
+  safeDirectorOutageContinuation,
+  validateDirectorContinuation,
+} from './director-continuation';
 import { filmTreatmentReviewHandoff } from './treatment-reply';
-import { storySceneDiversityPrompt } from './ai/prompts/scene-outline';
+import { sceneOutlineFieldContract, storySceneDiversityPrompt } from './ai/prompts/scene-outline';
 import {
   aiTools,
   addReferenceSubjectSchema,
@@ -14,7 +21,6 @@ import {
   getToolCall,
   lockSceneOutlineSchema,
   memorySketchSchema,
-  proposeSceneOutlineSchema,
   requestReferenceUploadSchema,
   reviseSceneOutlineSchema,
   saveReferenceDescriptionSchema,
@@ -26,6 +32,7 @@ import { generateImageAsset, imageRatio } from './runway';
 import { SKETCH_IMAGE_QUALITY } from './production-config';
 import { evaluateLifeStoryOutlineReadiness } from './story-readiness';
 import { canUseAsset } from './production-references';
+import { parseProposeSceneOutlineText, parseProposeSceneOutlineToolInput } from './scene-outline-tool-input';
 import {
   MISSING_BYOK_MESSAGE,
   createRunwayClientForSession,
@@ -54,7 +61,6 @@ import {
 const MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS = 8192;
 const MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS = 1200;
 const MAX_DIRECTOR_TOOL_OUTPUT_TOKENS = 8192;
-const DEFAULT_INTERVIEW_FOLLOW_UP = 'What should we explore next for the film?';
 
 function safeInterviewErrorMessage(error: unknown) {
   if (isMissingUserCredentialError(error)) return MISSING_BYOK_MESSAGE;
@@ -106,7 +112,7 @@ export function formatStoryBucketForPrompt(bucket: StoryBucket) {
   }
 
   if (bucket.memoryCandidates.length) {
-    parts.push(`Candidate scenes: ${bucket.memoryCandidates.map((candidate) => `${candidate.title}: ${candidate.description}`).join('; ')}`);
+    parts.push(`Candidate scenes: ${bucket.memoryCandidates.map((candidate) => `id=${candidate.id}; ${candidate.title}: ${candidate.description}`).join('; ')}`);
   }
 
   if (bucket.referenceAssets.length) {
@@ -183,6 +189,35 @@ function latestUserText(messages: InterviewMessage[]) {
   return [...messages].reverse().find((message) => message.role === 'user')?.content || '';
 }
 
+function hasUnassignedUploadedReference(sessionId: string) {
+  const row = db.prepare(`
+    SELECT 1 FROM reference_assets
+    WHERE session_id = ?
+      AND owner_entity_id IS NULL
+      AND usage_permissions = 'allowed'
+      AND (local_url IS NOT NULL OR runway_uri IS NOT NULL)
+    LIMIT 1
+  `).get(sessionId);
+  return Boolean(row);
+}
+
+function shouldBlockReferenceTool(sessionId: string, toolName: string) {
+  const activeReferenceRequest = getActiveReferenceRequest(db, sessionId);
+  if (activeReferenceRequest && !['update_profile_bucket', 'add_reference_subject', 'save_reference_description'].includes(toolName)) {
+    return true;
+  }
+
+  if (toolName === 'add_reference_subject') {
+    return !hasUnassignedUploadedReference(sessionId);
+  }
+
+  if (toolName === 'save_reference_description') {
+    return !activeReferenceRequest;
+  }
+
+  return false;
+}
+
 export function isTreatmentApprovalForOutline(message: string, bucket: StoryBucket) {
   if (!bucket.treatment || bucket.sceneOutline.length > 0) return false;
 
@@ -195,6 +230,20 @@ export function isTreatmentApprovalForOutline(message: string, bucket: StoryBuck
   return /\b(?:approve|approved|accept|accepted|yes|sure|ok|okay|go ahead|implement|draft|outline|scenes?|move on|looks good|like it)\b/i.test(text);
 }
 
+export function isMovieCreationRequest(message: string) {
+  const text = message.trim();
+  if (!text) return false;
+  if (/\b(?:but|however|change|revise|revision|add|remove|instead|maybe|perhaps|not yet|wait)\b/i.test(text)) {
+    return false;
+  }
+
+  const saysNothingElse = /\b(?:no|nothing|that's it|thats it|all good|enough)\b/i.test(text);
+  const asksToCreate = /\b(?:create|make|generate|start|go ahead|move on|proceed|continue|finish)\b[\s\S]{0,36}\b(?:movie|film|video|cut|plan|outline|scenes?)\b/i.test(text)
+    || /\b(?:movie|film|video|cut|plan|outline|scenes?)\b[\s\S]{0,36}\b(?:create|make|generate|start|go ahead|move on|proceed|continue|finish)\b/i.test(text);
+
+  return saysNothingElse || asksToCreate;
+}
+
 function compactText(value: string | null | undefined, fallback: string) {
   const text = value?.replace(/\s+/g, ' ').trim();
   return text || fallback;
@@ -203,6 +252,67 @@ function compactText(value: string | null | undefined, fallback: string) {
 function shortenForNarration(value: string, fallback: string) {
   const text = compactText(value, fallback);
   return text.length > 136 ? `${text.slice(0, 133).trim()}...` : text;
+}
+
+function stripInternalPurposeLanguage(value: string | null | undefined) {
+  return compactText(value, '')
+    .replace(/^(?:to show|to establish|establishing|highlighting|highlight|representing|represent|showing)\b[:,\s-]*/i, '')
+    .replace(/^(?:this scene|the scene|this moment)\s+(?:shows|demonstrates|establishes|highlights|represents)\b[:,\s-]*/i, '')
+    .replace(/^(?:the purpose is|its purpose is|purpose)\s+to\b[:,\s-]*/i, '')
+    .trim();
+}
+
+function isInternalPurposeLine(value: string) {
+  return /^(?:to show|to establish|establishing|highlighting|highlight|representing|represent|showing)\b/i.test(value)
+    || /\b(?:emotional thesis|visual motif|narrative arc)\b/i.test(value);
+}
+
+function firstSentence(value: string) {
+  const match = value.match(/^[\s\S]*?(?:[.!?](?=\s|$)|$)/);
+  return (match?.[0] || value).trim();
+}
+
+function fallbackNarratorText(seed: { title: string; summary: string; visualSummary: string }) {
+  const haystack = `${seed.title} ${seed.summary} ${seed.visualSummary}`.toLowerCase();
+
+  if (/\b(interstellar|black hole|singularity|cinema|movie)\b/.test(haystack)) {
+    return 'In the dark of a cinema, the unknown suddenly felt close enough to follow.';
+  }
+  if (/\b(laptop|computer|gaming|games|technology)\b/.test(haystack)) {
+    return 'A first laptop opened a private universe of games, machines, and discovery.';
+  }
+  if (/\b(kayak|albania|drin|river|blue eye|storm|ocean rescue)\b/.test(haystack)) {
+    return 'In Albania, the water turned adventure into survival, and fear into forward motion.';
+  }
+  if (/\b(trance|festival|dance floor|sound system|psytrance)\b/.test(haystack)) {
+    return 'At the festival, sound and light opened a new world before explanation could catch up.';
+  }
+  if (/\b(lenos|philosophy|equations?|physics|whiteboard|kitchen)\b/.test(haystack)) {
+    return 'With Lenos, physics left the page and became a long conversation about reality itself.';
+  }
+
+  const candidates = [seed.summary, seed.visualSummary, seed.title]
+    .map((candidate) => firstSentence(stripInternalPurposeLanguage(candidate)))
+    .filter((candidate) => candidate && !isInternalPurposeLine(candidate));
+  const cleanLine = candidates[0] || seed.title;
+  return shortenForNarration(cleanLine, seed.title);
+}
+
+function sceneOutlineLogScenes(scenes: Array<{
+  title: string;
+  summary: string;
+  narratorText: string;
+  duration: number;
+  emotionalPurpose?: string;
+}>) {
+  return scenes.map((scene, index) => ({
+    index,
+    title: scene.title,
+    summary: scene.summary,
+    narratorText: scene.narratorText,
+    duration: scene.duration,
+    emotionalPurpose: scene.emotionalPurpose || null,
+  }));
 }
 
 export function buildFallbackSceneOutlineFromBucket(bucket: StoryBucket) {
@@ -233,7 +343,7 @@ export function buildFallbackSceneOutlineFromBucket(bucket: StoryBucket) {
     scenes: usableSeeds.map((seed) => ({
       title: seed.title,
       summary: seed.summary,
-      narratorText: shortenForNarration(seed.emotionalPurpose, seed.summary),
+      narratorText: fallbackNarratorText(seed),
       imagePrompt: `Cinematic life-story frame: ${seed.visualSummary}. Visual motif: ${motif}.`,
       videoPrompt: `The camera slowly moves through the scene as ${seed.visualSummary} unfolds with subtle motion and changing light.`,
       duration: 8,
@@ -249,36 +359,130 @@ export function buildTreatmentApprovedOutlineDraftPrompt(bucket: StoryBucket) {
   return [
     'Create a concise reviewable LifeStory scene outline from this approved film treatment and private story bucket.',
     'Each scene must be cinematic, emotionally specific, and ready for image/video generation.',
-    'Return only the structured scene outline. Keep narratorText short.',
+    'Return only JSON. Do not wrap it in prose unless you must; if wrapped, the JSON object must still be complete.',
+    sceneOutlineFieldContract,
+    'Keep narratorText short and within the duration word budget.',
     storySceneDiversityPrompt,
     formatStoryBucketForPrompt(bucket),
   ].join('\n\n');
+}
+
+function sceneOutlineToolInputSummary(input: unknown) {
+  const scenes = input && typeof input === 'object' && Array.isArray((input as { scenes?: unknown }).scenes)
+    ? (input as { scenes: unknown[] }).scenes
+    : [];
+
+  return {
+    sceneCount: scenes.length,
+    titledScenes: scenes.filter((scene) => (
+      scene
+      && typeof scene === 'object'
+      && typeof (scene as { title?: unknown }).title === 'string'
+      && Boolean((scene as { title: string }).title.trim())
+    )).length,
+    summarizedScenes: scenes.filter((scene) => (
+      scene
+      && typeof scene === 'object'
+      && typeof (scene as { summary?: unknown }).summary === 'string'
+      && Boolean((scene as { summary: string }).summary.trim())
+    )).length,
+  };
+}
+
+function sceneOutlineTitles(scenes: { title: string }[]) {
+  return scenes.map((scene) => scene.title);
 }
 
 async function draftSceneOutlineAfterTreatmentApproval(sessionId: string) {
   const bucket = loadStoryBucket(db, sessionId);
   const prompt = buildTreatmentApprovedOutlineDraftPrompt(bucket);
 
+  logConversationEvent({
+    sessionId,
+    event: 'scene_outline_draft_started',
+    metadata: {
+      source: 'treatment_approval',
+      treatmentId: bucket.treatment?.id || null,
+      candidateCount: bucket.memoryCandidates.length,
+      timelineEventCount: bucket.timelineEvents.length,
+    },
+  });
+
   try {
-    const { object } = await generateObject({
+    const { text } = await generateText({
       model: openRouterModelForSession(db, sessionId, 'google/gemini-3.1-flash-lite'),
       maxOutputTokens: MAX_DIRECTOR_OUTLINE_OUTPUT_TOKENS,
-      system: 'You are a film outline drafter. Create production-ready scenes from an approved treatment. Do not ask more interview questions.',
+      system: 'You are a film outline drafter. Create production-ready scenes from an approved treatment. Return a single valid JSON object matching the scene outline field contract. Do not ask more interview questions.',
       prompt,
-      schema: proposeSceneOutlineSchema,
     });
+    const parsedOutline = parseProposeSceneOutlineText(text);
+    logConversationEvent({
+      sessionId,
+      event: 'scene_outline_draft_generated',
+      role: 'assistant',
+      content: text,
+      metadata: {
+        source: 'ai_text_draft',
+        parseSuccess: parsedOutline.success,
+        normalized: parsedOutline.normalized,
+        issues: parsedOutline.issues,
+      },
+    });
+    if (!parsedOutline.success) {
+      throw new Error(`AI outline text could not be parsed: ${parsedOutline.issues.join('; ')}`);
+    }
+
+    const object = parsedOutline.data;
     proposeSceneOutline(db, sessionId, object);
     approveFilmTreatment(db, sessionId);
+    logConversationEvent({
+      sessionId,
+      event: 'scene_outline_persisted',
+      metadata: {
+        source: 'ai_text_draft',
+        sceneCount: object.scenes.length,
+        titles: sceneOutlineTitles(object.scenes),
+        scenes: sceneOutlineLogScenes(object.scenes),
+      },
+    });
     return object;
   } catch (error) {
     if (!isMissingUserCredentialError(error)) {
       console.warn('AI outline fallback failed; using deterministic treatment outline.', error);
     }
+    logConversationEvent({
+      sessionId,
+      event: 'scene_outline_draft_error',
+      metadata: {
+        source: 'ai_text_draft',
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
   }
 
   const outline = buildFallbackSceneOutlineFromBucket(bucket);
+  logConversationEvent({
+    sessionId,
+    event: 'scene_outline_fallback_draft',
+    metadata: {
+      source: 'deterministic_fallback',
+      sceneCount: outline.scenes.length,
+      titles: sceneOutlineTitles(outline.scenes),
+      scenes: sceneOutlineLogScenes(outline.scenes),
+    },
+  });
   proposeSceneOutline(db, sessionId, outline);
   approveFilmTreatment(db, sessionId);
+  logConversationEvent({
+    sessionId,
+    event: 'scene_outline_persisted',
+    metadata: {
+      source: 'deterministic_fallback',
+      sceneCount: outline.scenes.length,
+      titles: sceneOutlineTitles(outline.scenes),
+      scenes: sceneOutlineLogScenes(outline.scenes),
+    },
+  });
   return outline;
 }
 
@@ -303,26 +507,178 @@ function maybeRequestLifeStorySelfie(session: SessionRow, bucket: StoryBucket) {
   return request ? promptText : null;
 }
 
-async function generateDirectorContinuation(sessionId: string, messages: InterviewMessage[]) {
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow;
-  const bucket = loadStoryBucket(db, sessionId);
-  const prompt = buildDirectorContinuationPrompt({
-    status: session.status,
-    storyContext: formatStoryBucketForPrompt(bucket),
-  });
-
-  const { text } = await generateText({
-    model: openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite'),
-    maxOutputTokens: MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS,
-    system: prompt,
-    messages,
-    toolChoice: 'none',
-  });
-
-  return text.trim();
+function latestNarrativeUserText(messages: InterviewMessage[]) {
+  return [...messages].reverse().find((message) => (
+    message.role === 'user'
+    && message.content.trim()
+    && !/^\[(?:Image|Sketch):/i.test(message.content.trim())
+  ))?.content || '';
 }
 
-export async function processInterviewTurn(sessionId: string) {
+function referenceRequestSummary(request: ReferenceUploadRequestRow | null | undefined) {
+  if (!request) return 'No active optional image request.';
+
+  const scope = request.reference_scope === 'scene' && request.scene_title
+    ? `scene-specific for "${request.scene_title}"`
+    : 'general';
+  return [
+    `Active ${scope} reference request for ${request.target_label} (${request.target_type}).`,
+    'This must resolve through upload, skip, or description before unrelated reference tools are used.',
+    `Prompt shown to user: ${request.prompt_text}`,
+  ].join(' ');
+}
+
+type DirectorContinuationOptions = {
+  activeReferenceRequest?: ReferenceUploadRequestRow | null;
+  retryReasons?: string[];
+  latestUserMessage?: string;
+  protagonistReferenceHandled?: boolean;
+};
+
+async function generateDirectorContinuation(
+  sessionId: string,
+  messages: InterviewMessage[],
+  options: DirectorContinuationOptions = {},
+) {
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow;
+  const bucket = loadStoryBucket(db, sessionId);
+  const recentMessages = messages.slice(-10);
+  const recentQuestions = extractAssistantQuestions(recentMessages);
+  const latestUserMessage = options.latestUserMessage ?? latestNarrativeUserText(messages);
+  const protagonistReferenceHandled = options.protagonistReferenceHandled ?? hasProtagonistReferenceDecision(db, sessionId);
+  const activeReferenceRequest = options.activeReferenceRequest ?? (getActiveReferenceRequest(db, sessionId) || null);
+  let retryReasons = options.retryReasons || [];
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const prompt = buildDirectorContinuationPrompt({
+      status: session.status,
+      storyContext: formatStoryBucketForPrompt(bucket),
+      latestUserMessage,
+      recentMessages,
+      recentQuestions,
+      activeReferenceRequestSummary: referenceRequestSummary(activeReferenceRequest),
+      retryReasons,
+    });
+
+    logConversationEvent({
+      sessionId,
+      event: 'director_continuation_prompt',
+      role: 'system',
+      content: prompt,
+      metadata: {
+        attempt,
+        recentQuestions,
+        activeReferenceRequestId: activeReferenceRequest?.id || null,
+      },
+    });
+
+    try {
+      const { text: generatedText } = await generateText({
+        model: openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite'),
+        maxOutputTokens: MAX_DIRECTOR_CONTINUATION_OUTPUT_TOKENS,
+        system: prompt,
+        messages: recentMessages,
+        toolChoice: 'none',
+      });
+
+      const reply = generatedText.trim();
+      const validation = validateDirectorContinuation({
+        reply,
+        recentQuestions,
+        protagonistReferenceHandled,
+      });
+
+      logConversationEvent({
+        sessionId,
+        event: 'director_continuation_generated',
+        role: 'assistant',
+        content: reply,
+        metadata: {
+          attempt,
+          valid: validation.valid,
+          reasons: validation.reasons,
+        },
+      });
+
+      if (validation.valid) return reply;
+      retryReasons = validation.reasons;
+    } catch (error) {
+      if (isMissingUserCredentialError(error)) throw error;
+
+      retryReasons = [
+        `Continuation generation failed: ${error instanceof Error ? error.message : String(error)}`,
+      ];
+      logConversationEvent({
+        sessionId,
+        event: 'director_continuation_error',
+        metadata: {
+          attempt,
+          reasons: retryReasons,
+        },
+      });
+    }
+  }
+
+  const fallback = safeDirectorOutageContinuation(latestUserMessage);
+  logConversationEvent({
+    sessionId,
+    event: 'director_continuation_outage_fallback',
+    role: 'assistant',
+    content: fallback,
+    metadata: { retryReasons },
+  });
+  return fallback;
+}
+
+async function chooseDirectorReplyOrContinuation(input: {
+  sessionId: string;
+  messages: InterviewMessage[];
+  streamedText?: string | null;
+  text?: string | null;
+  directorReply?: string | null;
+  chatMessage?: string | null;
+  activeReferenceRequest?: ReferenceUploadRequestRow | null;
+  retryReasons?: string[];
+}) {
+  const recentMessages = input.messages.slice(-10);
+  const recentQuestions = extractAssistantQuestions(recentMessages);
+  const protagonistReferenceHandled = hasProtagonistReferenceDecision(db, input.sessionId);
+  const rejectionReasons: string[] = [];
+  const candidates = [
+    input.streamedText || input.text || '',
+    input.directorReply || '',
+    input.chatMessage || '',
+  ];
+
+  for (const candidate of candidates) {
+    const reply = candidate.trim();
+    if (!reply) continue;
+
+    const validation = validateDirectorContinuation({
+      reply,
+      recentQuestions,
+      protagonistReferenceHandled,
+    });
+    if (validation.valid) return reply;
+    rejectionReasons.push(...validation.reasons);
+  }
+
+  return generateDirectorContinuation(input.sessionId, input.messages, {
+    activeReferenceRequest: input.activeReferenceRequest,
+    protagonistReferenceHandled,
+    retryReasons: [
+      ...(input.retryReasons || []),
+      ...rejectionReasons,
+    ],
+  });
+}
+
+export async function processInterviewTurn(sessionId: string, options: { turnToken?: string } = {}) {
+  const turnToken = options.turnToken || tryAcquireInterviewTurn(db, sessionId);
+  if (!turnToken) {
+    return { processed: false, busy: true };
+  }
+
   try {
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
     if (!session) {
@@ -344,11 +700,22 @@ export async function processInterviewTurn(sessionId: string) {
     const storyBucket = loadStoryBucket(db, sessionId);
     const latestUserMessage = latestUserText(messages);
     const treatmentApprovalRequested = isTreatmentApprovalForOutline(latestUserMessage, storyBucket);
+    const movieCreationRequested = isMovieCreationRequest(latestUserMessage);
+    const activeReferenceRequest = getActiveReferenceRequest(db, sessionId) || null;
+    logConversationEvent({
+      sessionId,
+      event: 'interview_turn_started',
+      metadata: {
+        status: session.status,
+        messageCount: historyRows.length,
+        activeReferenceRequestId: activeReferenceRequest?.id || null,
+      },
+    });
     const systemPrompt = buildInterviewSystemPrompt({
       status: session.status,
       storyContext: formatStoryBucketForPrompt(storyBucket),
       uploadContext,
-      activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+      activeReferenceRequest,
     });
 
     const assistantMessageId = uuidv4();
@@ -394,10 +761,26 @@ export async function processInterviewTurn(sessionId: string) {
     text = await result.text || text;
 
     let finalReply = text;
+    let blockedReferenceTool = false;
 
     if (toolCalls && toolCalls.length > 0) {
       for (const rawCall of toolCalls) {
         const call = getToolCall(rawCall);
+        const blocked = shouldBlockReferenceTool(sessionId, call.toolName);
+        logConversationEvent({
+          sessionId,
+          event: 'ai_tool_call',
+          role: 'tool',
+          metadata: {
+            toolName: call.toolName,
+            blocked,
+            input: call.input,
+          },
+        });
+        if (blocked) {
+          blockedReferenceTool = true;
+          continue;
+        }
 
         if (call.toolName === 'update_profile_bucket') {
            const args = updateProfileBucketSchema.parse(call.input);
@@ -405,30 +788,52 @@ export async function processInterviewTurn(sessionId: string) {
            advanceInterviewStatus(session, updatedBucket);
            const selfiePrompt = maybeRequestLifeStorySelfie(session, updatedBucket);
            const supportingReferenceRequest = maybeCreateSupportingReferenceUploadRequest(db, sessionId, args.entities);
-           const nextReply = selfiePrompt || supportingReferenceRequest?.prompt_text || text || args.directorReply || finalReply;
-           finalReply = selfiePrompt || supportingReferenceRequest
-             ? nextReply
-             : ensureProactiveDirectorReply(nextReply, { fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP });
+           finalReply = selfiePrompt
+             || supportingReferenceRequest?.prompt_text
+             || await chooseDirectorReplyOrContinuation({
+               sessionId,
+               messages,
+               streamedText: text,
+               directorReply: args.directorReply,
+               chatMessage: finalReply,
+               activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+             });
         } else if (call.toolName === 'request_reference_upload') {
            const args = requestReferenceUploadSchema.parse(call.input);
            const request = createReferenceUploadRequest(db, sessionId, args);
            finalReply = request
-             ? (text || args.promptText)
-             : (text || 'I already have the protagonist reference, so I will keep using that unless we need a specific scene-era image later. What should we explore next?');
+             ? request.prompt_text
+             : await chooseDirectorReplyOrContinuation({
+               sessionId,
+               messages,
+               streamedText: text,
+               activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+               retryReasons: ['The requested reference upload was already resolved; continue the interview without asking for another image.'],
+             });
         } else if (call.toolName === 'add_reference_subject') {
            const args = addReferenceSubjectSchema.parse(call.input);
            const result = addReferenceSubject(db, sessionId, args);
-           finalReply = ensureProactiveDirectorReply(
-             text || args.directorReply || `I will remember ${args.displayName} as @${result.referenceAsset.stable_tag} for future scenes.`,
-             { fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP },
-           );
+           finalReply = await chooseDirectorReplyOrContinuation({
+             sessionId,
+             messages,
+             streamedText: text,
+             directorReply: args.directorReply || `I will remember ${args.displayName} as @${result.referenceAsset.stable_tag} for future scenes.`,
+             activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+             retryReasons: ['A reference asset was labeled; resume the interview naturally without repeating raw @tag bookkeeping.'],
+           });
         } else if (call.toolName === 'save_reference_description') {
            const args = saveReferenceDescriptionSchema.parse(call.input);
            saveReferenceDescription(db, sessionId, args);
            db.prepare('UPDATE sessions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
              .run('INTERVIEW_DYNAMIC', sessionId);
-           finalReply = ensureProactiveDirectorReply(text || args.directorReply || finalReply, {
-             fallbackQuestion: DEFAULT_INTERVIEW_FOLLOW_UP,
+           finalReply = await chooseDirectorReplyOrContinuation({
+             sessionId,
+             messages,
+             streamedText: text,
+             directorReply: args.directorReply,
+             chatMessage: finalReply,
+             activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+             retryReasons: ['A reference description was saved; resume the life interview from the latest story context.'],
            });
         } else if (call.toolName === 'generate_memory_sketch') {
            const args = memorySketchSchema.parse(call.input);
@@ -514,13 +919,80 @@ export async function processInterviewTurn(sessionId: string) {
         } else if (call.toolName === 'save_sketch_feedback') {
            const args = saveSketchFeedbackSchema.parse(call.input);
            saveSketchFeedback(db, sessionId, args);
-           finalReply = text || args.directorReply || finalReply;
+           finalReply = await chooseDirectorReplyOrContinuation({
+             sessionId,
+             messages,
+             streamedText: text,
+             directorReply: args.directorReply,
+             chatMessage: finalReply,
+             activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+           });
         } else if (call.toolName === 'propose_film_treatment') {
            const args = filmTreatmentSchema.parse(call.input);
-           proposeFilmTreatment(db, sessionId, args);
+           const treatment = proposeFilmTreatment(db, sessionId, args);
+           logConversationEvent({
+             sessionId,
+             event: 'film_treatment_persisted',
+             metadata: {
+               treatmentId: treatment.id,
+               title: treatment.title,
+               status: treatment.status,
+             },
+           });
            finalReply = filmTreatmentReviewHandoff();
         } else if (call.toolName === 'propose_scene_outline') {
-           const args = proposeSceneOutlineSchema.parse(call.input);
+           const parsedOutline = parseProposeSceneOutlineToolInput(call.input);
+           logConversationEvent({
+             sessionId,
+             event: 'scene_outline_tool_received',
+             role: 'tool',
+             metadata: {
+               ...sceneOutlineToolInputSummary(call.input),
+               parseSuccess: parsedOutline.success,
+               normalized: parsedOutline.normalized,
+               issues: parsedOutline.issues,
+             },
+           });
+
+           if (!parsedOutline.success) {
+             logConversationEvent({
+               sessionId,
+               event: 'scene_outline_tool_invalid',
+               role: 'tool',
+               metadata: {
+                 ...sceneOutlineToolInputSummary(call.input),
+                 issues: parsedOutline.issues,
+               },
+             });
+
+             const bucketBeforeFallback = loadStoryBucket(db, sessionId);
+             if (bucketBeforeFallback.treatment) {
+               const outline = await draftSceneOutlineAfterTreatmentApproval(sessionId);
+               finalReply = outline.directorReply
+                 || 'I drafted the scene outline below. Review the scenes and approve them when they feel right, or leave notes for changes.';
+             } else {
+               finalReply = await generateDirectorContinuation(sessionId, messages, {
+                 activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+                 retryReasons: ['The model attempted to draft scenes before a valid film treatment existed; continue the interview or treatment step naturally.'],
+               });
+             }
+             continue;
+           }
+
+           if (parsedOutline.normalized) {
+             logConversationEvent({
+               sessionId,
+               event: 'scene_outline_tool_normalized',
+               role: 'tool',
+               metadata: {
+                 issues: parsedOutline.issues,
+                 sceneCount: parsedOutline.data.scenes.length,
+                 titles: sceneOutlineTitles(parsedOutline.data.scenes),
+               },
+             });
+           }
+
+           const args = parsedOutline.data;
            const bucketBeforeOutline = loadStoryBucket(db, sessionId);
            if (!bucketBeforeOutline.treatment) {
              finalReply = text || 'Before I turn this into scenes, I want to shape the film treatment first: the title, emotional thesis, arc, visual motif, narrator style, ending feeling, and what to avoid. What should this short film feel like at the end?';
@@ -547,11 +1019,27 @@ export async function processInterviewTurn(sessionId: string) {
 
            proposeSceneOutline(db, sessionId, args);
            if (treatmentApprovalRequested) approveFilmTreatment(db, sessionId);
-           finalReply = text || args.directorReply || args.chatMessage || finalReply;
+           logConversationEvent({
+             sessionId,
+             event: 'scene_outline_persisted',
+             metadata: {
+               source: 'tool_call',
+               sceneCount: args.scenes.length,
+               titles: sceneOutlineTitles(args.scenes),
+               scenes: sceneOutlineLogScenes(args.scenes),
+             },
+           });
+           finalReply = text
+             || args.directorReply
+             || args.chatMessage
+             || 'I drafted the scene outline below. Review the scenes and approve them when they feel right, or leave notes for changes.';
         } else if (call.toolName === 'revise_scene_outline') {
            const args = reviseSceneOutlineSchema.parse(call.input);
            reviseSceneOutline(db, sessionId, args);
-           finalReply = text || args.directorReply || finalReply;
+           finalReply = text
+             || args.directorReply
+             || finalReply
+             || 'I revised the scene outline. Take a look and tell me whether it now feels right.';
         } else if (call.toolName === 'lock_scene_outline') {
            lockSceneOutlineSchema.parse(call.input);
            lockSceneOutlineForProduction(db, sessionId);
@@ -565,18 +1053,34 @@ export async function processInterviewTurn(sessionId: string) {
     }
 
     const bucketAfterTools = loadStoryBucket(db, sessionId);
-    if (
-      treatmentApprovalRequested
-      && isTreatmentApprovalForOutline(latestUserMessage, bucketAfterTools)
+    const shouldDraftOutlineAfterTurn = (
+      (treatmentApprovalRequested || movieCreationRequested)
+      && (
+        isTreatmentApprovalForOutline(latestUserMessage, bucketAfterTools)
+        || Boolean(movieCreationRequested && bucketAfterTools.treatment && bucketAfterTools.sceneOutline.length === 0)
+      )
       && !getActiveReferenceRequest(db, sessionId)
-    ) {
+    );
+
+    if (blockedReferenceTool && shouldDraftOutlineAfterTurn) {
+      finalReply = '';
+    } else if (blockedReferenceTool && (!finalReply?.trim() || /I will remember[\s\S]*@[a-z0-9_]+/i.test(finalReply))) {
+      finalReply = await generateDirectorContinuation(sessionId, messages, {
+        activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+        retryReasons: ['A blocked reference tool call was discarded; continue the interview naturally without mentioning tools or references.'],
+      });
+    }
+
+    if (shouldDraftOutlineAfterTurn) {
       const outline = await draftSceneOutlineAfterTreatmentApproval(sessionId);
       const outlineReply = outline.directorReply || 'I drafted the scene outline below. Review the scenes and approve them when they feel right, or leave notes for changes.';
-      finalReply = finalReply?.trim() ? `${finalReply}\n\n${outlineReply}` : outlineReply;
+      finalReply = outlineReply;
     }
 
     if (!finalReply?.trim()) {
-      finalReply = await generateDirectorContinuation(sessionId, messages);
+      finalReply = await generateDirectorContinuation(sessionId, messages, {
+        activeReferenceRequest: getActiveReferenceRequest(db, sessionId) || null,
+      });
     }
 
     if (finalReply && !finalReply.includes('trying to generate an image of your memory..')) {
@@ -591,10 +1095,20 @@ export async function processInterviewTurn(sessionId: string) {
       // Save assistant message using the same assistantMessageId we streamed with
       db.prepare('INSERT INTO chat_history (id, session_id, role, content, options) VALUES (?, ?, ?, ?, ?)')
         .run(assistantMessageId, sessionId, 'assistant', finalReply, optionsStr);
+      logConversationEvent({
+        sessionId,
+        event: 'assistant_message',
+        role: 'assistant',
+        content: finalReply,
+        metadata: {
+          options: optionsStr ? JSON.parse(optionsStr) : null,
+        },
+      });
 
       broadcastSessionUpdate(sessionId, getFullSessionUpdate(sessionId));
     }
 
+    return { processed: true, busy: false };
   } catch (error) {
     console.error('Interview turn failed:', error);
     const assistantMessageId = uuidv4();
@@ -605,6 +1119,19 @@ export async function processInterviewTurn(sessionId: string) {
     try {
       db.prepare('INSERT INTO chat_history (id, session_id, role, content, options) VALUES (?, ?, ?, ?, ?)')
         .run(assistantMessageId, sessionId, 'assistant', finalReply, null);
+      logConversationEvent({
+        sessionId,
+        event: 'interview_turn_error',
+        metadata: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      logConversationEvent({
+        sessionId,
+        event: 'assistant_message',
+        role: 'assistant',
+        content: finalReply,
+      });
 
       broadcastSessionUpdate(sessionId, {
         ...getFullSessionUpdate(sessionId),
@@ -613,5 +1140,8 @@ export async function processInterviewTurn(sessionId: string) {
     } catch (broadcastError) {
       console.error('Failed to persist interview failure message:', broadcastError);
     }
+    return { processed: false, busy: false, error };
+  } finally {
+    releaseInterviewTurn(db, sessionId, turnToken);
   }
 }

@@ -34,7 +34,8 @@ function createDb() {
       visual_prompt TEXT NOT NULL,
       image_prompt TEXT,
       video_prompt TEXT,
-      duration INTEGER,
+      duration REAL,
+      narration_duration REAL,
       scene_references TEXT,
       reference_image_url TEXT,
       video_url TEXT,
@@ -178,6 +179,22 @@ test('LifeStory prompts cover childhood briefly and emphasize young adult and ad
   assert.match(outlinePrompt, /younger adult/i);
 });
 
+test('scene outline prompt asks for cinematic whole-film narration with per-scene budgets', () => {
+  const outlinePrompt = fs.readFileSync(new URL('../src/lib/ai/prompts/scene-outline.ts', import.meta.url), 'utf8');
+
+  assert.match(outlinePrompt, /full movie voiceover/i);
+  assert.match(outlinePrompt, /fantastic cinematic life-story narrator/i);
+  assert.match(outlinePrompt, /then divide it into scene narratorText/i);
+  assert.match(outlinePrompt, /narratorText/i);
+  assert.match(outlinePrompt, /word budget/i);
+  assert.match(outlinePrompt, /duration \* 2\.8/i);
+  assert.match(outlinePrompt, /6-second scene.*16 words/i);
+  assert.match(outlinePrompt, /10-second scene.*28 words/i);
+  assert.match(outlinePrompt, /whole film/i);
+  assert.match(outlinePrompt, /not production notes/i);
+  assert.match(outlinePrompt, /Do not write lines like "To demonstrate/i);
+});
+
 test('cost estimator uses gpt_image_2 low sketches and high final frames', () => {
   const { estimateProductionCost } = jiti('../src/lib/cost-estimator.ts');
 
@@ -248,7 +265,7 @@ test('film treatment persists as the required bridge before outline lock', () =>
 
 test('explicit treatment approval can move a LifeStory into scene outline despite remaining readiness gaps', () => {
   const { initializeStoryBucketTables, loadStoryBucket, proposeFilmTreatment } = jiti('../src/lib/story-bucket.ts');
-  const { isTreatmentApprovalForOutline } = jiti('../src/lib/pipeline.ts');
+  const { isTreatmentApprovalForOutline, isMovieCreationRequest } = jiti('../src/lib/pipeline.ts');
 
   const db = createDb();
   initializeStoryBucketTables(db);
@@ -266,6 +283,9 @@ test('explicit treatment approval can move a LifeStory into scene outline despit
 
   assert.equal(isTreatmentApprovalForOutline('just implement this draft i like it', bucket), true);
   assert.equal(isTreatmentApprovalForOutline('sure but I would add Aachen', bucket), false);
+  assert.equal(isMovieCreationRequest('no thats it, lets create the movie'), true);
+  assert.equal(isMovieCreationRequest('nothing else, create the movie'), true);
+  assert.equal(isMovieCreationRequest('what else should we explore?'), false);
 });
 
 test('fallback treatment outline creates scene rows from the approved story bucket', () => {
@@ -302,9 +322,54 @@ test('fallback treatment outline creates scene rows from the approved story buck
 
   assert.ok(outline.scenes.length >= 1);
   assert.match(outline.scenes[0].title, /Drin River|Currents and Beats/);
+  assert.notEqual(outline.scenes[0].narratorText, 'Adventure and danger.');
+  assert.doesNotMatch(outline.scenes[0].narratorText, /^To show|^Establish|^Highlight|^Represent/i);
   assert.match(outline.scenes[0].videoPrompt, /camera/i);
   assert.ok(outline.scenes[0].duration >= 2);
   assert.ok(outline.scenes[0].duration <= 10);
+});
+
+test('fallback outline narration does not reuse internal purpose notes or treatment thesis', () => {
+  const {
+    applyProfileBucketUpdate,
+    initializeStoryBucketTables,
+    loadStoryBucket,
+    proposeFilmTreatment,
+  } = jiti('../src/lib/story-bucket.ts');
+  const { buildFallbackSceneOutlineFromBucket } = jiti('../src/lib/pipeline.ts');
+
+  const db = createDb();
+  initializeStoryBucketTables(db);
+  proposeFilmTreatment(db, 'session-1', {
+    title: 'Between the Diagram and the Storm',
+    emotionalThesis: 'Humanity is a bridge between mathematical precision and raw chaotic beauty.',
+    narrativeArc: 'curiosity to survival to connection',
+    visualMotif: 'high contrast light',
+    narratorStyle: 'introspective',
+    endingFeeling: 'open',
+  });
+  applyProfileBucketUpdate(db, 'session-1', {
+    memoryCandidates: [
+      {
+        title: 'The Kayak Survival Trip in Albania',
+        description: 'Dorian and Moritz survive a kayak journey through Albania, from open water to a thunderstorm on the Drin river.',
+        emotionalPurpose: 'To show Dorian stepping way out of his comfort zone and testing his resilience against nature.',
+        visualSummary: 'Flipped kayaks, wild water, a blue eye camp, and a dark river storm.',
+      },
+      {
+        title: 'Physics and Philosophy with Lenos',
+        description: 'Dorian and Lenos study physics, cook food, and talk about reality for hours.',
+        visualSummary: 'Whiteboards, food, and a quiet kitchen conversation.',
+      },
+    ],
+  });
+
+  const outline = buildFallbackSceneOutlineFromBucket(loadStoryBucket(db, 'session-1'));
+  const narratorLines = outline.scenes.map((scene) => scene.narratorText);
+
+  assert.equal(narratorLines.some((line) => /^To show/i.test(line)), false);
+  assert.equal(narratorLines.some((line) => /Humanity is a bridge/i.test(line)), false);
+  assert.match(narratorLines.join('\n'), /Albania|Lenos|equations|festival|laptop|Interstellar/i);
 });
 
 test('approved treatment outline draft prompt carries scene diversity guidance', () => {
@@ -689,6 +754,101 @@ test('automatic production pipeline runs frames, final assets, and render', asyn
   assert.equal(session.final_video_url, 'final-url');
 });
 
+test('media task runner automatically retries transient generation failures before exhausting attempts', async () => {
+  const {
+    createMediaTask,
+    initializeMediaTaskTables,
+  } = jiti('../src/lib/media-tasks.ts');
+  const { runMediaTaskRunner } = jiti('../src/lib/pipeline_media.ts');
+
+  const db = createDb();
+  initializeMediaTaskTables(db);
+  db.prepare(`
+    INSERT INTO scenes (id, session_id, title, scene_index, narrator_text, visual_prompt)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run('scene-1', 'session-1', 'Scene 1', 0, 'Narration', 'Visual prompt');
+
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_scene_frame',
+    provider: 'runway',
+  });
+
+  let attempts = 0;
+  const result = await runMediaTaskRunner('session-1', {
+    database: db,
+    onlyKinds: ['generate_scene_frame'],
+    executors: {
+      generate_scene_frame: async () => {
+        attempts += 1;
+        if (attempts < 3) throw new Error(`temporary runway failure ${attempts}`);
+        return 'frame-url';
+      },
+    },
+  });
+
+  const task = db.prepare('SELECT status, attempts, max_attempts, output_asset_id, last_error FROM media_tasks WHERE kind = ?').get('generate_scene_frame');
+  const scene = db.prepare('SELECT status, retry_attempts, last_failure FROM scenes WHERE id = ?').get('scene-1');
+  assert.equal(attempts, 3);
+  assert.equal(result.succeeded, 1);
+  assert.equal(result.failed, 2);
+  assert.equal(task.status, 'succeeded');
+  assert.equal(task.attempts, 2);
+  assert.equal(task.max_attempts, 6);
+  assert.equal(task.output_asset_id, 'frame-url');
+  assert.equal(task.last_error, null);
+  assert.equal(scene.retry_attempts, 2);
+  assert.equal(scene.last_failure, null);
+});
+
+test('media task runner does not retry deterministic prompt validation failures', async () => {
+  const {
+    createMediaTask,
+    initializeMediaTaskTables,
+  } = jiti('../src/lib/media-tasks.ts');
+  const { runMediaTaskRunner } = jiti('../src/lib/pipeline_media.ts');
+
+  const db = createDb();
+  initializeMediaTaskTables(db);
+  db.prepare(`
+    INSERT INTO scenes (id, session_id, title, scene_index, narrator_text, visual_prompt)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run('scene-1', 'session-1', 'Scene 1', 0, 'Narration', 'Visual prompt');
+
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_scene_frame',
+    provider: 'runway',
+  });
+
+  let attempts = 0;
+  await assert.rejects(
+    runMediaTaskRunner('session-1', {
+      database: db,
+      onlyKinds: ['generate_scene_frame'],
+      executors: {
+        generate_scene_frame: async () => {
+          attempts += 1;
+          throw new Error('Image prompt failed validation: Prompt references @hugenholtz, but no included reference image has that tag.');
+        },
+      },
+    }),
+    /Image prompt failed validation/,
+  );
+
+  const task = db.prepare('SELECT status, attempts, max_attempts, last_error FROM media_tasks WHERE kind = ?').get('generate_scene_frame');
+  const scene = db.prepare('SELECT status, retry_attempts, last_failure FROM scenes WHERE id = ?').get('scene-1');
+  assert.equal(attempts, 1);
+  assert.equal(task.status, 'failed');
+  assert.equal(task.attempts, 1);
+  assert.equal(task.max_attempts, 6);
+  assert.match(task.last_error, /Image prompt failed validation/);
+  assert.equal(scene.retry_attempts, 1);
+  assert.match(scene.last_failure, /Image prompt failed validation/);
+});
+
 test('media task runner defaults to serial runway task execution', async () => {
   const {
     createMediaTask,
@@ -847,7 +1007,67 @@ test('LifeStory frame approval separates stills from final motion generation', a
   assert.equal(db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1').status, 'PREVIEW_READY');
 });
 
-test('media task runner records failed task attempts without advancing dependents', async () => {
+test('failed whole-film narration planning blocks TTS and final asset production', async () => {
+  const {
+    createMediaTask,
+    initializeMediaTaskTables,
+  } = jiti('../src/lib/media-tasks.ts');
+  const { runFinalAssetsPhase } = jiti('../src/lib/pipeline_media.ts');
+
+  const db = createDb();
+  db.prepare('UPDATE sessions SET mode = ?, status = ? WHERE id = ?')
+    .run('life_story', 'AWAITING_APPROVAL', 'session-1');
+  db.prepare(`
+    INSERT INTO scenes (id, session_id, title, scene_index, narrator_text, visual_prompt, duration, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('scene-1', 'session-1', 'The Night Bus', 0, 'Draft line.', 'A night bus waits in rain.', 6, 'pending');
+  initializeMediaTaskTables(db);
+
+  const narration = createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_narration',
+    provider: 'runway',
+  });
+  createMediaTask(db, {
+    sessionId: 'session-1',
+    sceneId: 'scene-1',
+    kind: 'generate_video_shot',
+    provider: 'runway',
+    dependsOnTaskIds: [narration.id],
+  });
+
+  let ttsCalls = 0;
+  await assert.rejects(
+    runFinalAssetsPhase('session-1', {
+      database: db,
+      narrationPlanner: async () => {
+        throw new Error('whole-film narration failed validation');
+      },
+      executors: {
+        generate_narration: async () => {
+          ttsCalls += 1;
+          return 'audio-url';
+        },
+        generate_video_shot: async () => 'video-url',
+      },
+    }),
+    /whole-film narration failed validation/,
+  );
+
+  const task = db.prepare('SELECT status, last_error FROM media_tasks WHERE id = ?').get(narration.id);
+  const scene = db.prepare('SELECT status, last_failure FROM scenes WHERE id = ?').get('scene-1');
+  const session = db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1');
+
+  assert.equal(ttsCalls, 0);
+  assert.equal(task.status, 'failed');
+  assert.match(task.last_error, /whole-film narration failed validation/);
+  assert.equal(scene.status, 'audio_failed');
+  assert.match(scene.last_failure, /whole-film narration failed validation/);
+  assert.equal(session.status, 'FAILED');
+});
+
+test('media task runner exhausts automatic retries without advancing dependents', async () => {
   const {
     createMediaTask,
     initializeMediaTaskTables,
@@ -885,11 +1105,21 @@ test('media task runner records failed task attempts without advancing dependent
 
   const tasks = db.prepare('SELECT kind, status, attempts, last_error FROM media_tasks ORDER BY created_at ASC').all();
   assert.deepEqual(tasks.map((task) => [task.kind, task.status, task.attempts]), [
-    ['generate_scene_frame', 'failed', 1],
+    ['generate_scene_frame', 'failed', 6],
     ['generate_video_shot', 'queued', 0],
   ]);
   assert.match(tasks[0].last_error, /runway is unavailable/);
   assert.equal(db.prepare('SELECT status FROM sessions WHERE id = ?').get('session-1').status, 'FAILED');
+});
+
+test('media task exhaustion triggers a manual regeneration notification', () => {
+  const pipelineSource = fs.readFileSync(new URL('../src/lib/pipeline_media.ts', import.meta.url), 'utf8');
+  const notificationSource = fs.readFileSync(new URL('../src/lib/final-render-notification.ts', import.meta.url), 'utf8');
+
+  assert.match(pipelineSource, /notifyGenerationRetriesExhausted/);
+  assert.match(pipelineSource, /!failedTask\.auto_failure_notification_sent_at/);
+  assert.match(notificationSource, /sendGenerationFailureEmail/);
+  assert.match(notificationSource, /auto_failure_notification_sent_at = CURRENT_TIMESTAMP/);
 });
 
 test('shot plan progress keeps completed sub-shots and only reports complete when every shot has a url', () => {

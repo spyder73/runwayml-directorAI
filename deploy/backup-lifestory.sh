@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/opt/lifestory}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_APP_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+APP_DIR="${APP_DIR:-$DEFAULT_APP_DIR}"
 BACKUP_DIR="${BACKUP_DIR:-/opt/backups/lifestory}"
 STAMP="$(date +%F-%H%M)"
 

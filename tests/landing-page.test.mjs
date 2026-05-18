@@ -40,21 +40,24 @@ test('home route chooses between landing and studio from request host', () => {
 test('public landing page links visitors into the app subdomain', () => {
   const source = fs.readFileSync(new URL('../src/components/home/LandingPage.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /Meet Nico Hale/);
-  assert.match(source, /Hey, I'm Nico Hale, your content director/);
-  assert.match(source, /AI content director/);
-  assert.match(source, /A short film from a life only you can tell/);
-  assert.match(source, /Tell it the way you remember it/);
+  assert.match(source, /No boundaries/);
+  assert.match(source, /Your life story can become a narrated cinematic movie/);
+  assert.match(source, /Tell it anything: childhood, migration, grief, love, survival, reinvention/);
+  assert.match(source, /Powered by/);
+  assert.match(source, /RunwayML/);
+  assert.match(source, /Modal/);
+  assert.match(source, /A narrated cinematic movie from a life only you can tell/);
   assert.match(source, /href=\{`\$\{appUrl\}\/register`\}/);
   assert.match(source, /href=\{`\$\{appUrl\}\/login`\}/);
-  assert.match(source, /It starts where real stories always start: a detail/);
-  assert.match(source, /Not a prompt box\. A director's room/);
-  assert.match(source, /Give your memories a screen/);
+  assert.match(source, /The movie starts where your memory still has texture/);
+  assert.match(source, /You do not need to know how to make films/);
+  assert.match(source, /Make the movie your family wishes already existed/);
   assert.match(source, /\/landing\/hero/);
   assert.match(source, /\/landing\/memory-detail/);
   assert.match(source, /\/landing\/director-desk/);
   assert.match(source, /\/landing\/final-screening/);
   assert.match(source, /\/landing\/director-studio/);
+  assert.doesNotMatch(source, /Start with the welcome/);
   assert.doesNotMatch(source, /Your account owns its media/);
   assert.doesNotMatch(source, /authenticated routes/);
   assert.doesNotMatch(source, /generation keys stay encrypted/);

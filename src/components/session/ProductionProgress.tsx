@@ -86,8 +86,100 @@ function renderStageLabel(progress: RenderProgressPayload) {
   return progress.stitchStage ? 'Encoding final video' : 'Rendering frames';
 }
 
+type RenderStageId = 'upload' | 'render' | 'encode' | 'download';
+
+const RENDER_STAGES: Array<{ id: RenderStageId; label: string }> = [
+  { id: 'upload', label: 'Upload' },
+  { id: 'render', label: 'Render' },
+  { id: 'encode', label: 'Encode' },
+  { id: 'download', label: 'Download' },
+];
+
+function activeRenderStage(progress: RenderProgressPayload): RenderStageId {
+  const message = progress.message.toLowerCase();
+  if (message.includes('download')) return 'download';
+  if (progress.stitchStage || message.includes('encode') || message.includes('stitch') || (progress.encodedFrames ?? 0) > 0) return 'encode';
+  if (message.includes('upload')) return 'upload';
+  if ((progress.renderedFrames ?? 0) > 0 || progress.progress > 0.08) return 'render';
+  return 'render';
+}
+
+function renderStageDetail(stage: RenderStageId) {
+  if (stage === 'upload') return 'Media is being handed to the render worker.';
+  if (stage === 'render') return 'Modal is producing the final frames.';
+  if (stage === 'encode') return 'Frames are being stitched into the final MP4.';
+  return 'The finished film is being copied back to the studio.';
+}
+
 function canRenderFromCompletedScenes(scenes: SceneRow[]) {
   return scenes.length > 0 && scenes.every((scene) => Boolean(scene.video_url));
+}
+
+function RenderProgressPanel({ progress, percent }: { progress: RenderProgressPayload; percent: number }) {
+  const activeStage = activeRenderStage(progress);
+  const activeStageIndex = RENDER_STAGES.findIndex((stage) => stage.id === activeStage);
+  const renderedFrames = frameCountLabel(progress.renderedFrames);
+  const encodedFrames = frameCountLabel(progress.encodedFrames);
+  const totalFrames = frameCountLabel(progress.totalFrames);
+
+  return (
+    <div className="w-full max-w-4xl border-y border-white/10 bg-black/25 px-4 py-5 shadow-[0_0_42px_rgba(253,230,138,0.08)] backdrop-blur-sm sm:px-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-white/35">Final export</p>
+          <p className="mt-2 break-words font-mono text-xs uppercase tracking-[0.18em] text-amber-100/80 sm:text-sm">
+            {renderStageLabel(progress)}
+          </p>
+          <p className="mt-2 font-sans text-xs leading-relaxed text-white/45">{renderStageDetail(activeStage)}</p>
+        </div>
+        <div className="font-mono text-2xl text-amber-100 sm:text-3xl">{percent}%</div>
+      </div>
+
+      <div
+        className="mt-5 h-2 overflow-hidden rounded-full bg-white/10"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-label="Final render progress"
+      >
+        <div
+          className="h-full rounded-full bg-amber-200 shadow-[0_0_18px_rgba(253,230,138,0.35)] transition-all duration-700"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+
+      <div className="mt-5 grid grid-cols-4 gap-2">
+        {RENDER_STAGES.map((stage, index) => {
+          const isComplete = index < activeStageIndex;
+          const isActive = index === activeStageIndex;
+          return (
+            <div key={stage.id} className="min-w-0">
+              <div className={`h-1 rounded-full transition-colors ${isComplete || isActive ? 'bg-amber-200' : 'bg-white/10'}`} />
+              <p className={`mt-2 truncate font-mono text-[9px] uppercase tracking-[0.14em] sm:text-[10px] ${isActive ? 'text-amber-100/80' : isComplete ? 'text-white/45' : 'text-white/25'}`}>
+                {stage.label}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="border-l border-white/10 pl-3">
+          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/30">Rendered frames</p>
+          <p className="mt-1 font-mono text-xs text-white/60">{renderedFrames} / {totalFrames}</p>
+        </div>
+        <div className="border-l border-white/10 pl-3">
+          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/30">Encoded</p>
+          <p className="mt-1 font-mono text-xs text-white/60">{encodedFrames}</p>
+        </div>
+        <div className="border-l border-white/10 pl-3">
+          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-white/30">Status</p>
+          <p className="mt-1 font-mono text-xs text-white/60">{activeStage === 'upload' ? 'Starting remote render' : 'In progress'}</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function SceneSubsceneProgress({ scene, aspectRatio, onOpenImage }: { scene: SceneRow; aspectRatio: SessionRow['aspect_ratio']; onOpenImage: (url: string) => void }) {
@@ -207,29 +299,7 @@ export default function ProductionProgress({ session, scenes, renderProgress, pi
           )}
           {session.status === 'RENDERING' && (
             renderProgress ? (
-              <div className="flex w-full max-w-xl flex-col gap-3 font-mono text-sm text-amber-100/75">
-                <div className="flex items-center justify-between gap-4 text-[11px] uppercase tracking-[0.22em]">
-                  <span>{renderStageLabel(renderProgress)}</span>
-                  <span>{renderPercent}%</span>
-                </div>
-                <div
-                  className="h-2 overflow-hidden rounded-full bg-white/10"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={renderPercent}
-                  aria-label="Final render progress"
-                >
-                  <div
-                    className="h-full rounded-full bg-amber-200 shadow-[0_0_18px_rgba(253,230,138,0.35)] transition-all duration-700"
-                    style={{ width: `${renderPercent}%` }}
-                  />
-                </div>
-                <div className="grid grid-cols-1 gap-2 text-[10px] uppercase tracking-[0.18em] text-white/40 sm:grid-cols-2">
-                  <span>Rendered frames {frameCountLabel(renderProgress.renderedFrames)} / {frameCountLabel(renderProgress.totalFrames)}</span>
-                  <span>Encoded frames {frameCountLabel(renderProgress.encodedFrames)}</span>
-                </div>
-              </div>
+              <RenderProgressPanel progress={renderProgress} percent={renderPercent} />
             ) : (
               <div className="flex flex-col items-center gap-4 font-mono text-sm text-amber-200/70">
                 <div className="h-12 w-12 animate-spin rounded-full border-t-2 border-amber-200" />

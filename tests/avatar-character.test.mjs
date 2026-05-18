@@ -149,6 +149,7 @@ test('avatar profile tool updates the same story bucket tables as text interview
 test('avatar reference tool replies with a follow-up after labeling an upload', async () => {
   const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
   const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');
+  const { createReferenceAsset } = jiti('../src/lib/story-bucket.ts');
 
   const database = new Database(':memory:');
   initializeDatabaseSchema(database);
@@ -161,6 +162,13 @@ test('avatar reference tool replies with a follow-up after labeling an upload', 
     INSERT INTO avatar_call_sessions (id, session_id, runway_session_id, status)
     VALUES (?, ?, ?, ?)
   `).run('call-1', 'session-1', 'runway-1', 'RUNNING');
+  createReferenceAsset(database, 'session-1', {
+    localUrl: '/api/media/uploaded-reference',
+    targetType: 'reference',
+    targetLabel: 'uploaded reference',
+    usagePermissions: 'allowed',
+    source: 'upload',
+  });
 
   const tools = createAvatarRpcTools({
     database,
@@ -181,6 +189,52 @@ test('avatar reference tool replies with a follow-up after labeling an upload', 
   assert.equal(result.ok, true);
   assert.match(result.directorReply, /I will remember Dorian/);
   assert.match(result.directorReply, /\?/);
+  database.close();
+});
+
+test('avatar reference request tool continues when protagonist photo is already handled', async () => {
+  const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
+  const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');
+  const { createReferenceAsset } = jiti('../src/lib/story-bucket.ts');
+
+  const database = new Database(':memory:');
+  initializeDatabaseSchema(database);
+  database.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run('user-1', 'user@example.com', 'hash');
+  database.prepare(`
+    INSERT INTO sessions (id, user_id, status, story_text, aspect_ratio, mode, interview_medium, user_selfie_url)
+    VALUES (?, ?, 'INTERVIEW_DYNAMIC', '', '16:9', 'life_story', 'voice', ?)
+  `).run('session-1', 'user-1', '/api/media/selfie');
+  database.prepare(`
+    INSERT INTO avatar_call_sessions (id, session_id, runway_session_id, status)
+    VALUES (?, ?, ?, ?)
+  `).run('call-1', 'session-1', 'runway-1', 'RUNNING');
+  createReferenceAsset(database, 'session-1', {
+    localUrl: '/api/media/selfie',
+    targetType: 'protagonist',
+    targetLabel: 'Maya',
+    usagePermissions: 'allowed',
+    source: 'upload',
+  });
+
+  const tools = createAvatarRpcTools({
+    database,
+    appSessionId: 'session-1',
+    avatarCallSessionId: 'call-1',
+    runwaySessionId: 'runway-1',
+  });
+
+  const result = await tools.request_reference_upload({
+    targetType: 'protagonist',
+    targetLabel: 'Maya',
+    promptText: 'Do you have a photo you would like to use?',
+    reason: 'Keep the protagonist visually consistent.',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.requestId, null);
+  assert.equal(result.alreadyHandled, true);
+  assert.doesNotMatch(result.directorReply, /photo.*upload|upload.*photo/i);
+  assert.notEqual(result.layout, 'upload');
   database.close();
 });
 
@@ -222,7 +276,7 @@ test('avatar profile fallback asks the missing onboarding question after name an
   database.close();
 });
 
-test('avatar scene outline draft locks production and ends the call', async () => {
+test('avatar scene outline handoff locks production and ends the call', async () => {
   const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
   const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');
 
@@ -283,7 +337,8 @@ test('avatar scene outline draft locks production and ends the call', async () =
   assert.equal(result.ok, true);
   assert.equal(result.endCall, true);
   assert.equal(result.layout, 'email');
-  assert.match(result.directorReply, /I'll make sure to send you a draft of my idea\./);
+  assert.equal(result.directorReply, "All right, we'll wrap it up here. Add your email and I'll message you once your movie is ready!");
+  assert.doesNotMatch(result.directorReply, /draft/i);
   assert.equal(session.status, 'GENERATING_IMAGES');
   assert.equal(treatment.status, 'approved');
   assert.equal(scenes.length, 1);
@@ -306,6 +361,14 @@ test('avatar prompts and paste-ready docs preserve director behavior', () => {
   assert.match(personality, /Nico Hale/);
   assert.match(personality, /one question at a time/i);
   assert.match(personality, /use tools silently/i);
+  assert.doesNotMatch(personality, /Move briskly/i);
+  assert.match(personality, /at least three emotionally specific memories/i);
+  assert.match(personality, /childhood, younger adult, and current-life/i);
+  assert.match(personality, /selfie checkpoint is mandatory to ask/i);
+  assert.match(personality, /request_reference_upload/);
+  assert.match(personality, /protagonist selfie/i);
+  assert.match(personality, /central friend/i);
+  assert.match(personality, /show_upload_dropzone/);
   assert.match(startScript, /Maya/);
   assert.doesNotMatch(startScript, /I am Nico Hale/);
   assert.match(startScript, /what is your name/i);
@@ -314,14 +377,41 @@ test('avatar prompts and paste-ready docs preserve director behavior', () => {
   assert.match(knowledge, /Prioritize photos of the protagonist/i);
   assert.match(knowledge, /one important friend/i);
   assert.match(knowledge, /Place images are low priority/i);
+  assert.match(knowledge, /Do not call propose_scene_outline/i);
+  assert.match(knowledge, /at least three emotionally specific memories/i);
+  assert.match(knowledge, /protagonist selfie decision/i);
   assert.match(knowledge, /call propose_scene_outline once/i);
   assert.match(knowledge, /Do not call propose_film_treatment/i);
-  assert.match(knowledge, /I'll make sure to send you a draft of my idea/i);
+  assert.match(knowledge, /All right, we'll wrap it up here/i);
+  assert.doesNotMatch(knowledge, /draft of my idea/i);
   assert.match(knowledge, /end the call/i);
 
+  const docs = [];
   for (const fileName of ['personality.md', 'start-script.md', 'knowledge.md']) {
     const source = fs.readFileSync(new URL(`../docs/runway-character/${fileName}`, import.meta.url), 'utf8');
+    docs.push(source);
     assert.match(source, /Nico Hale|LifeStory|Director/i);
     assert.doesNotMatch(source, /TBD|TODO/);
   }
+  const combinedDocs = docs.join('\n');
+  assert.match(combinedDocs, /request_reference_upload/);
+  assert.match(combinedDocs, /central friend/i);
+  assert.match(combinedDocs, /All right, we'll wrap it up here/i);
+});
+
+test('avatar upload tools tell the model to ask for protagonist and central friend images', () => {
+  const {
+    avatarBackendTools,
+    avatarClientTools,
+  } = jiti('../src/lib/avatar/tool-definitions.ts');
+
+  const requestTool = avatarBackendTools.find((tool) => tool.name === 'request_reference_upload');
+  const showDropzoneTool = avatarClientTools.find((tool) => tool.name === 'show_upload_dropzone');
+
+  assert.ok(requestTool);
+  assert.ok(showDropzoneTool);
+  assert.match(requestTool.description, /protagonist/i);
+  assert.match(requestTool.description, /central friend/i);
+  assert.match(requestTool.description, /upload, describe, or skip/i);
+  assert.match(showDropzoneTool.description, /immediately after request_reference_upload/i);
 });

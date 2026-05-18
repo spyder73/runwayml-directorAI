@@ -4,6 +4,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import db from '@/lib/db';
 import { authGuardResponse, requireCurrentUser, requireOwnedSession } from '@/lib/auth/guards';
+import { logConversationEvent } from '@/lib/conversation-logs';
+import { releaseInterviewTurn, tryAcquireInterviewTurn } from '@/lib/interview-turns';
 import { processInterviewTurn } from '@/lib/pipeline';
 import { UPLOAD_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 import type { ChatHistoryRow, SessionRow } from '@/lib/types';
@@ -36,10 +38,12 @@ function nextStatusAfterUpload(session: SessionRow, activeRequest: ReturnType<ty
 }
 
 export async function POST(req: NextRequest) {
+  let turnToken: string | null = null;
+  let sessionId: string | null = null;
   try {
     const auth = requireCurrentUser(req);
     const formData = await req.formData();
-    const sessionId = formData.get('sessionId') as string;
+    sessionId = formData.get('sessionId') as string;
     const files = formData.getAll('files') as File[];
 
     if (!sessionId) {
@@ -59,8 +63,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    turnToken = tryAcquireInterviewTurn(db, sessionId);
+    if (!turnToken) {
+      return NextResponse.json({ error: 'An interview response is still being prepared.' }, { status: 409 });
+    }
+
     const uploadedPaths: string[] = [];
+    const uploadedReferences: Array<{
+      path: string;
+      targetType: string;
+      targetLabel: string;
+      stableTag: string;
+    }> = [];
+    let uploadedProtagonistPath: string | null = null;
     const activeRequest = getActiveReferenceRequest(db, sessionId);
+    const voiceProtagonistUpload = session.interview_medium === 'voice' && !session.user_selfie_url && !activeRequest;
     const visionModel = files.length > 0 ? openRouterModelForSession(db, session, 'google/gemini-3.1-flash-lite') : null;
 
     // Save files locally
@@ -117,9 +134,9 @@ export async function POST(req: NextRequest) {
       db.prepare('INSERT INTO user_uploads (id, session_id, file_path, vision_description) VALUES (?, ?, ?, ?)')
         .run(uuidv4(), sessionId, filePath, visionDescription);
 
-      const targetType = activeRequest?.target_type || (session.status === 'AWAITING_SELFIE' ? 'protagonist' : 'reference');
-      const targetLabel = activeRequest?.target_label || (targetType === 'protagonist' ? 'protagonist' : 'reference');
-      createReferenceAsset(db, sessionId, {
+      const targetType = activeRequest?.target_type || (session.status === 'AWAITING_SELFIE' || voiceProtagonistUpload ? 'protagonist' : 'reference');
+      const targetLabel = activeRequest?.target_label || (targetType === 'protagonist' ? (session.user_name || 'protagonist') : 'reference');
+      const referenceAsset = createReferenceAsset(db, sessionId, {
         localUrl: filePath,
         targetType,
         targetLabel,
@@ -129,6 +146,15 @@ export async function POST(req: NextRequest) {
       });
         
       uploadedPaths.push(filePath);
+      if (targetType === 'protagonist' && !uploadedProtagonistPath) {
+        uploadedProtagonistPath = filePath;
+      }
+      uploadedReferences.push({
+        path: filePath,
+        targetType,
+        targetLabel,
+        stableTag: referenceAsset.stable_tag,
+      });
     }
 
     if (uploadedPaths.length > 0) {
@@ -137,9 +163,20 @@ export async function POST(req: NextRequest) {
        const messageId = uuidv4();
        db.prepare('INSERT INTO chat_history (id, session_id, role, content) VALUES (?, ?, ?, ?)')
         .run(messageId, sessionId, 'user', userMsg);
+       logConversationEvent({
+         sessionId,
+         event: 'user_upload',
+         role: 'user',
+         content: userMsg,
+         metadata: {
+           status: session.status,
+           activeReferenceRequestId: activeRequest?.id || null,
+           uploadedReferences,
+         },
+       });
         
-       if (session.status === 'AWAITING_SELFIE' || activeRequest?.target_type === 'protagonist') {
-           db.prepare('UPDATE sessions SET user_selfie_url = ? WHERE id = ?').run(uploadedPaths[0], sessionId);
+       if (uploadedProtagonistPath) {
+           db.prepare('UPDATE sessions SET user_selfie_url = ? WHERE id = ?').run(uploadedProtagonistPath, sessionId);
        }
 
        if (session.status === 'AWAITING_SELFIE' || session.status === 'AWAITING_REFERENCE') {
@@ -155,11 +192,16 @@ export async function POST(req: NextRequest) {
          active_reference_request: getActiveReferenceRequest(db, sessionId) || null,
        });
        
-       processInterviewTurn(sessionId).catch(console.error);
+       if (session.interview_medium !== 'voice') {
+         await processInterviewTurn(sessionId, { turnToken });
+       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, uploadedReferences });
   } catch (error: unknown) {
+    if (sessionId && turnToken) {
+      releaseInterviewTurn(db, sessionId, turnToken);
+    }
     const guardResponse = authGuardResponse(error);
     if (guardResponse) return guardResponse;
     if (isMissingUserCredentialError(error)) {
@@ -167,5 +209,9 @@ export async function POST(req: NextRequest) {
     }
     console.error('Upload Error:', error);
     return NextResponse.json({ error: 'Upload processing failed. Please try again.' }, { status: 500 });
+  } finally {
+    if (sessionId && turnToken) {
+      releaseInterviewTurn(db, sessionId, turnToken);
+    }
   }
 }

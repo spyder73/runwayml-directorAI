@@ -191,3 +191,19 @@ test('render_final media tasks advertise Modal only when the backend is enabled'
   assert.equal(finalRenderTaskProvider({ FINAL_RENDER_BACKEND: 'modal' }, 'local'), 'local');
   assert.equal(finalRenderTaskProvider({ FINAL_RENDER_BACKEND: 'modal' }, 'modal'), 'modal');
 });
+
+test('Modal bridge downloads completed output without using Modal-only volume reload', async () => {
+  const source = await fs.readFile(new URL('../python/modal_bridge/server.py', import.meta.url), 'utf8');
+
+  assert.match(source, /_copy_volume_file\(volume, output_volume_path, output_path\)/);
+  assert.doesNotMatch(source, /volume\.reload\(\)/);
+});
+
+test('Modal bridge client avoids fetch headers timeout during long remote renders', async () => {
+  const source = await fs.readFile(new URL('../src/lib/modal-render.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /import http from ['"]http['"]/);
+  assert.match(source, /client\.request/);
+  assert.match(source, /modalRenderBridgeHttpTimeout/);
+  assert.doesNotMatch(source, /await fetch\(\`\$\{bridgeUrl\.replace/);
+});

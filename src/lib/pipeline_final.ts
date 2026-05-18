@@ -2,13 +2,14 @@ import db from './db';
 import { broadcastSessionUpdate } from './sse';
 import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './types';
 import { ensureSafePrompt } from './moderation';
+import { limitNarrationForSceneDuration } from './narration-budget';
 import { getAudioDurationInSeconds } from 'get-audio-duration';
-import path from 'path';
 import { planShots } from './shot_planner';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
 import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
 import { repairRunwayVideoPromptForValidation } from './video-prompt-repair';
 import { FINAL_IMAGE_QUALITY } from './production-config';
+import { resolveMediaUrlToFilePath } from './media-assets';
 import {
   completeMediaTasksForScenePhase,
   failMediaTasksForScenePhase,
@@ -235,8 +236,13 @@ export async function generateVideoAudioPhase(sessionId: string) {
 
         if (!audioUrl || scene.status === 'audio_failed') {
           activePhase = 'audio';
+          const narrationText = limitNarrationForSceneDuration(scene.narrator_text, scene.duration);
+          if (narrationText !== scene.narrator_text) {
+            db.prepare('UPDATE scenes SET narrator_text = ? WHERE id = ?').run(narrationText, scene.id);
+            scene.narrator_text = narrationText;
+          }
           const audioAsset = await generateSpeechAsset({
-            promptText: scene.narrator_text,
+            promptText: narrationText,
             sessionId,
             runwayClient,
             database: db,
@@ -244,13 +250,17 @@ export async function generateVideoAudioPhase(sessionId: string) {
           audioUrl = audioAsset.localUrl;
 
           try {
-            exactDuration = await getAudioDurationInSeconds(path.join(process.cwd(), 'public', audioAsset.filePath));
+            const resolvedAudio = resolveMediaUrlToFilePath(db, audioAsset.localUrl, sessionId);
+            if (!resolvedAudio) {
+              throw new Error(`Generated audio asset ${audioAsset.localUrl} is not a media asset URL.`);
+            }
+            exactDuration = await getAudioDurationInSeconds(resolvedAudio.filePath);
           } catch (error) {
             console.error('Could not get audio duration:', error);
           }
 
           db.prepare('UPDATE scenes SET audio_url = ?, duration = ?, status = ?, last_failure = NULL WHERE id = ?')
-            .run(audioUrl, Math.ceil(exactDuration), 'audio_ready', scene.id);
+            .run(audioUrl, exactDuration, 'audio_ready', scene.id);
           completeMediaTasksForScenePhase(db, {
             sessionId,
             sceneId: scene.id,
@@ -299,7 +309,7 @@ export async function generateVideoAudioPhase(sessionId: string) {
           }));
 
           db.prepare('UPDATE scenes SET video_url = ?, shot_plan_json = ?, duration = ?, status = ?, last_failure = NULL WHERE id = ?')
-            .run(JSON.stringify(videoUrls), JSON.stringify(shotPlan), Math.ceil(exactDuration), 'completed', scene.id);
+            .run(JSON.stringify(videoUrls), JSON.stringify(shotPlan), exactDuration, 'completed', scene.id);
           completeMediaTasksForScenePhase(db, {
             sessionId,
             sceneId: scene.id,
