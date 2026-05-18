@@ -118,14 +118,13 @@ test('SMTP envelope addresses use bare mailboxes for friendly From headers', () 
 });
 
 test('final render email links to the render finished page when session id is available', () => {
-  const { buildFinalRenderUrl, buildGenerationFailureUrl } = jiti('../src/lib/email/smtp.ts');
+  const { buildFinalRenderUrl } = jiti('../src/lib/email/smtp.ts');
   const previousAppUrl = process.env.APP_URL;
   process.env.APP_URL = 'https://app.example.com/';
 
   try {
     assert.equal(buildFinalRenderUrl('/api/media/final-video', 'session 1'), 'https://app.example.com/render/session%201');
     assert.equal(buildFinalRenderUrl('/api/media/final-video'), 'https://app.example.com/api/media/final-video');
-    assert.equal(buildGenerationFailureUrl('session 1'), 'https://app.example.com/session/session%201');
   } finally {
     if (previousAppUrl === undefined) {
       delete process.env.APP_URL;
@@ -133,40 +132,6 @@ test('final render email links to the render finished page when session id is av
       process.env.APP_URL = previousAppUrl;
     }
   }
-});
-
-test('final render notifications include extra render email and account email once each', () => {
-  const { finalRenderNotificationRecipients } = jiti('../src/lib/final-render-notification.ts');
-
-  assert.deepEqual(
-    finalRenderNotificationRecipients({
-      render_notification_email: 'film@example.com',
-      account_email: 'owner@example.com',
-    }),
-    ['film@example.com', 'owner@example.com'],
-  );
-  assert.deepEqual(
-    finalRenderNotificationRecipients({
-      render_notification_email: 'OWNER@example.com',
-      account_email: 'owner@example.com',
-    }),
-    ['owner@example.com'],
-  );
-});
-
-test('generation failure email points users back to manual asset regeneration', async () => {
-  const { sendGenerationFailureEmail } = jiti('../src/lib/email/smtp.ts');
-  const emailSource = readFileSync(new URL('../src/lib/email/smtp.ts', import.meta.url), 'utf8');
-
-  const result = await sendGenerationFailureEmail({
-    to: 'film@example.com',
-    sessionId: 'session-1',
-  });
-
-  assert.equal(result.sent, false);
-  assert.equal(result.failureUrl, 'https://lifestory.example/session/session-1');
-  assert.match(emailSource, /RunwayML's API looks congested/);
-  assert.match(emailSource, /restart generation for the affected assets/);
 });
 
 test('auth routes register, require confirmation for login, verify email, login, and logout', async () => {

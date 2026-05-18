@@ -28,8 +28,6 @@ type ReferenceEntityLike = {
 
 const TAG_PATTERN = /^[a-z][a-z0-9_]{2,15}$/;
 const TAG_CAPTURE_PATTERN = /@([a-zA-Z][a-zA-Z0-9_]*)/g;
-const PERSON_REFERENCE_TYPES = new Set(['protagonist', 'person', 'family', 'friend']);
-const GENERIC_PERSON_TAGS = new Set(['self', 'person', 'protagonist', 'reference']);
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -71,24 +69,6 @@ function promptMentionsEntity(promptText: string, displayName: string) {
   const trimmed = displayName.trim();
   if (!trimmed) return false;
   return new RegExp(`(^|[^a-z0-9])${escapeRegExp(trimmed)}(?=$|[^a-z0-9])`, 'i').test(promptText);
-}
-
-function plainReferenceLabel(tag: string) {
-  const words = tag
-    .replace(/^@/, '')
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!words) return 'Reference';
-  return words.replace(/\b[a-z]/g, (char) => char.toUpperCase());
-}
-
-function replaceFirstPlainMentionWithTag(promptText: string, displayName: string, tag: string) {
-  const trimmed = displayName.trim();
-  if (!trimmed || promptIncludesTag(promptText, tag)) return promptText;
-
-  const mentionPattern = new RegExp(`(^|[^@a-z0-9])(${escapeRegExp(trimmed)})(?=$|[^a-z0-9])`, 'i');
-  return promptText.replace(mentionPattern, (_match, prefix: string) => `${prefix}@${tag}`);
 }
 
 function findUsableOwnedAsset(assets: ReferenceAssetLike[], entityId: string, excludedAssetId?: string) {
@@ -158,46 +138,8 @@ export function rewritePromptReferenceTags(promptText: string, replacements: Map
 function stripPromptReferenceTags(promptText: string, tags: Set<string>) {
   if (!tags.size) return promptText;
   return promptText.replace(TAG_CAPTURE_PATTERN, (match, tag: string) => (
-    tags.has(normalizeReferenceTag(tag)) ? plainReferenceLabel(tag) : match
+    tags.has(normalizeReferenceTag(tag)) ? tag : match
   ));
-}
-
-function entityNamesForAsset(asset: ReferenceAssetLike, entities: ReferenceEntityLike[]) {
-  const names = entities
-    .filter((entity) => entity.reference_asset_id === asset.id || entity.id === asset.owner_entity_id)
-    .map((entity) => entity.display_name)
-    .filter((name) => name.trim().length > 0);
-
-  if (
-    PERSON_REFERENCE_TYPES.has(asset.target_type)
-    && !GENERIC_PERSON_TAGS.has(asset.stable_tag)
-    && !names.some((name) => normalizeReferenceTag(name) === asset.stable_tag)
-  ) {
-    names.push(plainReferenceLabel(asset.stable_tag));
-  }
-
-  return names;
-}
-
-function bindSelectedAssetTagsInline(
-  promptText: string,
-  selectedAssets: ReferenceAssetLike[],
-  entities: ReferenceEntityLike[],
-) {
-  let rewritten = promptText;
-
-  for (const asset of selectedAssets) {
-    if (promptIncludesTag(rewritten, asset.stable_tag)) continue;
-    for (const name of entityNamesForAsset(asset, entities)) {
-      const next = replaceFirstPlainMentionWithTag(rewritten, name, asset.stable_tag);
-      if (next !== rewritten) {
-        rewritten = next;
-        break;
-      }
-    }
-  }
-
-  return rewritten;
 }
 
 export function parseReferenceAssetIds(value: string | null | undefined) {
@@ -216,36 +158,26 @@ export function prepareSceneReferences(params: {
   protagonistVisible: boolean;
   assets: ReferenceAssetLike[];
   entities?: ReferenceEntityLike[];
-  canonicalProtagonistReferenceAssetId?: string | null;
 }): PreparedSceneReferences {
   const byId = new Map(params.assets.map((asset) => [asset.id, asset]));
   const requestedAssets = params.sceneReferenceAssetIds
     .map((id) => byId.get(id) || resolveReferenceAssetToken(id, params.assets, params.entities))
     .filter((asset): asset is ReferenceAssetLike => Boolean(asset));
 
-  const canonicalProtagonistAsset = params.canonicalProtagonistReferenceAssetId
-    ? params.assets.find((asset) => asset.id === params.canonicalProtagonistReferenceAssetId && canUseAsset(asset))
-    : undefined;
-  const fallbackProtagonistAsset = params.assets.find((asset) => asset.target_type === 'protagonist' && canUseAsset(asset));
   const protagonistAssets = params.protagonistVisible
-    ? [canonicalProtagonistAsset || fallbackProtagonistAsset].filter((asset): asset is ReferenceAssetLike => Boolean(asset))
+    ? params.assets.filter((asset) => asset.target_type === 'protagonist')
     : [];
 
   const promptTagReplacements = new Map<string, string>();
-  const strippedPromptTags = new Set<string>();
+  const unusablePromptTags = new Set<string>();
   const promptReferencedAssets = extractPromptReferenceTags(params.promptText)
     .map((tag) => {
-      const normalizedTag = normalizeReferenceTag(tag);
       const asset = resolveReferenceAssetToken(tag, params.assets, params.entities);
-      if (!asset) {
-        strippedPromptTags.add(normalizedTag);
-        return undefined;
+      if (asset && normalizeReferenceTag(tag) !== asset.stable_tag) {
+        promptTagReplacements.set(normalizeReferenceTag(tag), asset.stable_tag);
       }
-      if (normalizedTag !== asset.stable_tag) {
-        promptTagReplacements.set(normalizedTag, asset.stable_tag);
-      }
-      if (!canUseAsset(asset)) {
-        strippedPromptTags.add(normalizedTag);
+      if (asset && !canUseAsset(asset)) {
+        unusablePromptTags.add(normalizeReferenceTag(tag));
       }
       return asset;
     })
@@ -254,7 +186,7 @@ export function prepareSceneReferences(params: {
 
   const rewrittenPromptText = stripPromptReferenceTags(
     rewritePromptReferenceTags(params.promptText, promptTagReplacements),
-    strippedPromptTags,
+    unusablePromptTags,
   );
 
   const selectedAssets: ReferenceAssetLike[] = [];
@@ -267,19 +199,13 @@ export function prepareSceneReferences(params: {
     if (selectedAssets.length === 16) break;
   }
 
-  const promptTextWithInlineTags = bindSelectedAssetTagsInline(
-    rewrittenPromptText,
-    selectedAssets,
-    params.entities || [],
-  );
-
   const missingTags = selectedAssets
     .map((asset) => asset.stable_tag)
-    .filter((tag) => !promptIncludesTag(promptTextWithInlineTags, tag));
+    .filter((tag) => !promptIncludesTag(rewrittenPromptText, tag));
 
   const promptText = missingTags.length
-    ? `${promptTextWithInlineTags.trim()}\n\nReference cues: ${missingTags.map((tag) => `@${tag}`).join(' ')}.`
-    : promptTextWithInlineTags;
+    ? `${rewrittenPromptText.trim()}\n\nReference cues: ${missingTags.map((tag) => `@${tag}`).join(' ')}.`
+    : rewrittenPromptText;
 
   return {
     promptText,

@@ -176,46 +176,6 @@ test('Runway persistence writes generated assets outside public and returns medi
   });
 });
 
-test('Narration duration probing resolves generated audio from private media storage', async () => {
-  await withMediaStorageDir(async (mediaDir) => {
-    const db = createProductionDb();
-    insertUser(db);
-    insertSession(db);
-    const {
-      createMediaAssetForSession,
-      createPrivateMediaFilePath,
-      mediaAssetUrl,
-    } = jiti('../src/lib/media-assets.ts');
-    const { resolveGeneratedAssetFilePath } = jiti('../src/lib/pipeline_media.ts');
-
-    const audioFile = createPrivateMediaFilePath({
-      scope: 'generated',
-      kind: 'audio',
-      sessionId: 'session-1',
-      id: 'audio-asset',
-      extension: 'mp3',
-    });
-    await writePrivateFile(audioFile);
-    const audioAsset = createMediaAssetForSession(db, {
-      id: 'audio-asset',
-      sessionId: 'session-1',
-      kind: 'audio',
-      filePath: audioFile.relativePath,
-      mimeType: 'audio/mpeg',
-      byteSize: 10,
-      originalName: null,
-    });
-
-    const resolved = resolveGeneratedAssetFilePath(db, 'session-1', {
-      localUrl: mediaAssetUrl(audioAsset.id),
-      filePath: audioAsset.file_path,
-    });
-
-    assert.equal(resolved, path.join(mediaDir, audioFile.relativePath));
-    assert.equal(resolved.includes(`${path.sep}public${path.sep}`), false);
-  });
-});
-
 test('Runway video uploads media API prompt images with a real filename extension', async () => {
   await withMediaStorageDir(async () => {
     const db = createProductionDb();
@@ -371,11 +331,4 @@ test('Phase 7 routes and upload path are wired for authenticated private media',
   assert.match(routeSource, /getOwnedMediaAsset/);
   assert.match(routeSource, /createMediaFileResponse/);
   assert.match(routeSource, /params:\s*Promise<\{\s*id:\s*string\s*\}>/);
-
-  const mediaPipelineSource = fs.readFileSync(new URL('../src/lib/pipeline_media.ts', import.meta.url), 'utf8');
-  const finalPipelineSource = fs.readFileSync(new URL('../src/lib/pipeline_final.ts', import.meta.url), 'utf8');
-  assert.doesNotMatch(mediaPipelineSource, /public['"],\s*audioAsset\.filePath/);
-  assert.doesNotMatch(finalPipelineSource, /public['"],\s*audioAsset\.filePath/);
-  assert.match(mediaPipelineSource, /resolveGeneratedAssetFilePath/);
-  assert.match(finalPipelineSource, /resolveMediaUrlToFilePath/);
 });

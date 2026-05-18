@@ -1,6 +1,4 @@
 import fs from 'fs/promises';
-import http from 'http';
-import https from 'https';
 import path from 'path';
 import type { FinalRenderPlan } from './final-render';
 
@@ -61,13 +59,6 @@ type ModalRenderBridgeResult = {
   outputLocalPath?: string;
   byteSize?: number;
   error?: string;
-  detail?: string;
-};
-
-type BridgeHttpResult = {
-  ok: boolean;
-  status: number;
-  body: string;
 };
 
 const DEFAULT_MODAL_APP_NAME = 'lifestory-remotion-renderer';
@@ -75,8 +66,6 @@ const DEFAULT_MODAL_FUNCTION_NAME = 'render_final';
 const DEFAULT_MODAL_VOLUME = 'lifestory-render-jobs';
 const DEFAULT_MODAL_VOLUME_MOUNT_PATH = '/render-data';
 const DEFAULT_MODAL_BRIDGE_PORT = '8765';
-const DEFAULT_MODAL_BRIDGE_HTTP_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-const MODAL_BRIDGE_HTTP_OVERHEAD_MS = 10 * 60 * 1000;
 const REMOTE_REPO_ROOT = '/workspace';
 
 function safeJobId(value: string) {
@@ -196,50 +185,8 @@ export function buildModalRenderRequest(
   };
 }
 
-function modalRenderBridgeHttpTimeout(request: ModalRenderRequest) {
-  const renderTimeout = Number(request.manifest.renderOptions.timeoutInMilliseconds || 0);
-  return Number.isFinite(renderTimeout) && renderTimeout > 0
-    ? renderTimeout + MODAL_BRIDGE_HTTP_OVERHEAD_MS
-    : DEFAULT_MODAL_BRIDGE_HTTP_TIMEOUT_MS;
-}
-
-function postBridgeJson(url: string, request: ModalRenderRequest): Promise<BridgeHttpResult> {
-  const target = new URL(url);
-  const body = JSON.stringify(request);
-  const client = target.protocol === 'https:' ? https : http;
-  const timeoutInMilliseconds = modalRenderBridgeHttpTimeout(request);
-
-  return new Promise((resolve, reject) => {
-    const req = client.request(target, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    }, (res) => {
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-      res.on('end', () => {
-        const status = res.statusCode || 0;
-        resolve({
-          ok: status >= 200 && status < 300,
-          status,
-          body: Buffer.concat(chunks).toString('utf8'),
-        });
-      });
-    });
-
-    req.setTimeout(timeoutInMilliseconds, () => {
-      req.destroy(new Error(`Modal render bridge timed out after ${timeoutInMilliseconds}ms`));
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
-}
-
-async function readBridgeJson(response: BridgeHttpResult) {
-  const text = response.body;
+async function readBridgeJson(response: Response) {
+  const text = await response.text();
   if (!text.trim()) return {};
   try {
     return JSON.parse(text) as ModalRenderBridgeResult;
@@ -261,7 +208,11 @@ export async function runModalRenderBridge(request: ModalRenderRequest, bridgeUr
     outputLocalPath: request.outputLocalPath,
   }));
 
-  const response = await postBridgeJson(`${bridgeUrl.replace(/\/+$/, '')}/render`, request);
+  const response = await fetch(`${bridgeUrl.replace(/\/+$/, '')}/render`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
   const data = await readBridgeJson(response);
 
   if (!response.ok || data.ok === false) {
@@ -269,9 +220,9 @@ export async function runModalRenderBridge(request: ModalRenderRequest, bridgeUr
       scope: 'modal-render-bridge',
       message: 'request-failed',
       status: response.status,
-      error: data.error || data.detail || null,
+      error: data.error || null,
     }));
-    throw new Error(data.error || data.detail || `Modal render bridge failed with HTTP ${response.status}`);
+    throw new Error(data.error || `Modal render bridge failed with HTTP ${response.status}`);
   }
 
   console.log(JSON.stringify({

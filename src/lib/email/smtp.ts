@@ -14,17 +14,11 @@ export type SendFinalRenderEmailInput = {
   sessionId?: string;
 };
 
-export type SendGenerationFailureEmailInput = {
-  to: string;
-  sessionId: string;
-};
-
 export type SendEmailResult = {
   sent: boolean;
   reason?: string;
   verifyUrl?: string;
   videoUrl?: string;
-  failureUrl?: string;
 };
 
 function appUrl() {
@@ -39,10 +33,6 @@ export function buildFinalRenderUrl(videoUrl: string, sessionId?: string) {
   if (sessionId) return `${appUrl()}/render/${encodeURIComponent(sessionId)}`;
   if (/^https?:\/\//i.test(videoUrl)) return videoUrl;
   return `${appUrl()}${videoUrl.startsWith('/') ? videoUrl : `/${videoUrl}`}`;
-}
-
-export function buildGenerationFailureUrl(sessionId: string) {
-  return `${appUrl()}/session/${encodeURIComponent(sessionId)}`;
 }
 
 function smtpHostConfigured() {
@@ -89,29 +79,11 @@ function buildFinalRenderMessage({ to, videoUrl }: { to: string; videoUrl: strin
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=utf-8',
     '',
-    "Your Lifestory film is ready on the Director's Cut website.",
+    'Your Lifestory film is ready.',
     '',
     videoUrl,
     '',
     'Thank you for making it with Nico and the LifeStory studio.',
-  ].join('\r\n');
-}
-
-function buildGenerationFailureMessage({ to, failureUrl }: { to: string; failureUrl: string }) {
-  const from = process.env.SMTP_FROM || 'Lifestory <no-reply@localhost>';
-  return [
-    `From: ${from}`,
-    `To: ${to}`,
-    'Subject: Your Lifestory film needs a quick retry',
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=utf-8',
-    '',
-    "RunwayML's API looks congested, and one of your film assets did not finish after several automatic retry attempts.",
-    '',
-    'Use this link to restart generation for the affected assets:',
-    failureUrl,
-    '',
-    'Once the missing assets finish, the studio can continue rendering your film.',
   ].join('\r\n');
 }
 
@@ -248,19 +220,4 @@ export async function sendFinalRenderEmail(input: SendFinalRenderEmailInput): Pr
   });
 
   return { ...result, videoUrl };
-}
-
-export async function sendGenerationFailureEmail(input: SendGenerationFailureEmailInput): Promise<SendEmailResult> {
-  const failureUrl = buildGenerationFailureUrl(input.sessionId);
-
-  if (!smtpHostConfigured()) {
-    return { sent: false, reason: 'SMTP not configured', failureUrl };
-  }
-
-  const result = await sendSmtpMail({
-    to: input.to,
-    message: buildGenerationFailureMessage({ to: input.to, failureUrl }),
-  });
-
-  return { ...result, failureUrl };
 }

@@ -40,7 +40,7 @@ test('LifeStory outline readiness blocks outline without broad life map and deep
   assert.ok(result.missing.includes('deeper emotionally specific moments'));
 });
 
-test('LifeStory outline readiness waits for three highlighted emotional moments', () => {
+test('LifeStory outline readiness passes with broad coverage and highlighted emotional moments', () => {
   const { evaluateLifeStoryOutlineReadiness } = jiti('../src/lib/story-readiness.ts');
 
   const result = evaluateLifeStoryOutlineReadiness(bucket({
@@ -73,60 +73,13 @@ test('LifeStory outline readiness waits for three highlighted emotional moments'
         description: 'Aunt Lena taught Maya to cook after school.',
         emotional_purpose: 'Love expressed through routine.',
         visual_summary: 'Steam on windows, yellow kitchen light, cedar smell.',
-      },
-    ],
-  }));
-
-  assert.equal(result.ready, false);
-  assert.ok(result.missing.includes('deeper emotionally specific moments'));
-});
-
-test('LifeStory outline readiness passes with broad coverage and three highlighted emotional moments', () => {
-  const { evaluateLifeStoryOutlineReadiness } = jiti('../src/lib/story-readiness.ts');
-
-  const result = evaluateLifeStoryOutlineReadiness(bucket({
-    profile: {
-      protagonist_name: 'Maya',
-      age: '41',
-      life_phase: 'starting over in a new city',
-      summary: 'Maya is rebuilding her life after leaving home.',
-      themes_json: JSON.stringify(['belonging', 'reinvention']),
-    },
-    entities: [
-      { display_name: 'Aunt Lena', type: 'family' },
-      { display_name: 'Daniel', type: 'friend' },
-    ],
-    timelineEvents: [
-      { label: 'Childhood', description: 'Grew up near the sea.' },
-      { label: 'School', description: 'Found her first real friends.' },
-      { label: 'Leaving home', description: 'Took a night bus with one suitcase.' },
-      { label: 'Now', description: 'Learning how to feel at home again.' },
-    ],
-    memoryCandidates: [
-      {
-        title: 'The night bus',
-        description: 'Maya left home with one suitcase.',
-        emotional_purpose: 'The first act of courage.',
-        visual_summary: 'Wet pavement, blue suitcase, fluorescent station lights.',
-      },
-      {
-        title: 'Aunt Lena kitchen',
-        description: 'Aunt Lena taught Maya to cook after school.',
-        emotional_purpose: 'Love expressed through routine.',
-        visual_summary: 'Steam on windows, yellow kitchen light, cedar smell.',
-      },
-      {
-        title: 'First morning alone',
-        description: 'Maya woke up in the new apartment and chose to stay.',
-        emotional_purpose: 'Hope after loneliness.',
-        visual_summary: 'A thin line of morning light on the floor, cardboard boxes, a kettle clicking on.',
       },
     ],
   }));
 
   assert.equal(result.ready, true);
   assert.deepEqual(result.missing, []);
-  assert.equal(result.sceneReadinessScores.length, 3);
+  assert.equal(result.sceneReadinessScores.length, 2);
   assert.ok(result.sceneReadinessScores[0].visualSpecificity >= 0.7);
   assert.ok(result.sceneReadinessScores[0].emotionalClarity >= 0.7);
 });

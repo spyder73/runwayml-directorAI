@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import path from 'path';
 import db from './db';
 import type { FinalRenderProgress } from './final-render';
 import {
@@ -12,13 +13,11 @@ import {
   updateRenderProgressForSession,
 } from './media-tasks';
 import { ensureSafePrompt } from './moderation';
-import { visualDurationWithNarrationTail } from './narration-timing';
 import { canRenderFinal } from './pipeline-guards';
 import { FINAL_IMAGE_QUALITY } from './production-config';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
 import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
 import { logMediaGeneration, type MediaGenerationLogDetails } from './media-logging';
-import { resolveMediaUrlToFilePath } from './media-assets';
 import { repairRunwayVideoPromptForValidation } from './video-prompt-repair';
 import {
   generateImageAsset,
@@ -27,20 +26,13 @@ import {
   imageRatio,
   loadReferenceImage,
   videoRatio,
-  type GeneratedAsset,
   type RunwayClient,
   type RunwayReferenceImage,
 } from './runway';
 import { cleanGeneratorPrompt, planShots, referencePromptFromGeneratorText, type ShotPlan } from './shot_planner';
 import { broadcastSessionUpdate } from './sse';
 import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './types';
-import { notifyFinalRenderReady, notifyGenerationRetriesExhausted } from './final-render-notification';
-import { loadStoryBucket } from './story-bucket';
-import {
-  planWholeFilmNarration,
-  type WholeFilmNarrationResult,
-  type WholeFilmNarrationSceneInput,
-} from './whole-film-narration';
+import { notifyFinalRenderReady } from './final-render-notification';
 import {
   createRunwayClientForSession,
   getRunwayConcurrencyModeForSession,
@@ -56,18 +48,6 @@ const externalImport = new Function('specifier', 'return import(specifier)') as 
 async function getAudioDurationInSeconds(audioPath: string) {
   const { getAudioDurationInSeconds: readAudioDuration } = await externalImport<typeof import('get-audio-duration')>('get-audio-duration');
   return readAudioDuration(audioPath);
-}
-
-export function resolveGeneratedAssetFilePath(
-  database: SqliteDatabase,
-  sessionId: string,
-  asset: Pick<GeneratedAsset, 'localUrl' | 'filePath'>,
-) {
-  const resolved = resolveMediaUrlToFilePath(database, asset.localUrl, sessionId);
-  if (!resolved) {
-    throw new Error(`Generated asset ${asset.localUrl} is not a media asset URL.`);
-  }
-  return resolved.filePath;
 }
 
 export type MediaTaskExecutor = (params: {
@@ -87,12 +67,6 @@ export type MediaTaskRunnerResult = {
 
 export type MediaTaskConcurrencyMode = 'serial' | 'parallel';
 
-export type WholeFilmNarrationPlanner = (params: {
-  database: SqliteDatabase;
-  session: SessionRow;
-  scenes: SceneRow[];
-}) => Promise<WholeFilmNarrationResult | void>;
-
 export type MediaTaskRunnerOptions = {
   database?: SqliteDatabase;
   includeRender?: boolean;
@@ -100,7 +74,6 @@ export type MediaTaskRunnerOptions = {
   completionMode?: 'all' | 'frames' | 'final_assets';
   concurrencyMode?: MediaTaskConcurrencyMode;
   executors?: MediaTaskExecutors;
-  narrationPlanner?: WholeFilmNarrationPlanner;
   maxCycles?: number;
   batchLimit?: number;
 };
@@ -124,14 +97,6 @@ function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isPermanentMediaTaskError(error: unknown, message: string) {
-  const text = [
-    message,
-    error instanceof Error ? error.message : '',
-  ].join('\n');
-  return /prompt failed validation/i.test(text);
-}
-
 function getSession(database: SqliteDatabase, sessionId: string) {
   return database.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
 }
@@ -143,81 +108,6 @@ function getScenes(database: SqliteDatabase, sessionId: string) {
 function getScene(database: SqliteDatabase, sceneId: string | null) {
   if (!sceneId) return undefined;
   return database.prepare('SELECT * FROM scenes WHERE id = ?').get(sceneId) as SceneRow | undefined;
-}
-
-function parseJsonStringArray(value: string | null | undefined) {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
-  } catch {
-    return [];
-  }
-}
-
-function formatStoryBucketForNarration(database: SqliteDatabase, sessionId: string) {
-  const bucket = loadStoryBucket(database, sessionId);
-  const profile = bucket.profile;
-  const sections = [
-    profile ? [
-      'Profile:',
-      profile.protagonist_name ? `- Name: ${profile.protagonist_name}` : '',
-      profile.age ? `- Age: ${profile.age}` : '',
-      profile.profession ? `- Life/work context: ${profile.profession}` : '',
-      profile.current_location ? `- Current place: ${profile.current_location}` : '',
-      profile.emotional_tone ? `- Emotional tone: ${profile.emotional_tone}` : '',
-      profile.summary ? `- Summary: ${profile.summary}` : '',
-      parseJsonStringArray(profile.themes_json).length ? `- Themes: ${parseJsonStringArray(profile.themes_json).join(', ')}` : '',
-    ].filter(Boolean).join('\n') : '',
-    bucket.timelineEvents.length ? [
-      'Timeline:',
-      ...bucket.timelineEvents.map((event) => `- ${event.label}: ${event.description}${event.emotion ? ` (${event.emotion})` : ''}`),
-    ].join('\n') : '',
-    bucket.memoryCandidates.length ? [
-      'Memory candidates:',
-      ...bucket.memoryCandidates.map((memory) => [
-        `- ${memory.title}: ${memory.description}`,
-        memory.emotional_purpose ? `Emotional purpose: ${memory.emotional_purpose}.` : '',
-        memory.visual_summary ? `Visual summary: ${memory.visual_summary}.` : '',
-      ].filter(Boolean).join(' ')),
-    ].join('\n') : '',
-    bucket.entities.length ? [
-      'People and relationships:',
-      ...bucket.entities.map((entity) => `- ${entity.display_name} (${entity.type}): ${entity.relationship || entity.description || 'relationship noted'}`),
-    ].join('\n') : '',
-  ].filter(Boolean);
-
-  return {
-    bucket,
-    storyContext: sections.join('\n\n') || 'No detailed story bucket context is available.',
-  };
-}
-
-function scenesForWholeFilmNarration(database: SqliteDatabase, sessionId: string, scenes: SceneRow[]): {
-  treatment: ReturnType<typeof loadStoryBucket>['treatment'];
-  storyContext: string;
-  scenes: WholeFilmNarrationSceneInput[];
-} {
-  const { bucket, storyContext } = formatStoryBucketForNarration(database, sessionId);
-  const outlineByIndex = new Map(bucket.sceneOutline.map((scene) => [scene.scene_index, scene]));
-
-  return {
-    treatment: bucket.treatment,
-    storyContext,
-    scenes: scenes.map((scene) => {
-      const outline = outlineByIndex.get(scene.scene_index);
-      return {
-        id: scene.id,
-        sceneIndex: scene.scene_index,
-        title: scene.title || outline?.title || `Scene ${scene.scene_index + 1}`,
-        summary: outline?.summary || scene.visual_prompt,
-        emotionalPurpose: outline?.emotional_purpose || null,
-        imagePrompt: scene.image_prompt || outline?.image_prompt || scene.visual_prompt,
-        videoPrompt: scene.video_prompt || outline?.video_prompt || scene.visual_prompt,
-        duration: scene.duration,
-      };
-    }),
-  };
 }
 
 function sceneShowsProtagonist(scene: SceneRow) {
@@ -522,29 +412,6 @@ function markSceneFailure(database: SqliteDatabase, task: MediaTaskRow, error: s
   `).run(sceneStatus, error, task.scene_id);
 }
 
-function clearSceneFailure(database: SqliteDatabase, task: MediaTaskRow) {
-  if (!task.scene_id) return;
-  database.prepare('UPDATE scenes SET last_failure = NULL WHERE id = ?').run(task.scene_id);
-}
-
-function failedTaskSnapshot(database: SqliteDatabase, taskId: string) {
-  return database.prepare('SELECT * FROM media_tasks WHERE id = ?').get(taskId) as MediaTaskRow | undefined;
-}
-
-function requeueAutomaticRetry(database: SqliteDatabase, task: MediaTaskRow) {
-  database.prepare(`
-    UPDATE media_tasks
-    SET status = 'queued',
-        started_at = NULL,
-        completed_at = NULL,
-        progress = 0,
-        progress_message = NULL,
-        progress_detail_json = NULL,
-        progress_updated_at = NULL
-    WHERE id = ?
-  `).run(task.id);
-}
-
 async function executeFrameTask(params: { database: SqliteDatabase; task: MediaTaskRow; session: SessionRow }) {
   const { database, task, session } = params;
   const scene = getScene(database, task.scene_id);
@@ -580,15 +447,12 @@ async function executeFrameTask(params: { database: SqliteDatabase; task: MediaT
     .all(session.id) as ReferenceAssetRow[];
   const storyEntities = database.prepare('SELECT * FROM story_entities WHERE session_id = ? ORDER BY created_at ASC')
     .all(session.id) as StoryEntityRow[];
-  const storyProfile = database.prepare('SELECT protagonist_reference_asset_id FROM story_profile WHERE session_id = ?')
-    .get(session.id) as { protagonist_reference_asset_id?: string | null } | undefined;
   const preparedReferences = prepareSceneReferences({
     promptText: scene.image_prompt || scene.visual_prompt,
     sceneReferenceAssetIds: parseReferenceAssetIds(scene.scene_references),
     protagonistVisible: sceneShowsProtagonist(scene),
     assets: referenceAssets,
     entities: storyEntities,
-    canonicalProtagonistReferenceAssetId: storyProfile?.protagonist_reference_asset_id || null,
   });
   const promptText = await ensureSafePrompt(preparedReferences.promptText, { openrouterApiKey });
 
@@ -652,16 +516,9 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
   setSessionStatus(database, session.id, 'GENERATING_FINAL_ASSETS');
   broadcastProgress(database, session.id);
   const runwayClient = createRunwayClientForSession(database, session);
-  const narrationText = scene.narrator_text.trim().replace(/\s+/g, ' ');
-  if (!narrationText) {
-    throw new Error(`Scene ${scene.scene_index + 1} is missing final whole-film narration.`);
-  }
-  if (narrationText !== scene.narrator_text) {
-    database.prepare('UPDATE scenes SET narrator_text = ? WHERE id = ?').run(narrationText, scene.id);
-  }
 
   const audioAsset = await generateSpeechAsset({
-    promptText: narrationText,
+    promptText: scene.narrator_text,
     sessionId: session.id,
     runwayClient,
     database,
@@ -670,21 +527,19 @@ async function executeNarrationTask(params: { database: SqliteDatabase; task: Me
 
   let exactDuration = scene.duration || 5;
   try {
-    exactDuration = await getAudioDurationInSeconds(resolveGeneratedAssetFilePath(database, session.id, audioAsset));
+    exactDuration = await getAudioDurationInSeconds(path.join(process.cwd(), 'public', audioAsset.filePath));
   } catch (error) {
     console.error('Could not get audio duration:', error);
   }
-  const visualDuration = visualDurationWithNarrationTail(scene.duration, exactDuration);
 
   database.prepare(`
     UPDATE scenes
     SET audio_url = ?,
-        narration_duration = ?,
         duration = ?,
         status = ?,
         last_failure = NULL
     WHERE id = ?
-  `).run(audioAsset.localUrl, exactDuration, visualDuration, 'audio_ready', scene.id);
+  `).run(audioAsset.localUrl, Math.ceil(exactDuration), 'audio_ready', scene.id);
   broadcastProgress(database, session.id);
 
   return audioAsset.localUrl;
@@ -956,7 +811,7 @@ async function executeVideoTask(params: { database: SqliteDatabase; task: MediaT
         status = ?,
         last_failure = NULL
     WHERE id = ?
-  `).run(outputAssetId, JSON.stringify(shotPlan), exactDuration, 'completed', scene.id);
+  `).run(outputAssetId, JSON.stringify(shotPlan), Math.ceil(exactDuration), 'completed', scene.id);
   logMediaGeneration('scene_video_db_updated', {
     ...mediaTaskLogContext(session, task, scene),
     mediaType: 'video',
@@ -1043,7 +898,6 @@ async function runOneTask(params: {
   try {
     const outputAssetId = await executor({ database, task, session });
     completeMediaTask(database, task.id, typeof outputAssetId === 'string' ? outputAssetId : undefined);
-    clearSceneFailure(database, task);
     logMediaGeneration('media_task_succeeded', {
       sessionId: task.session_id,
       taskId: task.id,
@@ -1054,34 +908,19 @@ async function runOneTask(params: {
     return { ok: true as const };
   } catch (error) {
     const message = safeCredentialErrorMessage(error, formatError(error));
-    const permanentFailure = isPermanentMediaTaskError(error, message);
     failMediaTask(database, task.id, message);
-    const failedTask = failedTaskSnapshot(database, task.id) || task;
-    const willRetry = !permanentFailure && failedTask.attempts < failedTask.max_attempts;
-    markSceneFailure(database, failedTask, message);
-    if (willRetry) {
-      requeueAutomaticRetry(database, failedTask);
-      broadcastProgress(database, task.session_id, message);
-    } else {
-      setSessionStatus(database, task.session_id, 'FAILED');
-      broadcastProgress(database, task.session_id, message);
-      if (!failedTask.auto_failure_notification_sent_at) {
-        notifyGenerationRetriesExhausted(database, failedTask).catch((notificationError) => {
-          console.error('Failed to send generation failure notification', notificationError);
-        });
-      }
-    }
+    markSceneFailure(database, task, message);
+    setSessionStatus(database, task.session_id, 'FAILED');
+    broadcastProgress(database, task.session_id, message);
     logMediaGeneration('media_task_failed', {
       sessionId: task.session_id,
       taskId: task.id,
       kind: task.kind,
       sceneId: task.scene_id,
       provider: task.provider,
-      attempt: failedTask.attempts,
-      maxAttempts: failedTask.max_attempts,
       error,
     }, 'error');
-    return { ok: false as const, retryable: willRetry, error };
+    return { ok: false as const, error };
   }
 }
 
@@ -1121,10 +960,10 @@ export async function runMediaTaskRunner(sessionId: string, options: MediaTaskRu
       }
     }
 
-    const exhaustedFailure = outcomes.find((outcome) => !outcome.ok && !outcome.retryable);
-    if (exhaustedFailure) {
+    if (outcomes.some((outcome) => !outcome.ok)) {
+      const firstFailure = outcomes.find((outcome) => !outcome.ok);
       result.remainingQueued = countRemainingQueued(database, sessionId, allowedKinds);
-      throw exhaustedFailure.error instanceof Error ? exhaustedFailure.error : new Error('Media task runner failed.');
+      throw firstFailure?.error instanceof Error ? firstFailure.error : new Error('Media task runner failed.');
     }
 
     syncSessionProgress(database, sessionId, Boolean(options.includeRender), options.completionMode);
@@ -1147,101 +986,6 @@ export async function runFrameGenerationPhase(sessionId: string, options: Omit<M
   });
 }
 
-function pendingNarrationTasks(database: SqliteDatabase, sessionId: string) {
-  return database.prepare(`
-    SELECT * FROM media_tasks
-    WHERE session_id = ?
-      AND kind = 'generate_narration'
-      AND status != 'succeeded'
-    ORDER BY created_at ASC
-  `).all(sessionId) as MediaTaskRow[];
-}
-
-function applyWholeFilmNarrationResult(
-  database: SqliteDatabase,
-  sessionId: string,
-  scenes: SceneRow[],
-  result: WholeFilmNarrationResult,
-  pendingSceneIds: Set<string>,
-) {
-  const sceneByIndex = new Map(scenes.map((scene) => [scene.scene_index, scene]));
-  const updateScene = database.prepare(`
-    UPDATE scenes
-    SET narrator_text = ?,
-        audio_url = ?,
-        narration_duration = ?
-    WHERE id = ? AND session_id = ?
-  `);
-
-  const transaction = database.transaction(() => {
-    for (const narration of result.scenes) {
-      const scene = sceneByIndex.get(narration.sceneIndex);
-      if (!scene) continue;
-      const shouldRegenerateAudio = pendingSceneIds.has(scene.id);
-      updateScene.run(
-        narration.narrationText,
-        shouldRegenerateAudio ? null : scene.audio_url,
-        shouldRegenerateAudio ? null : scene.narration_duration,
-        scene.id,
-        sessionId,
-      );
-    }
-  });
-  transaction();
-}
-
-async function defaultWholeFilmNarrationPlanner(params: {
-  database: SqliteDatabase;
-  session: SessionRow;
-  scenes: SceneRow[];
-}) {
-  const narrationInput = scenesForWholeFilmNarration(params.database, params.session.id, params.scenes);
-  if (!narrationInput.treatment) {
-    throw new Error('Whole-film narration requires an approved treatment before final asset production.');
-  }
-
-  return planWholeFilmNarration({
-    treatment: narrationInput.treatment,
-    storyContext: narrationInput.storyContext,
-    scenes: narrationInput.scenes,
-    openrouterApiKey: requireOpenRouterApiKeyForSession(params.database, params.session),
-  });
-}
-
-function failClosedForNarrationPlanning(database: SqliteDatabase, sessionId: string, error: unknown) {
-  const message = safeCredentialErrorMessage(error, formatError(error));
-  const tasks = pendingNarrationTasks(database, sessionId);
-
-  for (const task of tasks) {
-    failMediaTask(database, task.id, message);
-    markSceneFailure(database, task, message);
-  }
-
-  setSessionStatus(database, sessionId, 'FAILED');
-  broadcastProgress(database, sessionId, message);
-}
-
-async function planNarrationBeforeFinalAssets(
-  database: SqliteDatabase,
-  sessionId: string,
-  planner: WholeFilmNarrationPlanner | undefined,
-) {
-  const tasks = pendingNarrationTasks(database, sessionId);
-  if (!tasks.length) return;
-
-  const session = getSession(database, sessionId);
-  if (!session) throw new Error(`Session not found for narration planning: ${sessionId}`);
-  const scenes = getScenes(database, sessionId);
-  if (!scenes.length) return;
-
-  const pendingSceneIds = new Set(tasks.map((task) => task.scene_id).filter((id): id is string => Boolean(id)));
-  const narrationResult = await (planner || defaultWholeFilmNarrationPlanner)({ database, session, scenes });
-  if (narrationResult) {
-    applyWholeFilmNarrationResult(database, sessionId, scenes, narrationResult, pendingSceneIds);
-    broadcastProgress(database, sessionId);
-  }
-}
-
 export async function runAutomaticProductionPipeline(
   sessionId: string,
   options: Omit<MediaTaskRunnerOptions, 'includeRender' | 'onlyKinds' | 'completionMode'> = {},
@@ -1259,13 +1003,6 @@ export async function runFinalAssetsPhase(sessionId: string, options: Omit<Media
   const database = options.database || db;
   setSessionStatus(database, sessionId, 'GENERATING_FINAL_ASSETS');
   broadcastProgress(database, sessionId);
-
-  try {
-    await planNarrationBeforeFinalAssets(database, sessionId, options.narrationPlanner);
-  } catch (error) {
-    failClosedForNarrationPlanning(database, sessionId, error);
-    throw error;
-  }
 
   return runMediaTaskRunner(sessionId, {
     ...options,

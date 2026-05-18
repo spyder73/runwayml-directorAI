@@ -36,20 +36,3 @@ test('animated subtitles are styled as lower-third typewriter captions', () => {
   assert.match(source, /MAX_SUBTITLE_FONT_SIZE = 30/);
   assert.doesNotMatch(source, /fontFamily: 'Georgia/);
 });
-
-test('scene narration is scheduled outside overlapping visual transitions', () => {
-  const source = fs.readFileSync(new URL('../src/remotion/MainComposition.tsx', import.meta.url), 'utf8');
-
-  assert.match(source, /NarrationTrack/);
-  assert.match(source, /sceneStartFrames/);
-  assert.match(source, /visualDurationForScene/);
-  assert.doesNotMatch(source, /<TransitionSeries\.Sequence[\s\S]*?<Audio/);
-  assert.doesNotMatch(source, /<TransitionSeries\.Sequence[\s\S]*?<AnimatedSubtitles/);
-});
-
-test('preview uses the same branded outro duration as final Remotion renders', () => {
-  const source = fs.readFileSync(new URL('../src/components/RemotionPreview.tsx', import.meta.url), 'utf8');
-
-  assert.match(source, /totalFilmDurationInFrames/);
-  assert.match(source, /totalDurationFrames: totalFilmDurationInFrames\(parsedScenes\)/);
-});

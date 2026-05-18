@@ -157,8 +157,6 @@ test('LifeStory outline prompt asks for missing stories and highlighted experien
   assert.match(prompt, /personal story or experience/i);
   assert.match(prompt, /highlight/i);
   assert.match(prompt, /broad life coverage/i);
-  assert.match(prompt, /at least three emotionally specific moments/i);
-  assert.match(prompt, /Do not rush to an outline/i);
 });
 
 test('LifeStory outline prompt requires cinematic protagonist bookends', () => {

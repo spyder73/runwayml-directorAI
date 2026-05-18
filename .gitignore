@@ -43,8 +43,7 @@ yarn-error.log*
 next-env.d.ts
 
 # Lifestory.ai docs
-docs/*
-!docs/lifestory-architecture-planner.html
+docs/
 
 # Runtime state
 /data/

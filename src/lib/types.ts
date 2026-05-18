@@ -35,8 +35,6 @@ export interface SessionRow {
   final_video_media_asset_id: string | null;
   render_notification_email: string | null;
   render_notification_sent_at: string | null;
-  interview_processing_token: string | null;
-  interview_processing_started_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -141,7 +139,6 @@ export interface SceneRow {
   image_prompt: string | null;
   video_prompt: string | null;
   duration: number | null;
-  narration_duration: number | null;
   scene_references: string | null;
   reference_image_url: string | null;
   video_url: string | null;
