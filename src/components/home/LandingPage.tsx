@@ -10,6 +10,7 @@ import {
   Play,
 } from 'lucide-react';
 import AmbientFractalBackground from '@/components/AmbientFractalBackground';
+import LandingVideoExamples from '@/components/home/LandingVideoExamples';
 
 type LandingPageProps = {
   appUrl: string;
@@ -249,28 +250,12 @@ export default function LandingPage({ appUrl }: LandingPageProps) {
       <section className="relative z-10 border-b border-white/5 bg-[#0A0A0E] px-5 py-20 sm:px-8">
         <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
           <p className="mb-4 inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[0.28em] text-[#D98B70]/70">
-            <Play size={14} /> Finished-film example
+            <Play size={14} /> Finished-film examples
           </p>
           <h2 className="mb-10 text-center font-serif text-4xl font-light leading-tight text-white/92 sm:text-5xl">
             See how a personal story can feel on screen.
           </h2>
-          <div className="w-full border border-white/10 bg-black/50 p-1 shadow-2xl">
-            <div className="relative aspect-video overflow-hidden bg-black">
-              <video
-                src="/landing/videos/example.mp4"
-                width={1920}
-                height={1080}
-                className="absolute inset-0 h-full w-full object-cover"
-                autoPlay
-                muted
-                loop
-                playsInline
-                controls
-                preload="metadata"
-                aria-label="Example of a finished short film"
-              />
-            </div>
-          </div>
+          <LandingVideoExamples />
         </div>
       </section>
 

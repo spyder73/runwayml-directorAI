@@ -4,6 +4,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import db from '@/lib/db';
 import { authGuardResponse, requireCurrentUser, requireOwnedSession } from '@/lib/auth/guards';
+import { logConversationEvent } from '@/lib/conversation-logs';
+import { releaseInterviewTurn, tryAcquireInterviewTurn } from '@/lib/interview-turns';
 import { processInterviewTurn } from '@/lib/pipeline';
 import { UPLOAD_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 import type { ChatHistoryRow, SessionRow } from '@/lib/types';
@@ -36,10 +38,12 @@ function nextStatusAfterUpload(session: SessionRow, activeRequest: ReturnType<ty
 }
 
 export async function POST(req: NextRequest) {
+  let turnToken: string | null = null;
+  let sessionId: string | null = null;
   try {
     const auth = requireCurrentUser(req);
     const formData = await req.formData();
-    const sessionId = formData.get('sessionId') as string;
+    sessionId = formData.get('sessionId') as string;
     const files = formData.getAll('files') as File[];
 
     if (!sessionId) {
@@ -57,6 +61,11 @@ export async function POST(req: NextRequest) {
       if (!uploadLimit.allowed) {
         return rateLimitResponse(uploadLimit);
       }
+    }
+
+    turnToken = tryAcquireInterviewTurn(db, sessionId);
+    if (!turnToken) {
+      return NextResponse.json({ error: 'An interview response is still being prepared.' }, { status: 409 });
     }
 
     const uploadedPaths: string[] = [];
@@ -154,6 +163,17 @@ export async function POST(req: NextRequest) {
        const messageId = uuidv4();
        db.prepare('INSERT INTO chat_history (id, session_id, role, content) VALUES (?, ?, ?, ?)')
         .run(messageId, sessionId, 'user', userMsg);
+       logConversationEvent({
+         sessionId,
+         event: 'user_upload',
+         role: 'user',
+         content: userMsg,
+         metadata: {
+           status: session.status,
+           activeReferenceRequestId: activeRequest?.id || null,
+           uploadedReferences,
+         },
+       });
         
        if (uploadedProtagonistPath) {
            db.prepare('UPDATE sessions SET user_selfie_url = ? WHERE id = ?').run(uploadedProtagonistPath, sessionId);
@@ -173,12 +193,15 @@ export async function POST(req: NextRequest) {
        });
        
        if (session.interview_medium !== 'voice') {
-         processInterviewTurn(sessionId).catch(console.error);
+         await processInterviewTurn(sessionId, { turnToken });
        }
     }
 
     return NextResponse.json({ success: true, uploadedReferences });
   } catch (error: unknown) {
+    if (sessionId && turnToken) {
+      releaseInterviewTurn(db, sessionId, turnToken);
+    }
     const guardResponse = authGuardResponse(error);
     if (guardResponse) return guardResponse;
     if (isMissingUserCredentialError(error)) {
@@ -186,5 +209,9 @@ export async function POST(req: NextRequest) {
     }
     console.error('Upload Error:', error);
     return NextResponse.json({ error: 'Upload processing failed. Please try again.' }, { status: 500 });
+  } finally {
+    if (sessionId && turnToken) {
+      releaseInterviewTurn(db, sessionId, turnToken);
+    }
   }
 }

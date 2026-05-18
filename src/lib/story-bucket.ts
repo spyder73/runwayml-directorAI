@@ -19,6 +19,7 @@ import {
   resolveReferenceAssetToken,
   rewritePromptReferenceTags,
 } from './production-references';
+import { logConversationEvent } from './conversation-logs';
 
 type SqliteDatabase = Database.Database;
 
@@ -189,6 +190,35 @@ function nullable(value: string | undefined | null) {
   return trimmed ? trimmed : null;
 }
 
+function normalizeMemoryCandidateTitle(value: string | undefined | null) {
+  return (value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function existingMemoryCandidateIdForUpdate(
+  database: SqliteDatabase,
+  sessionId: string,
+  candidate: MemoryCandidateUpdate,
+) {
+  if (candidate.id) {
+    const existingById = database.prepare('SELECT id FROM memory_candidates WHERE id = ? AND session_id = ?')
+      .get(candidate.id, sessionId) as { id: string } | undefined;
+    if (existingById) return existingById.id;
+  }
+
+  const normalizedTitle = normalizeMemoryCandidateTitle(candidate.title);
+  if (!normalizedTitle) return undefined;
+
+  const existingCandidates = database.prepare('SELECT id, title FROM memory_candidates WHERE session_id = ? ORDER BY updated_at DESC')
+    .all(sessionId) as Array<{ id: string; title: string }>;
+  return existingCandidates.find((existing) => (
+    normalizeMemoryCandidateTitle(existing.title) === normalizedTitle
+  ))?.id;
+}
+
 function boolToInt(value: boolean | undefined, fallback = true) {
   return value ?? fallback ? 1 : 0;
 }
@@ -206,14 +236,23 @@ function protagonistReferenceAsset(bucket: StoryBucket) {
   return bucket.referenceAssets.find((asset) => asset.target_type === 'protagonist' && canUseAsset(asset));
 }
 
-function protagonistLifeContext(bucket: StoryBucket) {
-  const bits = [
-    nullable(bucket.profile?.profession),
-    nullable(bucket.profile?.current_location) ? `in ${nullable(bucket.profile?.current_location)}` : '',
-    nullable(bucket.profile?.emotional_tone),
-    nullable(bucket.treatment?.visual_motif) ? `visual motif: ${nullable(bucket.treatment?.visual_motif)}` : '',
-  ].filter(Boolean);
-  return bits.length ? bits.join(', ') : 'a life shaped by memory, place, and possibility';
+function lowercaseFirst(value: string) {
+  return value ? `${value.charAt(0).toLowerCase()}${value.slice(1)}` : value;
+}
+
+function withIndefiniteArticle(value: string) {
+  if (/^(?:a|an|the)\s/i.test(value)) return value;
+  const article = /^[aeiou]/i.test(value) ? 'an' : 'a';
+  return `${article} ${lowercaseFirst(value)}`;
+}
+
+function protagonistRolePhrase(bucket: StoryBucket) {
+  const profession = nullable(bucket.profile?.profession);
+  const place = nullable(bucket.profile?.current_location);
+  if (profession && place) return `${withIndefiniteArticle(profession)} in ${place}`;
+  if (profession) return withIndefiniteArticle(profession);
+  if (place) return `living in ${place}`;
+  return null;
 }
 
 function cinematicBookendSetting(bucket: StoryBucket) {
@@ -235,12 +274,15 @@ function protagonistImagePhrase(name: string, referenceTag?: string) {
 }
 
 function narratorIntroText(name: string, bucket: StoryBucket) {
-  const context = protagonistLifeContext(bucket);
-  return `This is ${name}. ${name} is the name at the center of this film, a life unfolding through ${context}.`;
+  const role = protagonistRolePhrase(bucket);
+  if (role) {
+    return `This is ${name}, ${role}, following questions that turn memory into motion.`;
+  }
+  return `This is ${name}, stepping into a story shaped by memory, risk, and discovery.`;
 }
 
 function narratorOutroText(name: string) {
-  return `That is ${name}'s story so far, and we will see what else ${name} leaves for us to read in the history books.`;
+  return `That is ${name}'s story so far: still unfinished, still curious, and still moving toward the next unknown.`;
 }
 
 function isStandardIntroScene(scene: SceneOutlineInput['scenes'][number] | undefined, name: string) {
@@ -329,10 +371,20 @@ function withStandardBookendScenes(database: SqliteDatabase, sessionId: string, 
   return nextScenes;
 }
 
+function preferredProtagonistAsset(assets: ReferenceAssetRow[], protagonistReferenceAssetId?: string | null) {
+  if (protagonistReferenceAssetId) {
+    const profileAsset = assets.find((asset) => asset.id === protagonistReferenceAssetId);
+    if (profileAsset && canUseAsset(profileAsset)) return profileAsset;
+  }
+
+  return assets.find((asset) => asset.target_type === 'protagonist' && canUseAsset(asset));
+}
+
 function resolveSceneOutlineReferences(params: {
   row: SceneOutlineRow;
   assets: ReferenceAssetRow[];
   entities: StoryEntityRow[];
+  protagonistReferenceAssetId?: string | null;
 }) {
   const selectedAssets: ReferenceAssetRow[] = [];
   const seen = new Set<string>();
@@ -346,9 +398,7 @@ function resolveSceneOutlineReferences(params: {
   };
 
   if (params.row.protagonist_visible === 1 || params.row.protagonist_visible === true) {
-    for (const asset of params.assets.filter((candidate) => candidate.target_type === 'protagonist')) {
-      addAsset(asset);
-    }
+    addAsset(preferredProtagonistAsset(params.assets, params.protagonistReferenceAssetId));
   }
 
   for (const token of parseArray(params.row.reference_asset_ids_json)) {
@@ -386,6 +436,7 @@ function sceneOutlineConsentIssues(params: {
   outlineRows: SceneOutlineRow[];
   assets: ReferenceAssetRow[];
   entities: StoryEntityRow[];
+  protagonistReferenceAssetId?: string | null;
 }) {
   const issues: string[] = [];
   const entityById = new Map(params.entities.map((entity) => [entity.id, entity]));
@@ -395,6 +446,7 @@ function sceneOutlineConsentIssues(params: {
       row,
       assets: params.assets,
       entities: params.entities,
+      protagonistReferenceAssetId: params.protagonistReferenceAssetId,
     });
 
     for (const tag of resolvedReferences.unresolvedPromptTags) {
@@ -458,10 +510,41 @@ function uniqueStableTagExcept(database: SqliteDatabase, sessionId: string, pref
   return tag;
 }
 
+function referenceAssetLookupValues(value: string) {
+  const trimmed = value.trim();
+  const values = new Set<string>();
+  if (!trimmed) return [];
+
+  values.add(trimmed);
+  const mediaMatch = trimmed.match(/^\/api\/media\/([^/?#]+)/);
+  if (mediaMatch?.[1]) {
+    values.add(mediaMatch[1]);
+  } else if (/^[a-zA-Z0-9_-]{8,}$/.test(trimmed)) {
+    values.add(`/api/media/${trimmed}`);
+  }
+
+  return [...values];
+}
+
 function getReferenceAssetForSubject(database: SqliteDatabase, sessionId: string, input: ReferenceSubjectInput) {
   if (input.referenceAssetId) {
-    return database.prepare('SELECT * FROM reference_assets WHERE id = ? AND session_id = ?')
-      .get(input.referenceAssetId, sessionId) as ReferenceAssetRow | undefined;
+    const findReferenceAsset = database.prepare(`
+      SELECT * FROM reference_assets
+      WHERE session_id = ?
+        AND (id = ? OR local_url = ? OR runway_uri = ?)
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    for (const lookupValue of referenceAssetLookupValues(input.referenceAssetId)) {
+      const referenceAsset = findReferenceAsset.get(
+        sessionId,
+        lookupValue,
+        lookupValue,
+        lookupValue,
+      ) as ReferenceAssetRow | undefined;
+      if (referenceAsset) return referenceAsset;
+    }
+    if (!input.referenceTag) return undefined;
   }
 
   if (input.referenceTag) {
@@ -478,20 +561,88 @@ function getReferenceAssetForSubject(database: SqliteDatabase, sessionId: string
   `).get(sessionId) as ReferenceAssetRow | undefined;
 }
 
-function getEntityForSubject(database: SqliteDatabase, sessionId: string, input: ReferenceSubjectInput) {
-  if (input.entityId) {
-    return database.prepare('SELECT * FROM story_entities WHERE id = ? AND session_id = ?')
-      .get(input.entityId, sessionId) as StoryEntityRow | undefined;
-  }
-
+function getEntityByDisplayNameAndType(
+  database: SqliteDatabase,
+  sessionId: string,
+  displayName: string,
+  subjectType: string,
+) {
   return database.prepare(`
     SELECT * FROM story_entities
     WHERE session_id = ?
       AND LOWER(display_name) = LOWER(?)
       AND type = ?
-    ORDER BY updated_at DESC
+    ORDER BY
+      CASE WHEN reference_asset_id IS NOT NULL THEN 0 ELSE 1 END,
+      updated_at DESC
     LIMIT 1
-  `).get(sessionId, input.displayName, input.subjectType) as StoryEntityRow | undefined;
+  `).get(sessionId, displayName, subjectType) as StoryEntityRow | undefined;
+}
+
+function getEntityForSubject(database: SqliteDatabase, sessionId: string, input: ReferenceSubjectInput) {
+  const entityByName = getEntityByDisplayNameAndType(database, sessionId, input.displayName, input.subjectType);
+  if (input.entityId) {
+    const entityById = database.prepare('SELECT * FROM story_entities WHERE id = ? AND session_id = ?')
+      .get(input.entityId, sessionId) as StoryEntityRow | undefined;
+    if (entityById && entityByName && entityByName.id !== entityById.id && entityByName.reference_asset_id && !entityById.reference_asset_id) {
+      return entityByName;
+    }
+    return entityById || entityByName;
+  }
+
+  return entityByName;
+}
+
+function entityIdForUpdate(database: SqliteDatabase, sessionId: string, entity: EntityUpdate) {
+  if (entity.id) {
+    const existingById = database.prepare('SELECT id FROM story_entities WHERE id = ? AND session_id = ?')
+      .get(entity.id, sessionId) as { id: string } | undefined;
+    if (existingById) return existingById.id;
+  }
+
+  return getEntityByDisplayNameAndType(database, sessionId, entity.displayName, entity.type)?.id
+    || entity.id
+    || uuidv4();
+}
+
+function getEntityById(database: SqliteDatabase, sessionId: string, entityId: string | undefined | null) {
+  if (!entityId) return undefined;
+  return database.prepare('SELECT * FROM story_entities WHERE id = ? AND session_id = ?')
+    .get(entityId, sessionId) as StoryEntityRow | undefined;
+}
+
+function getValidOwnerEntityId(database: SqliteDatabase, sessionId: string, entityId: string | undefined | null) {
+  return getEntityById(database, sessionId, entityId)?.id || null;
+}
+
+function findOrCreateProtagonistEntity(database: SqliteDatabase, sessionId: string, displayName: string) {
+  const existing = database.prepare(`
+    SELECT * FROM story_entities
+    WHERE session_id = ?
+      AND type = 'protagonist'
+    ORDER BY
+      CASE WHEN lower(display_name) = lower(?) THEN 0 ELSE 1 END,
+      updated_at DESC
+    LIMIT 1
+  `).get(sessionId, displayName) as StoryEntityRow | undefined;
+  if (existing) return existing;
+
+  const id = uuidv4();
+  database.prepare(`
+    INSERT INTO story_entities (
+      id, session_id, type, display_name, consent_state, updated_at
+    )
+    VALUES (?, ?, 'protagonist', ?, 'allowed', CURRENT_TIMESTAMP)
+  `).run(id, sessionId, displayName);
+
+  return database.prepare('SELECT * FROM story_entities WHERE id = ? AND session_id = ?')
+    .get(id, sessionId) as StoryEntityRow;
+}
+
+function getProfileProtagonistReferenceId(database: SqliteDatabase, sessionId: string) {
+  const profile = database.prepare('SELECT protagonist_reference_asset_id FROM story_profile WHERE session_id = ?')
+    .get(sessionId) as { protagonist_reference_asset_id?: string | null } | undefined;
+  return profile?.protagonist_reference_asset_id || null;
 }
 
 function addColumnIfMissing(database: SqliteDatabase, table: string, definition: string) {
@@ -656,6 +807,7 @@ export function initializeStoryBucketTables(database: SqliteDatabase) {
   addColumnIfMissing(database, 'scenes', 'shot_plan_json TEXT');
   addColumnIfMissing(database, 'scenes', 'retry_attempts INTEGER DEFAULT 0');
   addColumnIfMissing(database, 'scenes', 'last_failure TEXT');
+  addColumnIfMissing(database, 'scenes', 'narration_duration REAL');
   addColumnIfMissing(database, 'reference_upload_requests', 'reference_scope TEXT');
   addColumnIfMissing(database, 'reference_upload_requests', 'scene_title TEXT');
 }
@@ -854,6 +1006,10 @@ export function applyProfileBucketUpdate(database: SqliteDatabase, sessionId: st
   const current = database.prepare('SELECT * FROM story_profile WHERE session_id = ?').get(sessionId) as StoryProfileRow | undefined;
   const profile = input.profile || {};
   const mergedThemes = mergeStringArrays(parseArray(current?.themes_json), profile.themes, input.themes);
+  const protagonistReferenceAssetId = profile.protagonistReferenceAssetId
+    ? (database.prepare('SELECT id FROM reference_assets WHERE id = ? AND session_id = ?')
+      .get(profile.protagonistReferenceAssetId, sessionId) as { id: string } | undefined)?.id
+    : undefined;
 
   database.prepare(`
     INSERT INTO story_profile (
@@ -884,7 +1040,7 @@ export function applyProfileBucketUpdate(database: SqliteDatabase, sessionId: st
     nullable(profile.lifePhase),
     nullable(profile.emotionalTone),
     nullable(profile.visualDescription),
-    nullable(profile.protagonistReferenceAssetId),
+    nullable(protagonistReferenceAssetId),
     nullable(profile.summary),
     jsonArray(mergedThemes),
   );
@@ -916,7 +1072,7 @@ export function applyProfileBucketUpdate(database: SqliteDatabase, sessionId: st
 
   for (const entity of input.entities || []) {
     insertEntity.run(
-      entity.id || uuidv4(),
+      entityIdForUpdate(database, sessionId, entity),
       sessionId,
       entity.type,
       entity.displayName,
@@ -955,8 +1111,9 @@ export function applyProfileBucketUpdate(database: SqliteDatabase, sessionId: st
   `);
 
   for (const candidate of input.memoryCandidates || []) {
+    const candidateId = existingMemoryCandidateIdForUpdate(database, sessionId, candidate) || uuidv4();
     insertCandidate.run(
-      candidate.id || uuidv4(),
+      candidateId,
       sessionId,
       candidate.title,
       candidate.description,
@@ -1041,10 +1198,18 @@ export function createReferenceAsset(database: SqliteDatabase, sessionId: string
   const request = getActiveReferenceRequest(database, sessionId);
   const targetType = input.targetType || request?.target_type || 'reference';
   const targetLabel = input.targetLabel || request?.target_label || targetType;
-  const ownerEntityId = input.ownerEntityId || request?.entity_id || null;
+  let ownerEntityId = getValidOwnerEntityId(database, sessionId, input.ownerEntityId)
+    || getValidOwnerEntityId(database, sessionId, request?.entity_id)
+    || null;
+  if (targetType === 'protagonist') {
+    ownerEntityId = ownerEntityId || findOrCreateProtagonistEntity(database, sessionId, targetLabel).id;
+  }
   const stableTagSeed = input.stableTag || (ownerEntityId ? targetLabel : `${targetType}_${targetLabel}`);
   const stableTag = uniqueStableTag(database, sessionId, stableTagSeed);
   const id = uuidv4();
+  const usagePermissions = input.usagePermissions || 'allowed';
+  const source = input.source || 'upload';
+  const usableAsset = usagePermissions === 'allowed' && Boolean(input.localUrl || input.runwayUri);
 
   database.prepare(`
     INSERT INTO reference_assets (
@@ -1061,11 +1226,11 @@ export function createReferenceAsset(database: SqliteDatabase, sessionId: string
     input.visionDescription || null,
     ownerEntityId,
     targetType,
-    input.usagePermissions || 'allowed',
-    input.source || 'upload',
+    usagePermissions,
+    source,
   );
 
-  if (ownerEntityId) {
+  if (ownerEntityId && targetType !== 'protagonist') {
     database.prepare(`
       UPDATE story_entities
       SET reference_asset_id = ?,
@@ -1080,13 +1245,26 @@ export function createReferenceAsset(database: SqliteDatabase, sessionId: string
   }
 
   if (targetType === 'protagonist') {
+    const existingProfileReferenceId = getProfileProtagonistReferenceId(database, sessionId);
+    const generalProtagonistRequest = Boolean(request && request.reference_scope !== 'scene');
+    const shouldSetCanonical = usableAsset && (!existingProfileReferenceId || generalProtagonistRequest);
+
+    if (shouldSetCanonical && ownerEntityId) {
+      database.prepare(`
+        UPDATE story_entities
+        SET reference_asset_id = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND session_id = ?
+      `).run(id, ownerEntityId, sessionId);
+    }
+
     database.prepare(`
       INSERT INTO story_profile (session_id, protagonist_reference_asset_id, themes_json, updated_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(session_id) DO UPDATE SET
-        protagonist_reference_asset_id = excluded.protagonist_reference_asset_id,
+        protagonist_reference_asset_id = COALESCE(excluded.protagonist_reference_asset_id, story_profile.protagonist_reference_asset_id),
         updated_at = CURRENT_TIMESTAMP
-    `).run(sessionId, id, jsonArray([]));
+    `).run(sessionId, shouldSetCanonical ? id : null, jsonArray([]));
   }
 
   return database.prepare('SELECT * FROM reference_assets WHERE id = ?').get(id) as ReferenceAssetRow;
@@ -1099,7 +1277,11 @@ export function addReferenceSubject(database: SqliteDatabase, sessionId: string,
       ? database.prepare('SELECT * FROM reference_assets WHERE id = ? AND session_id = ?')
         .get(existingEntity.reference_asset_id, sessionId) as ReferenceAssetRow | undefined
       : undefined);
-  const entityId = existingEntity?.id || input.entityId || uuidv4();
+  if (!referenceAsset) {
+    throw new Error('add_reference_subject requires an existing reference upload or described reference in this session.');
+  }
+
+  const entityId = existingEntity?.id || uuidv4();
   const consentState = input.consentState || existingEntity?.consent_state || 'unknown';
 
   database.prepare(`
@@ -1126,18 +1308,8 @@ export function addReferenceSubject(database: SqliteDatabase, sessionId: string,
     referenceAsset?.id || null,
   );
 
-  let linkedAsset = referenceAsset;
-  if (!linkedAsset) {
-    linkedAsset = createReferenceAsset(database, sessionId, {
-      targetType: input.subjectType,
-      targetLabel: input.displayName,
-      visionDescription: input.description || null,
-      ownerEntityId: entityId,
-      usagePermissions: input.usagePermissions || 'description_only',
-      source: 'description',
-      stableTag: input.stableTag || input.displayName,
-    });
-  } else {
+  const linkedAsset = referenceAsset;
+  {
     const stableTag = uniqueStableTagExcept(database, sessionId, input.stableTag || input.displayName, linkedAsset.id);
     database.prepare(`
       UPDATE reference_assets
@@ -1337,6 +1509,7 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
     .all(sessionId) as SceneOutlineRow[];
   const session = database.prepare('SELECT mode FROM sessions WHERE id = ?').get(sessionId) as { mode?: 'life_story' } | undefined;
   const treatment = getFilmTreatment(database, sessionId);
+  const protagonistReferenceAssetId = getProfileProtagonistReferenceId(database, sessionId);
   const referenceAssets = database.prepare('SELECT * FROM reference_assets WHERE session_id = ?').all(sessionId) as ReferenceAssetRow[];
   const storyEntities = database.prepare('SELECT * FROM story_entities WHERE session_id = ?').all(sessionId) as StoryEntityRow[];
   const consentChecksEnabled = sceneOutlineConsentChecksEnabled();
@@ -1345,6 +1518,7 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
       outlineRows,
       assets: referenceAssets,
       entities: storyEntities,
+      protagonistReferenceAssetId,
     })
     : [];
 
@@ -1391,6 +1565,7 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
         row,
         assets: referenceAssets,
         entities: storyEntities,
+        protagonistReferenceAssetId,
       });
       const selectedAssets = resolvedReferences.selectedAssets;
       const blockedAsset = consentChecksEnabled ? selectedAssets.find((asset) => asset.usage_permissions !== 'allowed') : undefined;
@@ -1429,7 +1604,21 @@ export function lockSceneOutlineForProduction(database: SqliteDatabase, sessionI
 
   trx();
   const createdScenes = database.prepare('SELECT * FROM scenes WHERE session_id = ? ORDER BY scene_index ASC')
-    .all(sessionId) as Array<{ id: string; scene_index: number }>;
+    .all(sessionId) as Array<{ id: string; scene_index: number; title?: string | null; narrator_text?: string | null; reference_tags?: string | null }>;
   createMediaTaskDagForScenes(database, { sessionId, scenes: createdScenes });
+  logConversationEvent({
+    sessionId,
+    event: 'production_scenes_created',
+    metadata: {
+      sceneCount: createdScenes.length,
+      scenes: createdScenes.map((scene) => ({
+        id: scene.id,
+        index: scene.scene_index,
+        title: scene.title || null,
+        narratorText: scene.narrator_text || null,
+        referenceTags: parseArray(scene.reference_tags),
+      })),
+    },
+  });
   return { createdScenes: outlineRows.length };
 }

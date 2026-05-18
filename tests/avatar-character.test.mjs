@@ -149,6 +149,7 @@ test('avatar profile tool updates the same story bucket tables as text interview
 test('avatar reference tool replies with a follow-up after labeling an upload', async () => {
   const { initializeDatabaseSchema } = jiti('../src/lib/db.ts');
   const { createAvatarRpcTools } = jiti('../src/lib/avatar/tools.ts');
+  const { createReferenceAsset } = jiti('../src/lib/story-bucket.ts');
 
   const database = new Database(':memory:');
   initializeDatabaseSchema(database);
@@ -161,6 +162,13 @@ test('avatar reference tool replies with a follow-up after labeling an upload', 
     INSERT INTO avatar_call_sessions (id, session_id, runway_session_id, status)
     VALUES (?, ?, ?, ?)
   `).run('call-1', 'session-1', 'runway-1', 'RUNNING');
+  createReferenceAsset(database, 'session-1', {
+    localUrl: '/api/media/uploaded-reference',
+    targetType: 'reference',
+    targetLabel: 'uploaded reference',
+    usagePermissions: 'allowed',
+    source: 'upload',
+  });
 
   const tools = createAvatarRpcTools({
     database,

@@ -8,7 +8,7 @@ const optionalText = textValue.optional();
 const optionalStringArray = z.array(textValue).optional();
 
 export const updateProfileBucketSchema = z.object({
-  directorReply: z.string().min(1).optional(),
+  directorReply: optionalText,
   profile: z.object({
     protagonistName: optionalText,
     age: optionalText,
@@ -85,7 +85,6 @@ export const saveReferenceDescriptionSchema = z.object({
 });
 
 export const memorySketchSchema = z.object({
-  directorReply: z.string().min(1).optional(),
   candidateId: z.string().optional(),
   title: z.string().min(1),
   description: z.string().min(1),
@@ -113,29 +112,30 @@ export const filmTreatmentSchema = z.object({
 });
 
 const outlineSceneSchema = z.object({
-  id: z.string().optional(),
-  title: z.string().min(1),
-  summary: z.string().min(1),
-  narratorText: z.string().min(1),
-  imagePrompt: z.string().min(1),
-  videoPrompt: z.string().min(1),
-  duration: z.number().min(2).max(10),
-  referenceNeeds: optionalStringArray,
-  referenceAssetIds: optionalStringArray,
-  protagonistVisible: z.boolean().optional(),
+  id: z.string().optional().describe('Stable scene id if one already exists; omit for a new outline scene.'),
+  title: z.string().min(1).describe('A distinct 2-6 words card label, not a full sentence and not the same as summary. Example: "Interstellar Catalyst".'),
+  summary: z.string().min(1).describe('One sentence, 12-25 words, explaining what happens in the scene and why it matters emotionally.'),
+  narratorText: z.string().min(1).describe('Actual spoken movie narration for this scene, not a label, production note, or summary. Keep within the duration word budget.'),
+  imagePrompt: z.string().min(1).describe('Production-ready still-image prompt. Use only exact usable @tags from private reference context and include matching referenceAssetIds.'),
+  videoPrompt: z.string().min(1).describe('Production-ready motion prompt describing camera movement and action for the generated frame.'),
+  duration: z.number().min(2).max(10).describe('Scene duration in seconds, between 2 and 10. Narration budget is floor(duration * 2.8) words.'),
+  emotionalPurpose: z.string().optional().describe('Short private note describing the emotional job this scene performs in the film arc.'),
+  referenceNeeds: optionalStringArray.describe('Plain-language missing references still needed for this scene, excluding already usable referenceAssetIds.'),
+  referenceAssetIds: optionalStringArray.describe('IDs of usable generation references whose exact @tags appear in imagePrompt. Never include description-only references.'),
+  protagonistVisible: z.boolean().optional().describe('True when the protagonist is visible on screen; false for object, place, or childhood scenes where they are not shown.'),
 });
 
 export const proposeSceneOutlineSchema = z.object({
-  directorReply: z.string().min(1).optional(),
-  scenes: z.array(outlineSceneSchema).min(1).max(30),
-  chatMessage: z.string().optional(),
-});
+  scenes: z.array(outlineSceneSchema).min(1).max(30).describe('Ordered reviewable scene list. Every scene must include distinct title, summary, narratorText, imagePrompt, videoPrompt, and duration.'),
+  chatMessage: z.string().optional().describe('Short user-facing handoff introducing the outline card; do not repeat the full outline in chat.'),
+  directorReply: z.string().min(1).optional().describe('Alternative short user-facing handoff introducing the outline card; do not repeat the full outline in chat.'),
+}).describe('Complete LifeStory scene outline payload for the review card.');
 
 export const reviseSceneOutlineSchema = z.object({
   directorReply: z.string().min(1).optional(),
   comment: z.string().optional(),
   sceneOutlineId: z.string().optional(),
-  sceneIndex: z.number().int().nonnegative().min(0),
+  sceneIndex: z.number().int().nonnegative().optional(),
   updates: z.object({
     title: z.string().optional(),
     summary: z.string().optional(),
@@ -143,6 +143,7 @@ export const reviseSceneOutlineSchema = z.object({
     imagePrompt: z.string().optional(),
     videoPrompt: z.string().optional(),
     duration: z.number().min(2).max(10).optional(),
+    emotionalPurpose: z.string().optional(),
     referenceNeeds: optionalStringArray,
     referenceAssetIds: optionalStringArray,
     protagonistVisible: z.boolean().optional(),
@@ -183,7 +184,7 @@ export const aiTools = {
     inputSchema: filmTreatmentSchema,
   }),
   propose_scene_outline: tool({
-    description: 'Create a reviewable scene outline with durations, narration, prompts, and reference needs. Include directorReply or chatMessage for the user-facing introduction.',
+    description: 'Create a reviewable scene outline. For every scene provide: title as a distinct 2-6 word card label; summary as one 12-25 word sentence explaining what happens and why it matters; narratorText as spoken narration; imagePrompt and videoPrompt as production prompts; duration as 2-10 seconds; referenceAssetIds only for usable references whose @tags appear in imagePrompt. Include directorReply or chatMessage for the short user-facing introduction.',
     inputSchema: proposeSceneOutlineSchema,
   }),
   revise_scene_outline: tool({

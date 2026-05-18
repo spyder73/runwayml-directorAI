@@ -4,6 +4,7 @@ import fs from 'fs';
 import { initializeStoryBucketTables } from './story-bucket';
 import { initializeMediaTaskTables } from './media-tasks';
 import { seedReviewerAccount } from './auth/seed-reviewer';
+import { initializeInterviewTurnGuard } from './interview-turns';
 
 type SqliteDatabase = Database.Database;
 
@@ -14,7 +15,13 @@ function columnExists(database: SqliteDatabase, tableName: string, columnName: s
 
 function addColumnIfMissing(database: SqliteDatabase, tableName: string, columnName: string, columnDefinition: string) {
   if (!columnExists(database, tableName, columnName)) {
-    database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition}`);
+    try {
+      database.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition}`);
+    } catch (error) {
+      if (!/duplicate column/i.test(error instanceof Error ? error.message : String(error))) {
+        throw error;
+      }
+    }
   }
 }
 
@@ -109,6 +116,7 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
       image_prompt TEXT,
       video_prompt TEXT,
       duration REAL,
+      narration_duration REAL,
       scene_references TEXT,
       reference_image_url TEXT,
       video_url TEXT,
@@ -195,10 +203,13 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
   addColumnIfMissing(database, 'sessions', 'final_video_media_asset_id', 'final_video_media_asset_id TEXT');
   addColumnIfMissing(database, 'sessions', 'render_notification_email', 'render_notification_email TEXT');
   addColumnIfMissing(database, 'sessions', 'render_notification_sent_at', 'render_notification_sent_at DATETIME');
+  addColumnIfMissing(database, 'sessions', 'interview_processing_token', 'interview_processing_token TEXT');
+  addColumnIfMissing(database, 'sessions', 'interview_processing_started_at', 'interview_processing_started_at DATETIME');
 
   addColumnIfMissing(database, 'scenes', 'image_prompt', 'image_prompt TEXT');
   addColumnIfMissing(database, 'scenes', 'video_prompt', 'video_prompt TEXT');
   addColumnIfMissing(database, 'scenes', 'duration', 'duration REAL');
+  addColumnIfMissing(database, 'scenes', 'narration_duration', 'narration_duration REAL');
   addColumnIfMissing(database, 'scenes', 'scene_references', 'scene_references TEXT');
   addColumnIfMissing(database, 'scenes', 'is_protagonist_visible', 'is_protagonist_visible BOOLEAN DEFAULT 1');
   addColumnIfMissing(database, 'scenes', 'title', 'title TEXT');
@@ -222,6 +233,7 @@ export function initializeDatabaseSchema(database: SqliteDatabase) {
 
   initializeStoryBucketTables(database);
   initializeMediaTaskTables(database);
+  initializeInterviewTurnGuard(database);
 }
 
 const dbPath = databasePath();

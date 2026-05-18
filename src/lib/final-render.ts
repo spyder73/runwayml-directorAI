@@ -21,6 +21,7 @@ import {
   totalFilmDurationInFrames,
 } from '../remotion/timing';
 import { getFinalRenderBackendForSession } from './providers/user-credentials';
+import { visualDurationWithNarrationTail } from './narration-timing';
 
 type AspectRatio = '16:9' | '9:16';
 type RenderQuality = 'fast' | 'standard' | 'ultra';
@@ -34,6 +35,7 @@ type RenderScene = {
   shot_plan_json?: string | null;
   audio_url: string | null;
   duration: number | null;
+  narration_duration?: number | null;
 };
 
 type RenderInput = {
@@ -252,6 +254,10 @@ function effectiveNarrationDuration(audioDuration: number, tempo: number | undef
   return audioDuration / tempo;
 }
 
+function positiveNumber(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 export function buildFinalRenderPlan(params: {
   sessionId: string;
   aspectRatio: AspectRatio;
@@ -297,7 +303,7 @@ export function buildFinalRenderPlan(params: {
     .filter((scenePlan) => scenePlan.scene.audio_url)
     .map((scenePlan) => {
       const resolved = resolveRenderInputUrl(scenePlan.scene.audio_url || '', params.database, params.sessionId);
-      const audioDuration = scenePlan.scene.duration || scenePlan.videoDuration || 2;
+      const audioDuration = positiveNumber(scenePlan.scene.narration_duration) || scenePlan.scene.duration || scenePlan.videoDuration || 2;
       const targetDuration = scenePlan.videoDuration || audioDuration;
       const tempo = narrationTempo(audioDuration, targetDuration);
       return {
@@ -313,14 +319,21 @@ export function buildFinalRenderPlan(params: {
   const remotionScenes = scenePlans.map((scenePlan) => {
     const audioInput = audioInputs.find((input) => input.sceneId === scenePlan.scene.id);
     const narrationDuration = audioInput?.effectiveDuration || scenePlan.scene.duration || scenePlan.videoDuration || 1;
-    const sceneDuration = Math.max(scenePlan.videoDuration || 0, narrationDuration, 1);
+    const sceneDuration = positiveNumber(scenePlan.scene.narration_duration)
+      ? visualDurationWithNarrationTail(scenePlan.videoDuration || scenePlan.scene.duration || 0, narrationDuration)
+      : Math.max(scenePlan.videoDuration || 0, narrationDuration, 1);
     const fallbackClipDuration = sceneDuration / Math.max(scenePlan.videoInputs.length, 1);
+    const clipDurations = scenePlan.videoInputs.map((input) => input.duration || fallbackClipDuration);
+    const clipDurationTotal = clipDurations.reduce((total, duration) => total + duration, 0);
+    if (clipDurations.length && clipDurationTotal < sceneDuration) {
+      clipDurations[clipDurations.length - 1] += sceneDuration - clipDurationTotal;
+    }
 
     return {
       id: scenePlan.scene.id,
-      clips: scenePlan.videoInputs.map((input) => ({
+      clips: scenePlan.videoInputs.map((input, index) => ({
         url: input.remotionUrl,
-        duration_in_frames: Math.max(1, Math.ceil((input.duration || fallbackClipDuration) * REMOTION_FPS)),
+        duration_in_frames: Math.max(1, Math.ceil((clipDurations[index] || fallbackClipDuration) * REMOTION_FPS)),
       })),
       audio_url: audioInput?.remotionUrl || '',
       ...(audioInput?.tempo ? { audio_playback_rate: audioInput.tempo } : {}),

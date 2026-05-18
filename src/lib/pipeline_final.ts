@@ -4,13 +4,13 @@ import type { ReferenceAssetRow, SceneRow, SessionRow, StoryEntityRow } from './
 import { ensureSafePrompt } from './moderation';
 import { repairNarrationForSceneDuration } from './narration-repair';
 import { getAudioDurationInSeconds } from 'get-audio-duration';
-import path from 'path';
 import { planShots } from './shot_planner';
 import { parseReferenceAssetIds, prepareSceneReferences } from './production-references';
 import { assertRunwayImagePrompt, assertRunwayVideoPrompt, ensureRunwayVideoPromptMotion } from './prompt-lint';
 import { repairRunwayVideoPromptForValidation } from './video-prompt-repair';
 import { repairRunwayImagePromptForValidation } from './image-prompt-repair';
 import { FINAL_IMAGE_QUALITY } from './production-config';
+import { resolveMediaUrlToFilePath } from './media-assets';
 import {
   completeMediaTasksForScenePhase,
   failMediaTasksForScenePhase,
@@ -265,7 +265,11 @@ export async function generateVideoAudioPhase(sessionId: string) {
           audioUrl = audioAsset.localUrl;
 
           try {
-            exactDuration = await getAudioDurationInSeconds(path.join(process.cwd(), 'public', audioAsset.filePath));
+            const resolvedAudio = resolveMediaUrlToFilePath(db, audioAsset.localUrl, sessionId);
+            if (!resolvedAudio) {
+              throw new Error(`Generated audio asset ${audioAsset.localUrl} is not a media asset URL.`);
+            }
+            exactDuration = await getAudioDurationInSeconds(resolvedAudio.filePath);
           } catch (error) {
             console.error('Could not get audio duration:', error);
           }

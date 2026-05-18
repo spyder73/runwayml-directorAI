@@ -40,7 +40,7 @@ test('reference upload checkpoint hides the composer until describing or resolve
   const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /const isReferenceDescribeDraft = showReferenceRequest && message\.trim\(\)\.length > 0;/);
-  assert.match(source, /const showComposer = \(!isVoiceMode && !showReferenceRequest\) \|\| isReferenceDescribeDraft;/);
+  assert.match(source, /const showComposer = \(!isVoiceMode && !showReferenceRequest && !hasOutlineAwaitingDecision\) \|\| isReferenceDescribeDraft;/);
   assert.doesNotMatch(source, /clearData\(\)/);
   assert.match(source, /\{!isReferenceDescribeDraft && \(\s*<ReferenceUploadRequest/);
   assert.match(source, /\{showComposer && \(\s*<form/);
@@ -94,6 +94,39 @@ test('outline approval failures remain visible in the outline review panel', () 
   assert.match(pageSource, /const \[outlineApprovalError, setOutlineApprovalError\]/);
   assert.match(pageSource, /approvalError=\{outlineApprovalError\}/);
   assert.match(pageSource, /setOutlineApprovalError\(error instanceof Error \? error\.message : 'Failed to approve the outline\.'\)/);
+});
+
+test('outline notes revise the review panel without reopening interview chat', () => {
+  const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+  const handleOutlineComment = source.slice(source.indexOf('const handleOutlineComment'), source.indexOf('const handleLockOutline'));
+
+  assert.match(handleOutlineComment, /action:\s*'ai_revise'/);
+  assert.match(handleOutlineComment, /setPendingOutlineSceneId\(scene\.id\)/);
+  assert.match(handleOutlineComment, /setOutlineRevisionMessages/);
+  assert.doesNotMatch(handleOutlineComment, /handleSendMessage/);
+  assert.doesNotMatch(source, /For scene \$\{scene\.scene_index \+ 1\}, please revise this:/);
+});
+
+test('outline review exposes per-scene revision states and blocks approval while revising', () => {
+  const source = fs.readFileSync(new URL('../src/components/session/SceneOutlineReview.tsx', import.meta.url), 'utf8');
+  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /pendingSceneId\?: string \| null/);
+  assert.match(source, /revisionMessages\?: Record<string, OutlineRevisionMessage>/);
+  assert.match(source, /revisionMessage\?\.status === 'loading'/);
+  assert.match(source, /revisionMessage\.status === 'clarification'/);
+  assert.match(source, /revisionMessage\.status === 'error'/);
+  assert.match(source, /disabled=\{isLocking \|\| isRevisionPending \|\| lockDisabled\}/);
+  assert.match(pageSource, /pendingOutlineSceneId/);
+  assert.match(pageSource, /outlineRevisionMessages/);
+});
+
+test('outline review collapses the transcript so the review card becomes the active workspace', () => {
+  const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /showInterviewTranscript/);
+  assert.match(source, /Interview transcript/);
+  assert.match(source, /hasOutlineAwaitingDecision \? showInterviewTranscript : true/);
 });
 
 test('production progress exposes one scene-level retry control for failed work', () => {
@@ -290,6 +323,19 @@ test('voice uploads notify the live avatar room after a reference lands', () => 
   assert.match(callSource, /topic: 'lk\.chat'/);
   assert.match(uploadRouteSource, /uploadedReferences/);
   assert.match(uploadRouteSource, /session\.interview_medium !== 'voice'/);
+});
+
+test('text interview and upload routes wait for serialized director continuation', () => {
+  const interviewRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/interview/route.ts', import.meta.url), 'utf8');
+  const uploadRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/upload/route.ts', import.meta.url), 'utf8');
+
+  assert.match(interviewRouteSource, /tryAcquireInterviewTurn/);
+  assert.match(interviewRouteSource, /await processInterviewTurn\(sessionId,\s*\{\s*turnToken/);
+  assert.doesNotMatch(interviewRouteSource, /processInterviewTurn\(sessionId\)\.catch/);
+
+  assert.match(uploadRouteSource, /tryAcquireInterviewTurn/);
+  assert.match(uploadRouteSource, /await processInterviewTurn\(sessionId,\s*\{\s*turnToken/);
+  assert.doesNotMatch(uploadRouteSource, /processInterviewTurn\(sessionId\)\.catch/);
 });
 
 test('voice uploads before a formal request count as the protagonist reference', () => {

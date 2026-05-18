@@ -3,7 +3,7 @@ import { lifeStoryDeepInterviewPrompt } from './life-story-deep-interview';
 import { lifeStoryOnboardingPrompt } from './life-story-onboarding';
 import { lifeStoryProfilePrompt } from './life-story-profile';
 import { referenceUploadPrompt } from './reference-upload';
-import { sceneOutlinePrompt, storySceneDiversityPrompt } from './scene-outline';
+import { sceneOutlineFieldContract, sceneOutlinePrompt, storySceneDiversityPrompt } from './scene-outline';
 import { sceneOutlineRevisionPrompt } from './scene-outline-revision';
 import { sharedDirectorPrompt } from './shared-director';
 import { sketchFeedbackPrompt } from './sketch-feedback';
@@ -43,6 +43,7 @@ export function buildInterviewSystemPrompt(input: InterviewPromptInput) {
     referenceUploadPrompt,
     sketchFeedbackPrompt,
     sceneOutlinePrompt,
+    sceneOutlineFieldContract,
     storySceneDiversityPrompt,
     sceneOutlineRevisionPrompt,
     `Current interview phase: ${input.status}.`,

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Director AI Architecture (Static Overview)</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f1115;
+            --panel-bg: #1a1d24;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --border: #334155;
+
+            --color-ai: #2b6cb0;
+            --color-db: #2f855a;
+            --color-tool: #805ad5;
+            --color-pipeline: #c05621;
+            --color-llm: #fbbf24; /* Yellow/Gold for LLM */
+        }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            padding: 1rem 2rem;
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .instructions {
+            font-size: 0.9rem;
+            color: #fbbf24;
+            background: rgba(251, 191, 36, 0.1);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pulse-dot {
+            width: 10px;
+            height: 10px;
+            background-color: #fbbf24;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #fbbf24;
+            animation: pulse 1.5s infinite alternate;
+        }
+
+        main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .diagram-container {
+            flex: 2;
+            padding: 2rem;
+            overflow: auto;
+            position: relative;
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Better for vertical overflow */
+        }
+
+        /* FIX FOR TINY SVG */
+        .mermaid {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        .mermaid svg {
+            width: 100% !important;
+            max-width: 1200px !important;
+            height: auto !important;
+            min-height: 600px;
+        }
+
+        /* Mermaid LLM Glowing effect */
+        @keyframes pulseGlow {
+            0% { filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.4)); }
+            100% { filter: drop-shadow(0 0 16px rgba(251, 191, 36, 0.9)); }
+        }
+
+        .llmNode > rect, .llmNode > polygon, .llmNode > circle, .llmNode > path {
+            animation: pulseGlow 1.5s infinite alternate !important;
+            stroke-width: 3px !important;
+        }
+
+        .info-panel {
+            flex: 1;
+            min-width: 400px;
+            max-width: 500px;
+            background: var(--panel-bg);
+            border-left: 1px solid var(--border);
+            padding: 2rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            box-shadow: -4px 0 15px rgba(0,0,0,0.2);
+        }
+
+        /* Info Card Styles */
+        .card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .card:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .card.llm-card {
+            border-left: 4px solid var(--color-llm);
+            background: rgba(251, 191, 36, 0.05);
+        }
+
+        .card.db-card { border-left: 4px solid var(--color-db); }
+        .card.tool-card { border-left: 4px solid var(--color-tool); }
+        .card.pipeline-card { border-left: 4px solid var(--color-pipeline); }
+
+        .card h2 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .card p {
+            margin: 0 0 1rem 0;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: var(--text-muted);
+        }
+
+        .card ul {
+            margin: 0;
+            padding-left: 1.2rem;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .code-inline {
+            background: #000;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--accent);
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+
+        .llm-highlight-text {
+            color: #fbbf24;
+            font-weight: bold;
+        }
+
+        @media (max-width: 900px) {
+            main { flex-direction: column; }
+            .diagram-container, .info-panel { flex: 1; width: 100%; max-width: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🎬 Director AI: System Architecture</h1>
+        <div class="instructions">
+            <div class="pulse-dot"></div>
+            Glowing yellow nodes indicate outbound OpenRouter LLM requests
+        </div>
+    </header>
+
+    <main>
+        <div class="diagram-container">
+            <div class="mermaid">
+flowchart TB
+    %% Definitions
+    classDef user fill:#2d3748,stroke:#4a5568,color:#fff,stroke-width:2px
+    classDef ai fill:#2b6cb0,stroke:#1a365d,color:#fff,stroke-width:2px
+    classDef tool fill:#805ad5,stroke:#44337a,color:#fff,stroke-width:2px
+    classDef db fill:#2f855a,stroke:#1c4532,color:#fff,stroke-width:2px
+    classDef pipeline fill:#c05621,stroke:#7b341e,color:#fff,stroke-width:2px
+    classDef llmNode fill:#ca8a04,stroke:#fbbf24,color:#fff,stroke-width:3px
+
+    %% Nodes
+    User((User / UI)):::user
+
+    subgraph promptSources [Injected Prompt Sources]
+        PShared[sharedDirectorPrompt]:::ai
+        PPhase[phasePrompt by session status<br/>onboarding/profile/deep interview]:::ai
+        PRef[referenceUploadPrompt]:::ai
+        PSketch[sketchFeedbackPrompt]:::ai
+        POutline[sceneOutlinePrompt + diversity + revision]:::ai
+        PPrivate[Private Context Injection<br/>storyContext + uploadContext + active reference request]:::ai
+    end
+
+    subgraph phase1 [Interview Phase]
+        SysPrompt[System Prompt Builder<br/>buildInterviewSystemPrompt]:::ai
+        Director[Director AI / OpenRouter LLM]:::llmNode
+        Continuation[Director Continuation / OpenRouter LLM<br/>buildDirectorContinuationPrompt]:::llmNode
+    end
+
+    subgraph storage [Knowledge & Storage]
+        Bucket[(StoryBucket DB)]:::db
+        Refs[(Reference Assets DB)]:::db
+        MediaDB[(Media Tasks DB)]:::db
+    end
+
+    subgraph tools [AI Tools Access]
+        direction TB
+        T1[update_profile_bucket]:::tool
+        T2[request_reference_upload]:::tool
+        T3[generate_memory_sketch]:::tool
+        T4[propose_film_treatment]:::tool
+        T5[propose_scene_outline]:::tool
+    end
+
+    subgraph phase2 [Media Production Pipeline]
+        MediaTasks[Media Task Runner]:::pipeline
+        ShotPlanner[Shot Planner / OpenRouter LLM]:::llmNode
+        ShotPlanRepair[Shot Plan JSON Repair / OpenRouter LLM<br/>fallback when planner output is malformed]:::llmNode
+        PromptModeration[Prompt Moderation / OpenRouter LLM<br/>ensureSafePrompt]:::llmNode
+        Continuity[Continuity Reference Prompt Builder<br/>buildContinuityReferencePrompt]:::pipeline
+        PromptLint[Prompt Linter / Assert<br/>prompt-lint.ts]:::pipeline
+        VideoRepair[Video Prompt Repair / OpenRouter LLM<br/>repairRunwayVideoPromptForValidation]:::llmNode
+        Render[Final Remotion Render]:::pipeline
+    end
+
+    %% External APIs
+    Runway[RunwayML API]:::user
+    TTS[TTS Provider]:::user
+
+    %% Flow: Interview
+    User -- Chat / Uploads --> SysPrompt
+    PShared --> SysPrompt
+    PPhase --> SysPrompt
+    PRef --> SysPrompt
+    PSketch --> SysPrompt
+    POutline --> SysPrompt
+    PPrivate --> SysPrompt
+
+    Bucket -. "storyContext" .-> PPrivate
+    Refs -. "uploadContext" .-> PPrivate
+    Refs -. "active reference request context" .-> PPrivate
+    SysPrompt --> Director
+
+    Director -- "Uses Tool" --> T1
+    Director -- "Uses Tool" --> T2
+    Director -- "Uses Tool" --> T3
+    Director -- "Uses Tool" --> T4
+    Director -- "Uses Tool" --> T5
+
+    T1 -- "Saves Profile" --> Bucket
+    T2 -- "Saves Photo Meta" --> Refs
+    T3 -- "Pre-visualizes Memory" --> Bucket
+    T5 -- "Creates Scene Rows" --> MediaDB
+
+    T1 & T2 & T3 -- "Output Wrapped" --> Continuation
+    Continuation -- "Asks Next Question" --> User
+
+    %% Production Flow
+    T5 -- "User Approves" --> MediaTasks
+    MediaDB -. "Reads Scene Outline" .-> MediaTasks
+
+    MediaTasks -- "Splits Long Scenes" --> ShotPlanner
+    ShotPlanner -- "Returns Sub-shots" --> MediaTasks
+    ShotPlanner -. "Malformed structured output" .-> ShotPlanRepair
+    ShotPlanRepair -- "Repaired JSON shot plan" --> MediaTasks
+
+    MediaTasks -- "Narrator text" --> TTS
+
+    MediaTasks -- "Image/Video prompts" --> PromptModeration
+    MediaTasks -- "Later shots: continuity reference prompt" --> Continuity
+    Continuity --> PromptModeration
+    PromptModeration -- "Moderated prompt text" --> PromptLint
+    Refs -. "Reference tags & image URLs" .-> PromptLint
+
+    PromptLint -- "Video lint fails" --> VideoRepair
+    VideoRepair -- "Rewritten prompt (or deterministic fallback)" --> PromptLint
+
+    PromptLint -- "Validated final prompts" --> Runway
+    Runway -- "Frames & Videos" --> MediaTasks
+
+    MediaTasks -- "Assets Ready" --> Render
+    Render -- "Delivers MP4" --> User
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <div class="card llm-card">
+                <h2>⚡ LLM Request Points (OpenRouter)</h2>
+                <p>The system makes several OpenRouter calls, highlighted in <span class="llm-highlight-text">glowing gold</span> on the diagram:</p>
+                <ul>
+                    <li><strong>Director AI (Interview):</strong> Runs on the composed interview system prompt and decides whether to chat or call tools.</li>
+                    <li><strong>Director Continuation (Fallback):</strong> When tool output needs wrapping into natural user-facing follow-up, a continuation prompt is sent.</li>
+                    <li><strong>Shot Planner (Production):</strong> Generates structured shot plans for scene duration and camera changes.</li>
+                    <li><strong>Shot Plan JSON Repair (Fallback):</strong> If planner output is malformed, a repair call converts text into strict JSON shots.</li>
+                    <li><strong>Prompt Moderation:</strong> <span class="code-inline">ensureSafePrompt</span> evaluates and optionally rewrites image/video prompts.</li>
+                    <li><strong>Video Prompt Repair:</strong> Repairs motion prompts that fail lint/validation (with deterministic fallback if needed).</li>
+                </ul>
+            </div>
+
+            <div class="card">
+                <h2>1. Interview Prompt Injection</h2>
+                <p>Before each interview turn, <span class="code-inline">buildInterviewSystemPrompt</span> composes one system prompt from reusable prompt modules plus private DB context.</p>
+                <ul>
+                    <li><span class="code-inline">sharedDirectorPrompt</span> (global Director behavior).</li>
+                    <li><span class="code-inline">phasePrompt(...)</span> for onboarding/profile/deep-interview stage.</li>
+                    <li><span class="code-inline">referenceUploadPrompt</span>, <span class="code-inline">sketchFeedbackPrompt</span>, and scene-outline prompts (including diversity/revision rules).</li>
+                    <li>Private context injection: story bucket facts, upload vision notes, and active reference-upload request state.</li>
+                </ul>
+            </div>
+
+            <div class="card tool-card">
+                <h2>2. AI Tools Access</h2>
+                <p>The <strong>Director LLM</strong> extracts data from the conversation by calling structured JSON tools:</p>
+                <ul>
+                    <li><span class="code-inline">update_profile_bucket</span>: Upserts personal facts and themes into the DB.</li>
+                    <li><span class="code-inline">request_reference_upload</span>: Prompts the UI to ask the user for a specific photo.</li>
+                    <li><span class="code-inline">propose_scene_outline</span>: Writes the actual script, splitting the story into discrete <code>SceneRow</code> database entries.</li>
+                </ul>
+            </div>
+
+            <div class="card db-card">
+                <h2>3. Knowledge Storage</h2>
+                <p>Knowledge is stored in SQLite and heavily divided:</p>
+                <ul>
+                    <li><strong>StoryBucket:</strong> The narrative truths (who, what, where, themes).</li>
+                    <li><strong>Reference Assets:</strong> Links user-uploaded images to specific Entities (e.g., Image #123 belongs to the entity "My Mom").</li>
+                </ul>
+            </div>
+
+            <div class="card pipeline-card">
+                <h2>4. Production Prompt Lifecycle</h2>
+                <p>After outline approval, prompt flow is explicit and layered: shot planning, moderation, validation, and repair.</p>
+                <ul>
+                    <li><strong>Shot planning:</strong> <span class="code-inline">planShots</span> requests structured shot JSON. If schema output is malformed, a repair LLM pass rewrites it to strict JSON.</li>
+                    <li><strong>Prompt moderation:</strong> <span class="code-inline">ensureSafePrompt</span> is called for scene image prompts, continuity-frame prompts, and shot video prompts.</li>
+                    <li><strong>Repairing now visible:</strong> video prompts run through lint; failing prompts enter <span class="code-inline">repairRunwayVideoPromptForValidation</span>, then are re-linted before Runway.</li>
+                    <li><strong>Continuity step:</strong> for multi-shot scenes, continuity reference-frame prompts are generated so later shots stay visually consistent.</li>
+                </ul>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            flowchart: { curve: 'basis' }
+        });
+    </script>
+</body>
+</html>

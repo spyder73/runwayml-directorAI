@@ -17,6 +17,7 @@ const {
   markActiveReferenceRequest,
   proposeFilmTreatment,
   proposeSceneOutline,
+  saveReferenceDescription,
 } = jiti('../src/lib/story-bucket.ts');
 
 function createDb() {
@@ -119,6 +120,37 @@ test('profile bucket update persists profile, entities, themes, and memory candi
   assert.equal(bucket.memoryCandidates[0]?.title, 'The bus station goodbye');
 });
 
+test('memory candidates upsert by normalized title when the model elaborates the same highlight', () => {
+  const db = createDb();
+
+  applyProfileBucketUpdate(db, 'session-1', {
+    memoryCandidates: [
+      {
+        title: 'First exposure to Interstellar',
+        description: 'Dorian watched Interstellar in the cinema for the first time.',
+        emotionalPurpose: 'Wonder opened a path toward physics.',
+      },
+    ],
+  });
+  applyProfileBucketUpdate(db, 'session-1', {
+    memoryCandidates: [
+      {
+        title: ' first exposure: to interstellar! ',
+        description: 'The black hole and 5D space sequence made the unknown feel alive.',
+        visualSummary: 'A cinema seat dissolving into impossible black-hole geometry.',
+      },
+    ],
+  });
+
+  const bucket = loadStoryBucket(db, 'session-1');
+
+  assert.equal(bucket.memoryCandidates.length, 1);
+  assert.equal(bucket.memoryCandidates[0].title, ' first exposure: to interstellar! ');
+  assert.match(bucket.memoryCandidates[0].description, /5D space/i);
+  assert.match(bucket.memoryCandidates[0].emotional_purpose || '', /Wonder/i);
+  assert.match(bucket.memoryCandidates[0].visual_summary || '', /black-hole geometry/i);
+});
+
 test('scene outline adds standard protagonist intro and outro scenes', () => {
   const db = createDb();
   addTreatment(db);
@@ -131,6 +163,7 @@ test('scene outline adds standard protagonist intro and outro scenes', () => {
       emotionalTone: 'curious and reflective',
     },
   });
+  addTreatment(db);
   const protagonist = createReferenceAsset(db, 'session-1', {
     localUrl: '/uploads/dorian.jpg',
     stableTag: 'dorian',
@@ -158,13 +191,14 @@ test('scene outline adds standard protagonist intro and outro scenes', () => {
   assert.equal(outline.length, 3);
   assert.match(outline[0].title, /This Is Dorian/i);
   assert.match(outline[0].narrator_text, /This is Dorian/i);
+  assert.doesNotMatch(outline[0].narrator_text, /name at the center|visual motif/i);
   assert.match(outline[0].image_prompt, /@dorian/);
   assert.match(outline[0].image_prompt, /medium-wide three-quarter/i);
   assert.match(outline[0].video_prompt, /fade in from black/i);
   assert.equal(outline[1].title, 'The discovery');
   assert.match(outline[2].title, /Dorian.*Story So Far/i);
   assert.match(outline[2].narrator_text, /story so far/i);
-  assert.match(outline[2].narrator_text, /history books/i);
+  assert.doesNotMatch(outline[2].narrator_text, /history books/i);
   assert.match(outline[2].video_prompt, /same medium-wide three-quarter/i);
   db.close();
 });
@@ -293,6 +327,86 @@ test('reference subjects can resolve visible prompt tags with @ prefixes', () =>
   assert.equal(linkedAsset?.stable_tag, 'northview_school');
 });
 
+test('reference subjects can resolve uploaded media urls passed as reference ids', () => {
+  const db = createDb();
+  const upload = createReferenceAsset(db, 'session-1', {
+    localUrl: '/api/media/moritz-upload',
+    targetType: 'friend',
+    targetLabel: 'Moritz',
+    visionDescription: 'A bearded friend after a kayaking trip.',
+    usagePermissions: 'allowed',
+  });
+
+  const result = addReferenceSubject(db, 'session-1', {
+    referenceAssetId: '/api/media/moritz-upload',
+    subjectType: 'friend',
+    displayName: 'Moritz',
+    description: 'A close friend from the Albania kayak trip.',
+    consentState: 'allowed',
+  });
+
+  assert.equal(result.referenceAsset.id, upload.id);
+  assert.equal(result.entity.display_name, 'Moritz');
+  assert.equal(result.referenceAsset.owner_entity_id, result.entity.id);
+  assert.equal(result.referenceAsset.stable_tag, 'moritz');
+});
+
+test('reference subjects reuse existing named entities when the model sends a fresh id and bare media id', () => {
+  const db = createDb();
+
+  applyProfileBucketUpdate(db, 'session-1', {
+    entities: [
+      {
+        id: 'martin-existing',
+        type: 'friend',
+        displayName: 'Martin',
+        relationship: 'festival friend',
+        consentState: 'allowed',
+      },
+    ],
+  });
+  createReferenceUploadRequest(db, 'session-1', {
+    targetType: 'friend',
+    targetLabel: 'Martin',
+    entityId: 'martin-existing',
+    promptText: 'A photo of Martin could help keep him visually consistent.',
+    reason: 'Martin appears in the trance festival scene.',
+  });
+  const upload = createReferenceAsset(db, 'session-1', {
+    localUrl: '/api/media/martin-media-id',
+    targetType: 'friend',
+    targetLabel: 'Martin',
+    usagePermissions: 'allowed',
+  });
+
+  applyProfileBucketUpdate(db, 'session-1', {
+    entities: [
+      {
+        id: 'martin_001',
+        type: 'friend',
+        displayName: 'Martin',
+        description: 'A friend and companion for trance festival experiences.',
+        relationship: 'friend',
+      },
+    ],
+  });
+
+  const result = addReferenceSubject(db, 'session-1', {
+    referenceAssetId: 'martin-media-id',
+    entityId: 'martin_001',
+    subjectType: 'friend',
+    displayName: 'Martin',
+    description: 'A friend and companion for trance festival experiences.',
+  });
+  const bucket = loadStoryBucket(db, 'session-1');
+  const martinEntities = bucket.entities.filter((entity) => entity.display_name === 'Martin' && entity.type === 'friend');
+
+  assert.equal(result.entity.id, 'martin-existing');
+  assert.equal(result.referenceAsset.id, upload.id);
+  assert.equal(result.referenceAsset.owner_entity_id, 'martin-existing');
+  assert.equal(martinEntities.length, 1);
+});
+
 test('entity-scoped upload requests attach uploaded images to the story entity', () => {
   const db = createDb();
 
@@ -397,6 +511,68 @@ test('protagonist upload request does not repeat after a fulfilled selfie unless
   assert.equal(request?.scene_title, 'School hallway');
 });
 
+test('protagonist uploads become the canonical owned protagonist reference', () => {
+  const db = createDb();
+
+  createReferenceUploadRequest(db, 'session-1', {
+    targetType: 'protagonist',
+    targetLabel: 'Dorian',
+    promptText: 'Would you like to add a photo of yourself?',
+    reason: 'This can help visible protagonist scenes.',
+  });
+
+  const upload = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/dorian.jpg',
+    targetType: 'protagonist',
+    targetLabel: 'Dorian',
+    usagePermissions: 'allowed',
+    source: 'upload',
+  });
+  const entity = db.prepare('SELECT * FROM story_entities WHERE session_id = ? AND display_name = ?').get('session-1', 'Dorian');
+  const profile = db.prepare('SELECT protagonist_reference_asset_id FROM story_profile WHERE session_id = ?').get('session-1');
+  const asset = db.prepare('SELECT owner_entity_id FROM reference_assets WHERE id = ?').get(upload.id);
+
+  assert.equal(entity.reference_asset_id, upload.id);
+  assert.equal(profile.protagonist_reference_asset_id, upload.id);
+  assert.equal(asset.owner_entity_id, entity.id);
+});
+
+test('add_reference_subject cannot fabricate references or link invalid model ids', () => {
+  const db = createDb();
+  db.prepare('INSERT INTO sessions (id, status, story_text, aspect_ratio, mode) VALUES (?, ?, ?, ?, ?)')
+    .run('session-2', 'INTERVIEW_DYNAMIC', '', '16:9', 'life_story');
+  applyProfileBucketUpdate(db, 'session-2', {
+    entities: [{ id: 'other-entity', type: 'protagonist', displayName: 'Other Dorian' }],
+  });
+  const otherAsset = createReferenceAsset(db, 'session-2', {
+    localUrl: '/uploads/other.jpg',
+    targetType: 'protagonist',
+    targetLabel: 'Other Dorian',
+    ownerEntityId: 'other-entity',
+    usagePermissions: 'allowed',
+  });
+
+  assert.throws(() => addReferenceSubject(db, 'session-1', {
+    referenceAssetId: otherAsset.id,
+    entityId: 'other-entity',
+    subjectType: 'protagonist',
+    displayName: 'Dorian',
+    stableTag: 'dorian_2',
+  }), /existing reference/i);
+  assert.throws(() => addReferenceSubject(db, 'session-1', {
+    referenceAssetId: '/uploads/other.jpg',
+    entityId: 'other-entity',
+    subjectType: 'protagonist',
+    displayName: 'Dorian',
+    stableTag: 'dorian_2',
+  }), /existing reference/i);
+
+  const leakedEntity = db.prepare('SELECT 1 FROM story_entities WHERE session_id = ? AND id = ?').get('session-1', 'other-entity');
+  const fabricatedAsset = db.prepare('SELECT 1 FROM reference_assets WHERE session_id = ?').get('session-1');
+  assert.equal(leakedEntity, undefined);
+  assert.equal(fabricatedAsset, undefined);
+});
+
 test('locking an outline creates production scenes and moves session to image generation', () => {
   const db = createDb();
   addTreatment(db);
@@ -468,6 +644,58 @@ test('locking an outline stores selected reference asset ids and generated tags 
 
   assert.deepEqual(JSON.parse(scene.scene_references), [protagonist.id, school.id]);
   assert.deepEqual(JSON.parse(scene.reference_tags), ['self', 'school_01']);
+});
+
+test('locking protagonist-visible scenes uses only the canonical protagonist upload', () => {
+  const db = createDb();
+  addTreatment(db);
+
+  const canonical = createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/dorian-current.jpg',
+    stableTag: 'dorian',
+    targetType: 'protagonist',
+    targetLabel: 'Dorian',
+    usagePermissions: 'allowed',
+  });
+  createReferenceAsset(db, 'session-1', {
+    localUrl: '/uploads/dorian-old.jpg',
+    stableTag: 'dorian_old',
+    targetType: 'protagonist',
+    targetLabel: 'Dorian as a child',
+    usagePermissions: 'allowed',
+  });
+  saveReferenceDescription(db, 'session-1', {
+    targetType: 'protagonist',
+    targetLabel: 'Dorian',
+    description: 'Dark hair and a thoughtful expression.',
+  });
+  applyProfileBucketUpdate(db, 'session-1', {
+    profile: {
+      protagonistReferenceAssetId: canonical.id,
+    },
+  });
+
+  proposeSceneOutline(db, 'session-1', {
+    scenes: [
+      {
+        title: 'Under the stars',
+        summary: 'Dorian looks up at the night sky.',
+        narratorText: 'The stars made the future feel reachable.',
+        imagePrompt: 'A cinematic portrait of Dorian under a clear night sky.',
+        videoPrompt: 'The camera slowly pushes toward Dorian as stars shimmer overhead.',
+        duration: 6,
+        referenceNeeds: [],
+        referenceAssetIds: [],
+        protagonistVisible: true,
+      },
+    ],
+  });
+
+  lockSceneOutlineForProduction(db, 'session-1');
+  const scene = db.prepare('SELECT * FROM scenes WHERE session_id = ?').get('session-1');
+
+  assert.deepEqual(JSON.parse(scene.scene_references), [canonical.id]);
+  assert.deepEqual(JSON.parse(scene.reference_tags), ['dorian']);
 });
 
 test('locking an outline resolves prompt-only entity tags to usable owned reference images', () => {
