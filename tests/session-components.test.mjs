@@ -40,7 +40,7 @@ test('reference upload checkpoint hides the composer until describing or resolve
   const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
 
   assert.match(source, /const isReferenceDescribeDraft = showReferenceRequest && message\.trim\(\)\.length > 0;/);
-  assert.match(source, /const showComposer = \(!isVoiceMode && !showReferenceRequest && !hasOutlineAwaitingDecision\) \|\| isReferenceDescribeDraft;/);
+  assert.match(source, /const showComposer = \(!isVoiceMode && !showReferenceRequest\) \|\| isReferenceDescribeDraft;/);
   assert.doesNotMatch(source, /clearData\(\)/);
   assert.match(source, /\{!isReferenceDescribeDraft && \(\s*<ReferenceUploadRequest/);
   assert.match(source, /\{showComposer && \(\s*<form/);
@@ -77,13 +77,6 @@ test('production progress exposes frame approval before motion generation', () =
   assert.match(pageSource, /\/api\/pipeline\/synthesize/);
 });
 
-test('frame approval route continues through final render automatically', () => {
-  const routeSource = fs.readFileSync(new URL('../src/app/api/pipeline/synthesize/route.ts', import.meta.url), 'utf8');
-
-  assert.match(routeSource, /runAutomaticProductionPipeline/);
-  assert.doesNotMatch(routeSource, /runFinalAssetsPhase/);
-});
-
 test('outline approval failures remain visible in the outline review panel', () => {
   const source = fs.readFileSync(new URL('../src/components/session/SceneOutlineReview.tsx', import.meta.url), 'utf8');
   const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
@@ -94,39 +87,6 @@ test('outline approval failures remain visible in the outline review panel', () 
   assert.match(pageSource, /const \[outlineApprovalError, setOutlineApprovalError\]/);
   assert.match(pageSource, /approvalError=\{outlineApprovalError\}/);
   assert.match(pageSource, /setOutlineApprovalError\(error instanceof Error \? error\.message : 'Failed to approve the outline\.'\)/);
-});
-
-test('outline notes revise the review panel without reopening interview chat', () => {
-  const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
-  const handleOutlineComment = source.slice(source.indexOf('const handleOutlineComment'), source.indexOf('const handleLockOutline'));
-
-  assert.match(handleOutlineComment, /action:\s*'ai_revise'/);
-  assert.match(handleOutlineComment, /setPendingOutlineSceneId\(scene\.id\)/);
-  assert.match(handleOutlineComment, /setOutlineRevisionMessages/);
-  assert.doesNotMatch(handleOutlineComment, /handleSendMessage/);
-  assert.doesNotMatch(source, /For scene \$\{scene\.scene_index \+ 1\}, please revise this:/);
-});
-
-test('outline review exposes per-scene revision states and blocks approval while revising', () => {
-  const source = fs.readFileSync(new URL('../src/components/session/SceneOutlineReview.tsx', import.meta.url), 'utf8');
-  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
-
-  assert.match(source, /pendingSceneId\?: string \| null/);
-  assert.match(source, /revisionMessages\?: Record<string, OutlineRevisionMessage>/);
-  assert.match(source, /revisionMessage\?\.status === 'loading'/);
-  assert.match(source, /revisionMessage\.status === 'clarification'/);
-  assert.match(source, /revisionMessage\.status === 'error'/);
-  assert.match(source, /disabled=\{isLocking \|\| isRevisionPending \|\| lockDisabled\}/);
-  assert.match(pageSource, /pendingOutlineSceneId/);
-  assert.match(pageSource, /outlineRevisionMessages/);
-});
-
-test('outline review collapses the transcript so the review card becomes the active workspace', () => {
-  const source = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
-
-  assert.match(source, /showInterviewTranscript/);
-  assert.match(source, /Interview transcript/);
-  assert.match(source, /hasOutlineAwaitingDecision \? showInterviewTranscript : true/);
 });
 
 test('production progress exposes one scene-level retry control for failed work', () => {
@@ -270,8 +230,7 @@ test('voice session renders Runway avatar stage without webcam and docks around 
   assert.match(pageSource, /useSearchParams/);
   assert.match(pageSource, /isVoiceMode/);
   assert.match(pageSource, /AvatarDirectorCall/);
-  assert.match(callSource, /AvatarSession/);
-  assert.doesNotMatch(callSource, /<AvatarCall/);
+  assert.match(callSource, /AvatarCall/);
   assert.match(callSource, /video=\{false\}/);
   assert.match(callSource, /PageActions/);
   assert.match(callSource, /useTranscript/);
@@ -303,63 +262,11 @@ test('voice upload client event can reveal the upload panel before the backend r
   assert.match(uploadSource, /Drop the reference here/);
 });
 
-test('voice upload layout requests also reveal the upload panel', () => {
-  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
-
-  assert.match(callSource, /if \(layout === 'upload'\) onShowUploadRequested\(\)/);
-});
-
-test('voice uploads notify the live avatar room after a reference lands', () => {
-  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
-  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
-  const uploadRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/upload/route.ts', import.meta.url), 'utf8');
-
-  assert.match(pageSource, /voiceUploadNotice/);
-  assert.match(pageSource, /setVoiceUploadNotice/);
-  assert.match(pageSource, /voiceUploadNotice=\{voiceUploadNotice\}/);
-  assert.match(callSource, /useRoomContext/);
-  assert.match(callSource, /AvatarUploadNoticeBridge/);
-  assert.match(callSource, /localParticipant\.sendText/);
-  assert.match(callSource, /topic: 'lk\.chat'/);
-  assert.match(uploadRouteSource, /uploadedReferences/);
-  assert.match(uploadRouteSource, /session\.interview_medium !== 'voice'/);
-});
-
-test('text interview and upload routes wait for serialized director continuation', () => {
-  const interviewRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/interview/route.ts', import.meta.url), 'utf8');
-  const uploadRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/upload/route.ts', import.meta.url), 'utf8');
-
-  assert.match(interviewRouteSource, /tryAcquireInterviewTurn/);
-  assert.match(interviewRouteSource, /await processInterviewTurn\(sessionId,\s*\{\s*turnToken/);
-  assert.doesNotMatch(interviewRouteSource, /processInterviewTurn\(sessionId\)\.catch/);
-
-  assert.match(uploadRouteSource, /tryAcquireInterviewTurn/);
-  assert.match(uploadRouteSource, /await processInterviewTurn\(sessionId,\s*\{\s*turnToken/);
-  assert.doesNotMatch(uploadRouteSource, /processInterviewTurn\(sessionId\)\.catch/);
-});
-
-test('voice uploads before a formal request count as the protagonist reference', () => {
-  const uploadRouteSource = fs.readFileSync(new URL('../src/app/api/pipeline/upload/route.ts', import.meta.url), 'utf8');
-
-  assert.match(uploadRouteSource, /voiceProtagonistUpload/);
-  assert.match(uploadRouteSource, /session\.interview_medium === 'voice'/);
-  assert.match(uploadRouteSource, /!session\.user_selfie_url/);
-  assert.match(uploadRouteSource, /uploadedProtagonistPath/);
-  assert.match(uploadRouteSource, /targetType === 'protagonist'/);
-});
-
 test('voice upload layout releases after the upload panel is no longer visible', () => {
   const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
 
   assert.match(callSource, /clientLayout === 'upload' && showUpload/);
   assert.doesNotMatch(callSource, /if \(clientLayout !== 'stage'\) return clientLayout/);
-});
-
-test('voice avatar sizing ignores free-floating docked layout events', () => {
-  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
-
-  assert.doesNotMatch(callSource, /if \(clientLayout === 'docked'\) return 'docked'/);
-  assert.match(callSource, /return docked \? 'docked' : 'stage'/);
 });
 
 test('voice session keeps avatar frame viewport-bound and scrolls transcript internally', () => {
@@ -372,54 +279,6 @@ test('voice session keeps avatar frame viewport-bound and scrolls transcript int
   assert.match(callSource, /style=\{\{ aspectRatio: 'auto' \}\}/);
   assert.match(callSource, /data-avatar-transcript-scroll/);
   assert.match(callSource, /overflow-y-auto/);
-});
-
-test('voice live script cannot resize the avatar video column', () => {
-  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
-
-  assert.match(callSource, /data-avatar-video-shell/);
-  assert.match(callSource, /data-avatar-script-panel/);
-  assert.match(callSource, /lg:right-\[340px\]/);
-  assert.doesNotMatch(callSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,340px\)\]/);
-  assert.match(callSource, /overflow-y-auto overflow-x-hidden/);
-  assert.match(callSource, /\[overflow-wrap:anywhere\]/);
-});
-
-test('voice avatar video never crops in as transcript content changes', () => {
-  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
-  const cssSource = fs.readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
-
-  assert.match(callSource, /data-avatar-video-fit="contain"/);
-  assert.doesNotMatch(callSource, /object-cover/);
-  assert.match(cssSource, /\[data-avatar-video-fit="contain"\] video/);
-  assert.match(cssSource, /object-fit: contain !important/);
-});
-
-test('voice avatar player has an animated loading state', () => {
-  const callSource = fs.readFileSync(new URL('../src/components/session/AvatarDirectorCall.tsx', import.meta.url), 'utf8');
-  const cssSource = fs.readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
-
-  assert.match(callSource, /useAvatarStatus/);
-  assert.match(callSource, /credentials=\{connection\.credentials\}/);
-  assert.match(callSource, /data-avatar-call/);
-  assert.match(callSource, /data-avatar-custom-call/);
-  assert.match(callSource, /AvatarStageLoadingOverlay/);
-  assert.match(callSource, /Preparing Nico/);
-  assert.match(callSource, /Syncing video signal/);
-  assert.match(cssSource, /\[data-avatar-custom-call\] > div/);
-  assert.match(cssSource, /flex: 1 1 auto/);
-  assert.match(cssSource, /height: 100%/);
-  assert.match(cssSource, /@keyframes avatar-loader-scan/);
-  assert.match(cssSource, /\.avatar-loader-ring/);
-});
-
-test('voice live script exposes a visible scrollbar affordance', () => {
-  const cssSource = fs.readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
-
-  assert.match(cssSource, /\[data-avatar-transcript-scroll\]/);
-  assert.match(cssSource, /scrollbar-gutter: stable/);
-  assert.match(cssSource, /scrollbar-width: thin/);
-  assert.match(cssSource, /::-webkit-scrollbar-thumb/);
 });
 
 test('voice session shows avatar connection progress and errors instead of a blank stage', () => {
@@ -452,14 +311,6 @@ test('voice production handoff prompts for render notification email', () => {
   assert.match(promptSource, /render_notification_email/);
 });
 
-test('voice production handoff hides draft and progress surfaces behind email handoff', () => {
-  const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
-
-  assert.match(pageSource, /showVoiceProductionHandoff/);
-  assert.match(pageSource, /VoiceProductionHandoff/);
-  assert.match(pageSource, /!showVoiceProductionHandoff &&/);
-});
-
 test('render notification email prompt is available after production handoff in text and voice', () => {
   const pageSource = fs.readFileSync(new URL('../src/app/session/[id]/page.tsx', import.meta.url), 'utf8');
 
@@ -474,7 +325,6 @@ test('render completion email points users to a finished render page', () => {
   const pageSource = fs.readFileSync(new URL('../src/app/render/[id]/page.tsx', import.meta.url), 'utf8');
 
   assert.match(emailSource, /\/render\/\$\{encodeURIComponent\(sessionId\)\}/);
-  assert.match(emailSource, /Director's Cut website/);
   assert.match(notificationSource, /sessionId,/);
   assert.match(pageSource, /Your film is ready/);
   assert.match(pageSource, /final_video_url/);

@@ -16,12 +16,7 @@ import {
   modalRenderConfig,
   runModalRenderBridge,
 } from './modal-render';
-import {
-  REMOTION_FPS,
-  totalFilmDurationInFrames,
-} from '../remotion/timing';
 import { getFinalRenderBackendForSession } from './providers/user-credentials';
-import { visualDurationWithNarrationTail } from './narration-timing';
 
 type AspectRatio = '16:9' | '9:16';
 type RenderQuality = 'fast' | 'standard' | 'ultra';
@@ -35,7 +30,6 @@ type RenderScene = {
   shot_plan_json?: string | null;
   audio_url: string | null;
   duration: number | null;
-  narration_duration?: number | null;
 };
 
 type RenderInput = {
@@ -46,7 +40,6 @@ type RenderInput = {
   duration?: number;
   targetDuration?: number;
   tempo?: number;
-  effectiveDuration?: number;
 };
 
 type RemotionRenderClip = {
@@ -61,7 +54,6 @@ type RemotionRenderScene = {
   audio_playback_rate?: number;
   narrator_text: string;
   duration_in_frames: number;
-  narration_duration_in_frames?: number;
 };
 
 export type FinalRenderProgress = {
@@ -178,6 +170,8 @@ export function parseSceneVideoUrls(value: string | null) {
   return [value].filter((url) => url.trim().length > 0);
 }
 
+const FPS = 30;
+const BRANDED_OUTRO_DURATION_FRAMES = FPS * 3;
 const MAX_NARRATION_TEMPO = 1.12;
 const REMOTION_COMPOSITION_ID = 'LifeStoryFilm';
 const H264_MIN_CRF = 1;
@@ -248,16 +242,6 @@ function narrationTempo(audioDuration: number, targetDuration: number) {
   return Math.min(MAX_NARRATION_TEMPO, audioDuration / targetDuration);
 }
 
-function effectiveNarrationDuration(audioDuration: number, tempo: number | undefined) {
-  if (!Number.isFinite(audioDuration) || audioDuration <= 0) return 1;
-  if (!tempo || !Number.isFinite(tempo) || tempo <= 0) return audioDuration;
-  return audioDuration / tempo;
-}
-
-function positiveNumber(value: number | null | undefined) {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
 export function buildFinalRenderPlan(params: {
   sessionId: string;
   aspectRatio: AspectRatio;
@@ -303,46 +287,35 @@ export function buildFinalRenderPlan(params: {
     .filter((scenePlan) => scenePlan.scene.audio_url)
     .map((scenePlan) => {
       const resolved = resolveRenderInputUrl(scenePlan.scene.audio_url || '', params.database, params.sessionId);
-      const audioDuration = positiveNumber(scenePlan.scene.narration_duration) || scenePlan.scene.duration || scenePlan.videoDuration || 2;
+      const audioDuration = scenePlan.scene.duration || scenePlan.videoDuration || 2;
       const targetDuration = scenePlan.videoDuration || audioDuration;
-      const tempo = narrationTempo(audioDuration, targetDuration);
       return {
         ...resolved,
         sceneId: scenePlan.scene.id,
         duration: audioDuration,
         targetDuration,
-        tempo,
-        effectiveDuration: effectiveNarrationDuration(audioDuration, tempo),
+        tempo: narrationTempo(audioDuration, targetDuration),
       };
     });
   const { width, height } = dimensionsForAspectRatio(params.aspectRatio);
   const remotionScenes = scenePlans.map((scenePlan) => {
-    const audioInput = audioInputs.find((input) => input.sceneId === scenePlan.scene.id);
-    const narrationDuration = audioInput?.effectiveDuration || scenePlan.scene.duration || scenePlan.videoDuration || 1;
-    const sceneDuration = positiveNumber(scenePlan.scene.narration_duration)
-      ? visualDurationWithNarrationTail(scenePlan.videoDuration || scenePlan.scene.duration || 0, narrationDuration)
-      : Math.max(scenePlan.videoDuration || 0, narrationDuration, 1);
+    const sceneDuration = scenePlan.videoDuration || scenePlan.scene.duration || 1;
     const fallbackClipDuration = sceneDuration / Math.max(scenePlan.videoInputs.length, 1);
-    const clipDurations = scenePlan.videoInputs.map((input) => input.duration || fallbackClipDuration);
-    const clipDurationTotal = clipDurations.reduce((total, duration) => total + duration, 0);
-    if (clipDurations.length && clipDurationTotal < sceneDuration) {
-      clipDurations[clipDurations.length - 1] += sceneDuration - clipDurationTotal;
-    }
+    const audioInput = audioInputs.find((input) => input.sceneId === scenePlan.scene.id);
 
     return {
       id: scenePlan.scene.id,
-      clips: scenePlan.videoInputs.map((input, index) => ({
+      clips: scenePlan.videoInputs.map((input) => ({
         url: input.remotionUrl,
-        duration_in_frames: Math.max(1, Math.ceil((clipDurations[index] || fallbackClipDuration) * REMOTION_FPS)),
+        duration_in_frames: Math.max(1, Math.ceil((input.duration || fallbackClipDuration) * FPS)),
       })),
       audio_url: audioInput?.remotionUrl || '',
       ...(audioInput?.tempo ? { audio_playback_rate: audioInput.tempo } : {}),
       narrator_text: scenePlan.scene.narrator_text,
-      duration_in_frames: Math.max(1, Math.ceil(sceneDuration * REMOTION_FPS)),
-      narration_duration_in_frames: Math.max(1, Math.ceil(Math.min(narrationDuration, sceneDuration) * REMOTION_FPS)),
+      duration_in_frames: Math.max(1, Math.ceil(sceneDuration * FPS)),
     };
   });
-  const totalDurationFrames = totalFilmDurationInFrames(remotionScenes);
+  const totalDurationFrames = remotionScenes.reduce((total, scene) => total + scene.duration_in_frames, 0) + BRANDED_OUTRO_DURATION_FRAMES;
 
   return {
     publicUrl,
@@ -355,7 +328,7 @@ export function buildFinalRenderPlan(params: {
       id: REMOTION_COMPOSITION_ID,
       width,
       height,
-      fps: REMOTION_FPS,
+      fps: FPS,
       durationInFrames: totalDurationFrames,
     },
     entryPoint: remotionEntryPoint(),

@@ -4,7 +4,6 @@ import { MainComposition } from '@/remotion/MainComposition';
 import { motion } from 'framer-motion';
 import { useMemo } from 'react';
 import type { AspectRatio, SceneRow } from '@/lib/types';
-import { REMOTION_FPS, totalFilmDurationInFrames } from '@/remotion/timing';
 
 type ShotPlanClip = {
   url?: string;
@@ -33,25 +32,21 @@ function parseShotPlan(value: string | null) {
 }
 
 export default function RemotionPreview({ scenes, aspectRatio }: { scenes: SceneRow[]; aspectRatio: AspectRatio }) {
+  const fps = 30;
+
   const { validScenes, totalDurationFrames } = useMemo(() => {
     const parsedScenes = scenes.flatMap((scene) => {
       if (!scene.video_url) return [];
 
       const parsedUrls = parseVideoUrls(scene.video_url);
       const shotPlan = parseShotPlan(scene.shot_plan_json);
-      const videoDuration = shotPlan
-        .slice(0, parsedUrls.length)
-        .reduce((total, shot) => total + (Number.isFinite(shot.duration) && shot.duration ? shot.duration : 0), 0);
-      const narrationDuration = scene.duration || videoDuration || 5;
-      const sceneDuration = Math.max(videoDuration || 0, narrationDuration, 1);
-      const duration_in_frames = Math.ceil(sceneDuration * REMOTION_FPS);
-      const narration_duration_in_frames = Math.max(1, Math.ceil(Math.min(narrationDuration, sceneDuration) * REMOTION_FPS));
+      const duration_in_frames = Math.ceil((scene.duration || 5) * fps);
       const fallbackClipFrames = Math.max(1, Math.floor(duration_in_frames / Math.max(parsedUrls.length, 1)));
       const clips = parsedUrls.map((url, index) => {
         const shotDuration = shotPlan[index]?.duration;
         return {
           url,
-          duration_in_frames: shotDuration ? Math.ceil(shotDuration * REMOTION_FPS) : fallbackClipFrames,
+          duration_in_frames: shotDuration ? Math.ceil(shotDuration * fps) : fallbackClipFrames,
         };
       });
 
@@ -61,13 +56,12 @@ export default function RemotionPreview({ scenes, aspectRatio }: { scenes: Scene
         audio_url: scene.audio_url ?? '',
         narrator_text: scene.narrator_text,
         duration_in_frames,
-        narration_duration_in_frames,
       }];
     });
 
     return {
       validScenes: parsedScenes,
-      totalDurationFrames: totalFilmDurationInFrames(parsedScenes),
+      totalDurationFrames: parsedScenes.reduce((total, scene) => total + scene.duration_in_frames, 0),
     };
   }, [scenes]);
 
@@ -91,7 +85,7 @@ export default function RemotionPreview({ scenes, aspectRatio }: { scenes: Scene
             durationInFrames={totalDurationFrames > 0 ? totalDurationFrames : 1}
             compositionWidth={aspectRatio === '9:16' ? 720 : 1280}
             compositionHeight={aspectRatio === '9:16' ? 1280 : 720}
-            fps={REMOTION_FPS}
+            fps={fps}
             controls
             style={{ width: '100%', height: '100%' }}
             autoPlay

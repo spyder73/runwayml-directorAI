@@ -14,94 +14,6 @@
 }
 
 @layer components {
-  [data-avatar-transcript-scroll] {
-    scrollbar-gutter: stable;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(251, 191, 36, 0.55) rgba(255, 255, 255, 0.08);
-  }
-
-  [data-avatar-transcript-scroll]::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  [data-avatar-transcript-scroll]::-webkit-scrollbar-track {
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  [data-avatar-transcript-scroll]::-webkit-scrollbar-thumb {
-    border: 2px solid rgba(8, 8, 11, 0.9);
-    border-radius: 999px;
-    background: rgba(251, 191, 36, 0.45);
-  }
-
-  [data-avatar-transcript-scroll]::-webkit-scrollbar-thumb:hover {
-    background: rgba(254, 243, 199, 0.65);
-  }
-
-  [data-avatar-custom-call] > div {
-    position: relative;
-    flex: 1 1 auto;
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-  }
-
-  [data-avatar-video-fit="contain"] {
-    background: #000;
-  }
-
-  [data-avatar-video-fit="contain"] video {
-    width: 100%;
-    height: 100%;
-    background: #000;
-    object-fit: contain !important;
-    object-position: center center !important;
-  }
-
-  .avatar-loader-ring {
-    animation: avatar-loader-ring 2.4s ease-in-out infinite;
-  }
-
-  .avatar-loader-ring:nth-child(2) {
-    animation-delay: 0.35s;
-  }
-
-  .avatar-loader-scan {
-    animation: avatar-loader-scan 2.6s ease-in-out infinite;
-  }
-
-  @keyframes avatar-loader-ring {
-    0% {
-      opacity: 0.2;
-      transform: scale(0.72);
-    }
-    48% {
-      opacity: 0.85;
-      transform: scale(1);
-    }
-    100% {
-      opacity: 0.2;
-      transform: scale(1.22);
-    }
-  }
-
-  @keyframes avatar-loader-scan {
-    0% {
-      opacity: 0;
-      transform: rotate(0deg);
-    }
-    18% {
-      opacity: 0.85;
-    }
-    78% {
-      opacity: 0.7;
-    }
-    100% {
-      opacity: 0;
-      transform: rotate(360deg);
-    }
-  }
-
   .lifestory-aurora {
     background:
       radial-gradient(ellipse at 50% 24%, rgba(239, 219, 176, 0.13), transparent 35%),
@@ -143,10 +55,6 @@
 
   .lifestory-icon-ring {
     animation: lifestory-icon-ring 3.4s ease-in-out infinite;
-  }
-
-  .lifestory-soft-reveal {
-    animation: lifestory-soft-reveal 900ms ease-out both;
   }
 
   @keyframes lifestory-aurora-drift {
@@ -204,17 +112,6 @@
       transform: scale(1.05);
     }
   }
-
-  @keyframes lifestory-soft-reveal {
-    from {
-      opacity: 0;
-      transform: translate3d(0, 18px, 0);
-    }
-    to {
-      opacity: 1;
-      transform: translate3d(0, 0, 0);
-    }
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -222,10 +119,7 @@
   .lifestory-stage-rays,
   .lifestory-portal-ring,
   .lifestory-button-sheen,
-  .lifestory-soft-reveal,
-  .lifestory-icon-ring,
-  .avatar-loader-ring,
-  .avatar-loader-scan {
+  .lifestory-icon-ring {
     animation: none;
   }
 }

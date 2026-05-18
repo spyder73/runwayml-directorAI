@@ -126,6 +126,7 @@ def render(payload: dict[str, Any]) -> dict[str, Any]:
         if not output_volume_path.startswith("/jobs/"):
             raise RuntimeError("Modal render did not return a valid output path.")
 
+        volume.reload()
         _log("download-start", outputVolumePath=output_volume_path, outputLocalPath=str(output_path))
         byte_size = _copy_volume_file(volume, output_volume_path, output_path)
         _cleanup_job(volume, output_volume_path)

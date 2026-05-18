@@ -135,14 +135,7 @@ test('start and readiness routes require confirmed auth and create user-owned se
   assert.equal(startedSession.user_id, 'owner');
   assert.equal(startedSession.mode, 'life_story');
   assert.equal(startedSession.interview_medium, 'voice');
-  assert.equal(startedSession.render_notification_email, null);
-
-  const textStarted = await startRoute.POST(jsonRequest('/api/pipeline/start', { interviewMedium: 'text' }, ownerCookie));
-  assert.equal(textStarted.status, 200);
-  const textStartedJson = await textStarted.json();
-  const textStartedSession = db.prepare('SELECT interview_medium, render_notification_email FROM sessions WHERE id = ?').get(textStartedJson.sessionId);
-  assert.equal(textStartedSession.interview_medium, 'text');
-  assert.equal(textStartedSession.render_notification_email, null);
+  assert.equal(startedSession.render_notification_email, 'owner@example.com');
 
   assert.equal((await readinessRoute.GET(new Request('https://lifestory.example/api/pipeline/readiness'))).status, 401);
   assert.equal((await readinessRoute.GET(new Request('https://lifestory.example/api/pipeline/readiness', { headers: { cookie: unconfirmedCookie } }))).status, 403);

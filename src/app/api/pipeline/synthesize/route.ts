@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { authGuardResponse, requireOwnedSessionForRequest } from '@/lib/auth/guards';
-import { runAutomaticProductionPipeline } from '@/lib/pipeline_media';
+import { runFinalAssetsPhase } from '@/lib/pipeline_media';
 import { GENERATION_RATE_LIMIT, checkRateLimit, rateLimitKey, rateLimitResponse } from '@/lib/rate-limit';
 
 export async function POST(req: Request) {
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
       return rateLimitResponse(generationLimit);
     }
 
-    runAutomaticProductionPipeline(sessionId).catch(console.error);
+    runFinalAssetsPhase(sessionId).catch(console.error);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -88,7 +88,6 @@ test('production schema creates auth, credentials, settings, media, and ownershi
   for (const column of ['id', 'user_id', 'session_id', 'kind', 'file_path', 'mime_type', 'byte_size', 'original_name']) {
     assert.equal(mediaColumns.has(column), true, `missing media column ${column}`);
   }
-  assert.equal(columnNames(db, 'media_tasks').has('auto_failure_notification_sent_at'), true);
 
   assert.equal(indexNames(db, 'sessions').has('idx_sessions_user_id'), true);
   assert.equal(indexNames(db, 'media_assets').has('idx_media_assets_owner'), true);
